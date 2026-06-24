@@ -9,6 +9,7 @@ Usage:
 Input  : ../../personal-assets/test-data/export_last6mo.xml  (~597 MB)
 Output : ./chart_data.json  (gitignored)
 """
+
 import json
 import os
 from collections import defaultdict
@@ -23,13 +24,13 @@ XML_PATH = os.path.normpath(
 OUT_PATH = os.path.join(HERE, "chart_data.json")
 
 # ---- accumulators ----------------------------------------------------------
-resting_hr = {}                      # date -> value (last wins; one per day)
-hrv = {}                             # date -> value
-steps_by_day = defaultdict(float)    # date -> summed steps
-workouts = []                        # list of dicts
-sport_counts = defaultdict(int)      # activity type -> count
+resting_hr = {}  # date -> value (last wins; one per day)
+hrv = {}  # date -> value
+steps_by_day = defaultdict(float)  # date -> summed steps
+workouts = []  # list of dicts
+sport_counts = defaultdict(int)  # activity type -> count
 weekly_sport = defaultdict(lambda: defaultdict(float))  # week -> sport -> minutes
-activity_summaries = []              # list of dicts (pick one later)
+activity_summaries = []  # list of dicts (pick one later)
 
 
 def day_of(attr):
@@ -56,7 +57,9 @@ DIST_TYPES = {
     "HKQuantityTypeIdentifierDistancePaddleSports",
 }
 
-context = etree.iterparse(XML_PATH, events=("end",), tag=("Record", "Workout", "ActivitySummary"))
+context = etree.iterparse(
+    XML_PATH, events=("end",), tag=("Record", "Workout", "ActivitySummary")
+)
 
 n_records = 0
 for _, elem in context:
@@ -103,13 +106,15 @@ for _, elem in context:
                     val = val / 1000.0
                 distance_km = round(val, 2)
 
-        workouts.append({
-            "date": d,
-            "type": sport,
-            "durationMin": round(duration, 1),
-            "avgHr": avg_hr,
-            "distanceKm": distance_km,
-        })
+        workouts.append(
+            {
+                "date": d,
+                "type": sport,
+                "durationMin": round(duration, 1),
+                "avgHr": avg_hr,
+                "distanceKm": distance_km,
+            }
+        )
         sport_counts[sport] += 1
         if d:
             try:
@@ -119,15 +124,17 @@ for _, elem in context:
                 pass
 
     elif tag == "ActivitySummary":
-        activity_summaries.append({
-            "date": elem.get("dateComponents"),
-            "move": float(elem.get("activeEnergyBurned") or 0),
-            "moveGoal": float(elem.get("activeEnergyBurnedGoal") or 0),
-            "exercise": float(elem.get("appleExerciseTime") or 0),
-            "exerciseGoal": float(elem.get("appleExerciseTimeGoal") or 0),
-            "stand": float(elem.get("appleStandHours") or 0),
-            "standGoal": float(elem.get("appleStandHoursGoal") or 0),
-        })
+        activity_summaries.append(
+            {
+                "date": elem.get("dateComponents"),
+                "move": float(elem.get("activeEnergyBurned") or 0),
+                "moveGoal": float(elem.get("activeEnergyBurnedGoal") or 0),
+                "exercise": float(elem.get("appleExerciseTime") or 0),
+                "exerciseGoal": float(elem.get("appleExerciseTimeGoal") or 0),
+                "stand": float(elem.get("appleStandHours") or 0),
+                "standGoal": float(elem.get("appleStandHoursGoal") or 0),
+            }
+        )
 
     # free memory
     elem.clear()
@@ -141,7 +148,8 @@ stepsDaily = [{"date": d, "steps": round(v)} for d, v in sorted(steps_by_day.ite
 
 sportBreakdown = sorted(
     [{"type": t, "count": c} for t, c in sport_counts.items()],
-    key=lambda x: x["count"], reverse=True,
+    key=lambda x: x["count"],
+    reverse=True,
 )
 
 # top ~5 sports by total minutes for the stacked weekly volume
@@ -149,7 +157,9 @@ total_min = defaultdict(float)
 for wk, sports in weekly_sport.items():
     for s, m in sports.items():
         total_min[s] += m
-top_sports = [s for s, _ in sorted(total_min.items(), key=lambda x: x[1], reverse=True)[:5]]
+top_sports = [
+    s for s, _ in sorted(total_min.items(), key=lambda x: x[1], reverse=True)[:5]
+]
 
 weeklyVolumeBySport = []
 for wk in sorted(weekly_sport.keys()):
@@ -212,7 +222,9 @@ print(f"  stepsDaily          : {len(stepsDaily)} days")
 print(f"  hrvDaily            : {len(hrvDaily)} days")
 print(f"  workouts            : {len(workouts)}")
 print(f"  sportBreakdown      : {len(sportBreakdown)} sports")
-print(f"  weeklyVolumeBySport : {len(weeklyVolumeBySport)} weeks, top sports={top_sports}")
+print(
+    f"  weeklyVolumeBySport : {len(weeklyVolumeBySport)} weeks, top sports={top_sports}"
+)
 print(f"  activityRings       : {activityRings['date'] if activityRings else None}")
 size = os.path.getsize(OUT_PATH)
-print(f"Wrote {OUT_PATH} ({size/1024:.1f} KB)")
+print(f"Wrote {OUT_PATH} ({size / 1024:.1f} KB)")

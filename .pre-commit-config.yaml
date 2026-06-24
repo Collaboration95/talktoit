@@ -1,0 +1,48 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        entry: uv run --directory backend pyright
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: tsc
+        name: tsc
+        entry: npm --prefix frontend run typecheck
+        language: system
+        types_or: [ts, tsx]
+        pass_filenames: false
+
+      - id: oxlint
+        name: oxlint
+        entry: npm --prefix frontend run lint
+        language: system
+        types_or: [ts, tsx]
+        pass_filenames: false
+
+      - id: prettier-check
+        name: prettier
+        entry: npm --prefix frontend run format:check
+        language: system
+        types_or: [ts, tsx, css]
+        pass_filenames: false
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: no-commit-to-branch
+        args: [--branch, main]
