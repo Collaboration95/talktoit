@@ -1,0 +1,180 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── shadcn CSS custom properties ─────────────────────────────────────────── */
+:root {
+  --background: 0 0% 100%;
+  --foreground: 240 10% 3.9%;
+  --muted-foreground: 240 3.8% 46.1%;
+  --border: 240 5.9% 90%;
+  --chart-1: 220 70% 50%;
+  --chart-2: 160 60% 45%;
+  --chart-3: 30 80% 55%;
+  --chart-4: 280 65% 60%;
+  --chart-5: 340 75% 55%;
+  color-scheme: light;
+
+  /* gallery design tokens */
+  --bg: #f7f8fa;
+  --card: #ffffff;
+  --ink: #1a1d21;
+  --muted: #6b7280;
+  --border-c: #e5e7eb;
+  --accent: #3b82f6;
+  --feature-bg: #fffbeb;
+  --feature-border: #fcd34d;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0; padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Layout ────────────────────────────────────────────────────────────────── */
+.layout {
+  display: grid;
+  grid-template-columns: 192px 1fr;
+  min-height: 100vh;
+}
+
+.sidenav {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 20px 14px;
+  border-right: 1px solid var(--border-c);
+  background: var(--card);
+}
+.sidenav h1 { font-size: 14px; font-weight: 700; margin: 0 0 2px; }
+.sidenav-meta { font-size: 11px; color: var(--muted); margin: 0 0 16px; line-height: 1.5; }
+.sidenav-section-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 6px; }
+.sidenav a {
+  display: block;
+  padding: 5px 9px;
+  margin-bottom: 1px;
+  border-radius: 6px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidenav a:hover { background: #f0f3f7; color: var(--accent); }
+.sidenav-lib {
+  display: block;
+  padding: 3px 9px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.content { padding: 28px 32px 80px; }
+
+/* ── Intro ─────────────────────────────────────────────────────────────────── */
+.intro { margin-bottom: 36px; }
+.intro h1 { margin: 0 0 6px; font-size: 26px; }
+.intro p { color: var(--muted); margin: 0; font-size: 13px; max-width: 720px; line-height: 1.6; }
+
+/* ── Chart type section ────────────────────────────────────────────────────── */
+.type-section { margin-bottom: 52px; scroll-margin-top: 20px; }
+
+.type-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-bottom: 2px solid var(--border-c);
+  padding-bottom: 8px;
+  margin-bottom: 16px;
+}
+.type-head h2 { margin: 0; font-size: 20px; }
+.type-sub { font-size: 12px; color: var(--muted); }
+
+/* ── Library row: horizontal scroll so all libs are side-by-side ──────────── */
+.lib-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 340px;
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-c) transparent;
+}
+/* For sections with only 1-2 cells, don't force horizontal scroll */
+.lib-row:has(.lib-card:only-child),
+.lib-row:has(.lib-card:nth-child(2):last-child) {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  overflow-x: visible;
+}
+
+/* ── Individual library card ───────────────────────────────────────────────── */
+.lib-card {
+  background: var(--card);
+  border: 1px solid var(--border-c);
+  border-radius: 12px;
+  padding: 12px 14px 16px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  min-width: 0;
+}
+
+.lib-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.lib-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.lib-pkg {
+  font-size: 10px;
+  color: var(--muted);
+  background: #f0f3f7;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.lib-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 20px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.lib-badge--winner {
+  color: #14532d;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+}
+.lib-badge--second {
+  color: #1e3a5f;
+  background: #dbeafe;
+  border: 1px solid #93c5fd;
+}
+
+.lib-card--winner {
+  border-color: #86efac;
+  box-shadow: 0 0 0 1px #86efac, 0 1px 4px rgba(16, 24, 40, 0.06);
+}
+
+.chart-canvas {
+  width: 100%;
+  height: 268px;
+}

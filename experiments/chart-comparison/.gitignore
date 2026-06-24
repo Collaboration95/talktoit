@@ -1,0 +1,6 @@
+node_modules/
+dist/
+chart_data.json
+*.local
+.DS_Store
+node_modules/.tmp/
