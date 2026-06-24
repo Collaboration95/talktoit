@@ -3,7 +3,7 @@
 > This document specifies the tooling, quality gates, and conventions that govern the tti
 > codebase. It covers both the Python backend and the TypeScript frontend.
 > Written before the product code exists so these decisions are locked in from commit one.
-> Status: **DRAFT — pending review**.
+> Status: **REVIEWED — review findings incorporated.**
 
 ---
 
@@ -31,20 +31,36 @@ tti/
 │   │   ├── charts/          # Chart wrappers (ECharts, Chart.js, Tremor)
 │   │   ├── api/             # Typed fetch wrappers for backend endpoints
 │   │   ├── store/           # Client state (React context or Zustand — TBD)
-│   │   └── types/           # Shared TypeScript interfaces
+│   │   ├── types/           # Shared TypeScript interfaces
+│   │   ├── index.css        # Tailwind entrypoint (@tailwind directives)
+│   │   └── vite-env.d.ts    # /// <reference types="vite/client" />
 │   ├── tests/               # Vitest + Testing Library
 │   ├── tsconfig.json
-│   ├── vite.config.ts
+│   ├── vite.config.ts       # Vite + Vitest config
+│   ├── tailwind.config.ts   # Tailwind v3 (required by @tremor/react v3)
+│   ├── postcss.config.js    # tailwindcss + autoprefixer
+│   ├── .oxlintrc.json
+│   ├── .prettierrc
+│   ├── .nvmrc               # Node 20
 │   └── package.json
 ├── experiments/             # One-off explorations; not production code
 │   └── chart-comparison/    # Chart library evaluation gallery (DONE)
 ├── docs/
 │   ├── DISCOVERY.md         # Decisions log (source of truth)
 │   ├── ENGINEERING.md       # This file
-│   └── SPEC.md              # Product spec — templates, API shape (TODO)
+│   └── SPEC.md              # Product spec — templates, API shape (TODO — see §11)
+├── .github/
+│   └── workflows/
+│       ├── ci.yml           # Lint, typecheck, test, build (every push/PR)
+│       └── audit.yml        # Weekly dependency CVE audit
+├── .vscode/
+│   ├── settings.json        # Workspace editor settings
+│   └── extensions.json      # Recommended extensions
 ├── Makefile                 # Root-level developer commands
+├── .editorconfig
 ├── .gitignore
 ├── .pre-commit-config.yaml
+├── .env.example             # Template for .env (EXPORT_PATH, LLM_* keys)
 ├── README.md
 └── LICENSE                  # MIT
 ```
@@ -97,11 +113,12 @@ select = [
 ignore = [
     "D100",   # missing docstring in public module (file-level)
     "D104",   # missing docstring in public package (__init__)
-    "S101",   # use of assert — fine in tests
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["ANN", "D"]   # no type/docstring enforcement in tests
+# assert (S101) is allowed in tests only — in production app/ code asserts are
+# stripped under `python -O`, so keep S101 enforced there.
+"tests/**" = ["ANN", "D", "S101"]   # no type/docstring/assert enforcement in tests
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"       # Google-style docstrings (see §5)
@@ -115,7 +132,9 @@ indent-style = "space"
 
 ### 2.3 Type Checking
 
-**Tool: [Pyright](https://github.com/microsoft/pyright)** (strict mode).
+**Tool: [Pyright](https://github.com/microsoft/pyright)** — **strict mode, with the two
+unknown-type inference rules relaxed** (see note below). Not full strict; honestly, "strict
+minus unknown-type inference."
 
 Reasons over mypy: faster incremental checks, better VSCode/Pylance integration, stricter
 generics inference, actively developed by Microsoft.
@@ -134,10 +153,14 @@ generics inference, actively developed by Microsoft.
 }
 ```
 
-`reportUnknownMemberType` and `reportUnknownVariableType` relaxed because third-party
-libraries (DuckDB, lxml) ship incomplete stubs — we fix progressively, not upfront.
+`reportUnknownMemberType` and `reportUnknownVariableType` are relaxed because third-party
+libraries (DuckDB, lxml) ship incomplete stubs — we fix progressively, not upfront. These
+are two of the most load-bearing strict rules, so the result is *not* full strict; the
+config is honestly labelled "strict minus unknown-type inference." Revisit and re-enable
+both once `types-`/stub packages are added for the offending libraries (tracked as a tradeoff
+in §9, Open Questions).
 
-Run: `uv run pyright`
+Run: `uv run --directory backend pyright`
 
 ### 2.4 Testing
 
@@ -156,13 +179,28 @@ Run: `uv run pyright`
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "--cov=app --cov-report=term-missing --cov-fail-under=80 -n auto"
+# xml report is required by the Codecov upload in ci.yml; html is for `make coverage`.
+addopts = "--cov=app --cov-report=term-missing --cov-report=xml --cov-report=html --cov-fail-under=80 -n auto"
 ```
 
+With `uv run --directory backend pytest` (cwd = `backend/`), this writes
+`backend/coverage.xml` and `backend/htmlcov/` — exactly the paths CI's Codecov upload and
+`make coverage` reference.
+
 **Coverage targets:**
-- Overall: **80% minimum** (enforced — CI fails below this).
-- `app/ingest/`: **90% minimum** — ingestion is the hardest thing to debug in production.
-- `app/llm/`: **70% minimum** — LLM tool functions are harder to unit-test deterministically.
+- Overall: **80% — enforced.** `--cov-fail-under=80` fails CI below this. This is the only
+  gate the tooling enforces.
+- `app/ingest/`: **90% — goal, tracked manually.** Ingestion is the hardest thing to debug
+  in production, so aim high here.
+- `app/llm/`: **70% — goal, tracked manually.** LLM tool functions are harder to unit-test
+  deterministically.
+
+> **Note on per-module gates:** pytest-cov / coverage.py do **not** support per-package
+> `fail-under`, so the 90/70 numbers above are *goals*, not enforced thresholds — only the
+> 80% global gate fails the build. If we later want these enforced, add a CI step after the
+> pytest run that reads the existing coverage data, e.g.
+> `uv run --directory backend coverage report --include="app/ingest/*" --fail-under=90`
+> (and `--include="app/llm/*" --fail-under=70`).
 
 **Test split:**
 - `tests/unit/` — pure Python logic only; no DuckDB, no filesystem, no network. Fast.
@@ -177,7 +215,10 @@ synthetic, committed, and small enough to fit in a code review.
 ### 2.5 Security Scanning
 
 Ruff's `S` (bandit) rules catch the main classes of Python security issues at lint time.
-For dependency CVEs: `uv audit` (or `pip-audit` as fallback) — run weekly in CI.
+For dependency CVEs: **`pip-audit`** — run weekly in CI (see `audit.yml` in §7). There is no
+`uv audit` subcommand (it does not exist in uv); we standardize on `pip-audit`, invoked as
+`uv run --directory backend pip-audit` so it audits the backend project's resolved
+dependencies.
 
 ---
 
@@ -187,10 +228,49 @@ For dependency CVEs: `uv audit` (or `pip-audit` as fallback) — run weekly in C
 
 | Tool | Choice |
 |---|---|
-| Node version | **20 LTS** (via `.nvmrc` or `engines` field in package.json) |
+| Node version | **20 LTS** — pinned in **both** `frontend/.nvmrc` (`20`) and the `engines` field |
 | Package manager | **npm** (lock file committed; no Yarn/pnpm complexity for now) |
 | Build tool | **Vite 8** (already in place) |
 | Framework | **React 19** + TypeScript |
+
+At scaffold time, commit `frontend/.nvmrc` containing `20` **and** set
+`"engines": { "node": "^20" }` in `frontend/package.json` (CI already pins `node-version: 20`).
+
+#### `frontend/package.json` scripts (canonical command names)
+
+All Makefile / CI / pre-commit entrypoints call these **named scripts via
+`npm --prefix frontend run <script>`** — never `npm --prefix frontend exec …`. (`npm --prefix
+<dir> run` cds into `<dir>` first; `npm --prefix <dir> exec` does **not** — it runs in the
+caller's cwd, so `exec` would resolve `tsconfig`/`src` against the repo root and silently
+lint/typecheck the wrong tree.)
+
+```jsonc
+// frontend/package.json
+{
+  "engines": { "node": "^20" },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint src",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\"",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  }
+}
+```
+
+devDependencies the frontend tooling assumes (none are bundled by Vite/Vitest — declare them
+explicitly, `jsdom` especially):
+
+```
+vite, @vitejs/plugin-react, typescript, oxlint, prettier,
+tailwindcss@^3, postcss, autoprefixer, @tremor/react@^3,
+vitest, @vitest/coverage-v8, jsdom,
+@testing-library/react, @testing-library/user-event, @testing-library/jest-dom, msw
+```
 
 ### 3.2 TypeScript Config — Strict Mode
 
@@ -206,6 +286,11 @@ The production `frontend/tsconfig.json` must enable all strict flags.
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
+
+    // Ambient types — without this `import.meta.env` / `import.meta.hot` are untyped.
+    // (Equivalently, commit `src/vite-env.d.ts` with `/// <reference types="vite/client" />`;
+    //  we do both — the file is in the repo tree above — but keep this for explicitness.)
+    "types": ["vite/client"],
 
     // Emit
     "noEmit": true,
@@ -272,7 +357,6 @@ Rust-based, 50–100× faster than ESLint, covers most rules we care about.
     // TypeScript
     "typescript/no-explicit-any": "warn",    // warn, not error — sometimes necessary
     "typescript/consistent-type-imports": "error",
-    "typescript/no-floating-promises": "error",
 
     // Code quality
     "unicorn/filename-case": ["error", { "case": "kebabCase" }],
@@ -281,6 +365,16 @@ Rust-based, 50–100× faster than ESLint, covers most rules we care about.
   "env": { "browser": true, "es2023": true }
 }
 ```
+
+**Type-aware rules — important limitation (oxlint 1.x):** oxlint is **not type-aware by
+default**, and `typescript/no-floating-promises` is *fundamentally* a type-aware rule — it
+cannot fire without type information. We deliberately **do not** list it here, because a rule
+that silently no-ops is worse than no rule (it implies coverage we don't have). Floating
+promises are instead caught by Pyright's frontend counterpart — TypeScript itself flags many
+cases via `noUnusedExpressions`-style checks plus code review; revisit and enable
+`no-floating-promises` once oxlint's type-aware mode is stable and we opt into it (and
+document the config then). `react/jsx-no-leaked-render` below is purely syntactic and *does*
+run without type info, so it stays.
 
 **Formatting: [Prettier](https://prettier.io/)** — separate concern from linting.
 oxlint handles rules; Prettier handles whitespace, quotes, trailing commas.
@@ -316,7 +410,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
-      thresholds: { lines: 80, functions: 80, branches: 70 },
+      thresholds: { statements: 80, lines: 80, functions: 80, branches: 70 },
       exclude: ['tests/**', 'src/main.tsx', '**/*.d.ts'],
     },
   },
@@ -342,7 +436,29 @@ export default defineConfig({
 - CSS/visual appearance (use Storybook or manual review for that).
 - Implementation details of React internals.
 
-### 3.5 Hot Reload
+### 3.5 Styling — Tailwind v3 (load-bearing via Tremor)
+
+Styling is **Tailwind CSS**, and this is now a recorded decision (see DISCOVERY §2 →
+"Styling"). It is not optional: `@tremor/react` — locked in for the Ranked List (BarList) and
+Activity Rings gauge per DISCOVERY §6 — **requires** Tailwind, so Tailwind is load-bearing
+whether or not it's used elsewhere.
+
+**Pin Tailwind v3 (not v4).** The current `@tremor/react` (`^3.18.7`, as shipped in
+`experiments/chart-comparison`) is built against **Tailwind v3** and its content/preset model;
+Tailwind v4's CSS-first config is a breaking change Tremor v3 does not support. Stay on
+`tailwindcss@^3` until either (a) a Tailwind-v4-compatible Tremor release is adopted *and*
+verified against our charts, or (b) we drop Tremor. Don't let `npm` float Tailwind to v4.
+
+Scaffold files (all in the repo tree, §1):
+- `frontend/tailwind.config.ts` — `content: ['./index.html', './src/**/*.{ts,tsx}']` plus the
+  Tremor content glob and preset.
+- `frontend/postcss.config.js` — `{ plugins: { tailwindcss: {}, autoprefixer: {} } }`.
+- `frontend/src/index.css` — the `@tailwind base; @tailwind components; @tailwind utilities;`
+  entrypoint, imported once from `src/main.tsx`.
+
+devDeps: `tailwindcss@^3`, `postcss`, `autoprefixer` (already listed in §3.1).
+
+### 3.6 Hot Reload
 
 Vite HMR works out of the box for the frontend. For full-stack development:
 
@@ -359,8 +475,11 @@ Both write to the same terminal via `make dev` (using `concurrently` or GNU para
 
 ## 4. Makefile — Root-Level Commands
 
-All commands run from the repo root. Backend targets prefix `uv run`; frontend targets
-use `npm --prefix frontend`.
+All commands run from the repo root. Backend targets use **`uv run --directory backend`**
+(which `cd`s into `backend/` before running — `--project` only selects the venv and would
+leave cwd at the repo root, breaking every relative path); frontend targets use
+**`npm --prefix frontend run <script>`** against the named scripts in §3.1 (never
+`npm … exec`, which does not `cd` into the prefix).
 
 ```makefile
 # Makefile
@@ -373,7 +492,7 @@ use `npm --prefix frontend`.
 
 # ── Bootstrap ────────────────────────────────────────────────────────────────
 install:
-	uv sync --project backend
+	uv sync --directory backend
 	npm --prefix frontend install
 
 # ── Development ──────────────────────────────────────────────────────────────
@@ -382,7 +501,7 @@ dev:
 	  "$(MAKE) dev-backend" "$(MAKE) dev-frontend"
 
 dev-backend:
-	uv run --project backend uvicorn app.main:app \
+	uv run --directory backend uvicorn app.main:app \
 	  --reload --host 127.0.0.1 --port 8000
 
 dev-frontend:
@@ -391,13 +510,13 @@ dev-frontend:
 # ── Ingest ───────────────────────────────────────────────────────────────────
 ingest:
 	@test -n "$(EXPORT_PATH)" || (echo "Usage: make ingest EXPORT_PATH=/path/to/export.xml" && exit 1)
-	uv run --project backend python -m app.ingest.run $(EXPORT_PATH)
+	uv run --directory backend python -m app.ingest.run $(EXPORT_PATH)
 
 # ── Tests ────────────────────────────────────────────────────────────────────
 test: test-backend test-frontend
 
 test-backend:
-	uv run --project backend pytest
+	uv run --directory backend pytest
 
 test-frontend:
 	npm --prefix frontend run test -- --run
@@ -409,32 +528,32 @@ test-watch:
 typecheck: typecheck-backend typecheck-frontend
 
 typecheck-backend:
-	uv run --project backend pyright
+	uv run --directory backend pyright
 
 typecheck-frontend:
-	npm --prefix frontend exec tsc -- --noEmit
+	npm --prefix frontend run typecheck
 
 # ── Linting & Formatting ─────────────────────────────────────────────────────
 lint: lint-backend lint-frontend
 
 lint-backend:
-	uv run --project backend ruff check app tests
+	uv run --directory backend ruff check app tests
 
 lint-frontend:
-	npm --prefix frontend exec oxlint -- src
+	npm --prefix frontend run lint
 
 format: format-backend format-frontend
 
 format-backend:
-	uv run --project backend ruff format app tests
-	uv run --project backend ruff check --fix app tests
+	uv run --directory backend ruff format app tests
+	uv run --directory backend ruff check --fix app tests
 
 format-frontend:
-	npm --prefix frontend exec prettier -- --write "src/**/*.{ts,tsx,css}"
+	npm --prefix frontend run format
 
 # ── Coverage ─────────────────────────────────────────────────────────────────
 coverage:
-	uv run --project backend pytest --cov=app --cov-report=html
+	uv run --directory backend pytest --cov=app --cov-report=html
 	npm --prefix frontend run test -- --run --coverage
 	@echo "Backend: open backend/htmlcov/index.html"
 	@echo "Frontend: open frontend/coverage/index.html"
@@ -584,31 +703,33 @@ repos:
     hooks:
       - id: pyright
         name: pyright
-        entry: uv run --project backend pyright
+        entry: uv run --directory backend pyright
         language: system
         types: [python]
         pass_filenames: false
 
+      # JS hooks call named npm scripts via `run` (which cds into frontend/);
+      # `npm … exec` would run from the repo root and miss tsconfig/src.
       - id: tsc
         name: tsc
-        entry: npm --prefix frontend exec tsc -- --noEmit
+        entry: npm --prefix frontend run typecheck
         language: system
         types_or: [ts, tsx]
         pass_filenames: false
 
       - id: oxlint
         name: oxlint
-        entry: npm --prefix frontend exec oxlint -- src
+        entry: npm --prefix frontend run lint
         language: system
         types_or: [ts, tsx]
         pass_filenames: false
 
       - id: prettier-check
         name: prettier
-        entry: npm --prefix frontend exec prettier -- --check
+        entry: npm --prefix frontend run format:check
         language: system
         types_or: [ts, tsx, css]
-        pass_filenames: true
+        pass_filenames: false   # the script checks the whole src/ glob itself
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -619,7 +740,7 @@ repos:
       - id: check-yaml
       - id: check-toml
       - id: no-commit-to-branch
-        args: [--branch, main, --branch, Main]
+        args: [--branch, main]   # macOS FS is case-insensitive: `main` also blocks `Main`
 ```
 
 **No tests in pre-commit.** Tests are too slow for a blocking hook. They run in CI.
@@ -640,7 +761,7 @@ name: CI
 
 on:
   push:
-    branches: [main, Main]
+    branches: [main]
   pull_request:
 
 jobs:
@@ -649,25 +770,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv sync --project backend
-      - run: uv run --project backend ruff check app tests
-      - run: uv run --project backend ruff format --check app tests
+      - run: uv sync --directory backend
+      - run: uv run --directory backend ruff check app tests
+      - run: uv run --directory backend ruff format --check app tests
 
   typecheck-backend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv sync --project backend
-      - run: uv run --project backend pyright
+      - run: uv sync --directory backend
+      - run: uv run --directory backend pyright
 
   test-backend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv sync --project backend
-      - run: uv run --project backend pytest
+      - run: uv sync --directory backend
+      - run: uv run --directory backend pytest
       - uses: codecov/codecov-action@v5
         with:
           files: ./backend/coverage.xml
@@ -679,8 +800,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20', cache: 'npm', cache-dependency-path: frontend/package-lock.json }
       - run: npm --prefix frontend ci
-      - run: npm --prefix frontend exec oxlint -- src
-      - run: npm --prefix frontend exec prettier -- --check "src/**/*.{ts,tsx,css}"
+      - run: npm --prefix frontend run lint
+      - run: npm --prefix frontend run format:check
 
   typecheck-frontend:
     runs-on: ubuntu-latest
@@ -689,7 +810,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20', cache: 'npm', cache-dependency-path: frontend/package-lock.json }
       - run: npm --prefix frontend ci
-      - run: npm --prefix frontend exec tsc -- --noEmit
+      - run: npm --prefix frontend run typecheck
 
   test-frontend:
     runs-on: ubuntu-latest
@@ -734,7 +855,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv run pip-audit --project backend
+      - run: uv sync --directory backend
+      # pip-audit has no --project flag; run it *inside* backend/ so it audits the
+      # backend project's resolved dependencies (mirrors the --directory cwd fix elsewhere).
+      - run: uv run --directory backend pip-audit
 
   audit-node:
     runs-on: ubuntu-latest
@@ -795,11 +919,13 @@ indent_style = tab
     "ms-python.vscode-pylance",
     "esbenp.prettier-vscode",
     "oxc.oxc-vscode",
-    "bradlc.vscode-tailwindcss",
-    "dbaeumer.vscode-eslint"
+    "bradlc.vscode-tailwindcss"
   ]
 }
 ```
+
+> No `dbaeumer.vscode-eslint`: the project lints with **oxlint** (`oxc.oxc-vscode`), not
+> ESLint. Recommending the ESLint extension would invite a parallel, unconfigured linter.
 
 ---
 
@@ -807,8 +933,10 @@ indent_style = tab
 
 These are not settled. Flag any that should be decided differently:
 
-1. **Pyright vs mypy:** Pyright is proposed over mypy for speed and VSCode integration.
-   If the team is mypy-fluent or uses editors other than VSCode, mypy is the safer default.
+1. **Pyright vs mypy — RESOLVED: Pyright.** This is no longer open; Pyright is hard-coded in
+   §2.3, pre-commit (§6), and CI (§7) for speed and VSCode/Pylance integration. Listed here
+   only to record the decision. (If a future contributor is mypy-fluent or editor-agnostic,
+   reopen — but the build currently depends on Pyright.)
 
 2. **`noUncheckedIndexedAccess`:** This is the most aggressive TypeScript flag here.
    It causes `arr[i]` to return `T | undefined` which requires null checks everywhere.
@@ -835,14 +963,21 @@ These are not settled. Flag any that should be decided differently:
    comments (via `jest-coverage-report-action` or similar). For an open-source project,
    Codecov free tier is sufficient.
 
-8. **`no-commit-to-branch: main`:** Pre-commit hook prevents direct commits to `main`/`Main`.
-   This forces all work through PRs. Appropriate if there are multiple contributors or
-   the owner wants an explicit review gate. Disable if it's just solo development.
+8. **`no-commit-to-branch: main`:** Pre-commit hook prevents direct commits to `main` (which
+   on the case-insensitive macOS FS also covers `Main`). This forces all work through PRs.
+   Appropriate if there are multiple contributors or the owner wants an explicit review gate.
+   Disable if it's just solo development.
 
 9. **Monorepo vs separate `package.json` roots:** Currently `backend/` and `frontend/` are
    separate roots managed via `--prefix` in the Makefile. An alternative is a root-level
    `package.json` with workspaces. The current approach is simpler; avoid workspaces unless
    there's a specific reason (shared type package, etc.).
+
+10. **Pyright unknown-type rules relaxed (tradeoff to revisit):** `reportUnknownMemberType` and
+    `reportUnknownVariableType` are off (§2.3) because DuckDB/lxml ship incomplete stubs, so the
+    config is "strict minus unknown-type inference," not full strict. Re-enable both once
+    `types-`/stub packages exist for those libraries — at which point the "strict" label
+    becomes literally true.
 
 ---
 
@@ -882,4 +1017,26 @@ That's it. No Docker, no database server, no accounts, no cloud.
 
 ---
 
-*Last updated: 2026-06-24. Author: initial spec.*
+## 11. SPEC.md — prerequisite for frontend scaffolding
+
+`docs/SPEC.md` is still a TODO, but it is **not** optional and **not** "later." It must
+define the **`{template_id, data}` payload contract** — the exact shape of every v1 template's
+`data` — *before* any frontend (or template) code is written. Reasons:
+
+- The contract is the seam between backend tools and frontend templates (DISCOVERY §5); both
+  sides type against it.
+- It interacts directly with **`exactOptionalPropertyTypes`** (§3.2): a `data: T` whose
+  optional fields may be *absent* vs *present-but-`undefined`* is exactly where that flag
+  bites. Designing the payload types without deciding absent-vs-undefined semantics will force
+  a painful retrofit once the flag is on.
+
+**Gate:** SPEC.md's payload contract is a prerequisite for scaffolding `frontend/src/templates/`
+and the backend `app/llm/` template catalog. (Backend ingestion/db work has no such
+dependency and can start earlier.)
+
+---
+
+*Last updated: 2026-06-24. Author: initial spec, then review findings incorporated.
+All A/B/C/D/E items from the engineering review (cwd fixes, pip-audit, coverage reports,
+`S101`, Pyright labelling, ESLint ext, Tailwind decision, missing config/deps, oxlint
+type-aware limitation, and the minor nits) are folded into this document.*

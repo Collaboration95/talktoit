@@ -35,6 +35,11 @@ tools and templates grows.
 - **Backend:** Python. (No Go/Rust — keep it simple.)
 - **Frontend:** React + **TypeScript** + Vite. (Not Svelte — no user experience with it. TS over JS.)
 - **Backend web framework:** FastAPI (default — to confirm, but consistent with Python + serving a built frontend).
+- **Styling:** **Tailwind CSS v3.** Not an independent preference so much as a *consequence*:
+  `@tremor/react` (chosen for Ranked List + Activity Rings, §6) is built on Tailwind and only
+  supports Tailwind **v3** (not the v4 CSS-first rewrite). So Tailwind is load-bearing and
+  pinned to `^3` for as long as Tremor v3 is in the stack. Revisit if/when we adopt a
+  Tailwind-v4-compatible Tremor or drop Tremor. (See ENGINEERING §3.5.)
 - **One `run` command** should boot the server and serve the built frontend so
   `clone → run` stays simple, even though it's two languages.
 
