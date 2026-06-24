@@ -1,2 +1,7 @@
 
 personal-assets/
+
+# Agent planning / orchestration scratch — local only, not part of the repo.
+# Everything in docs/planning/ is gitignored except the README explaining it.
+docs/planning/*
+!docs/planning/README.md
