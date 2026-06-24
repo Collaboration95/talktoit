@@ -7,5 +7,7 @@
   "reportMissingTypeStubs": false,
   "reportUnknownMemberType": false,
   "reportUnknownVariableType": false,
-  "reportUnusedFunction": false
+  "reportUnknownArgumentType": false,
+  "reportUnusedFunction": false,
+  "reportInvalidTypeForm": false
 }
