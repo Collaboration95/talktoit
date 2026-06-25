@@ -14,6 +14,9 @@ export function PeriodSummary({ data, narrative }: PeriodSummaryProps) {
       <p className="mb-4 text-sm text-gray-500">
         {data.period_start} – {data.period_end}
       </p>
+      {data.metrics.length === 0 ? (
+        <p className="text-gray-500">No data available for this period.</p>
+      ) : null}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {data.metrics.map((m) => (
           <div key={m.label} className="rounded-lg bg-gray-50 p-3">

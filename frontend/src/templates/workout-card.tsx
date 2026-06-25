@@ -30,6 +30,10 @@ export function WorkoutCard({ data, narrative }: WorkoutCardProps) {
           <Metric label="Elevation" value={`${data.elevation_ascent_meters} m`} />
         ) : null}
       </div>
+      {/* GPS guard: check key presence per SPEC §2.1 ("gps_route" in data means GPS exists) */}
+      {'gps_route' in data && data.gps_route !== null ? (
+        <p className="mt-3 text-xs text-gray-400">GPS route available</p>
+      ) : null}
     </div>
   )
 }

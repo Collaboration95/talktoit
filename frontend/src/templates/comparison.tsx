@@ -62,7 +62,8 @@ function ComparisonRow({ metric }: { metric: ComparisonMetric }) {
         {metric.last_value !== null ? `${metric.last_value} ${metric.unit}` : '—'}
       </td>
       <td className={`py-2 font-medium ${color}`}>
-        {arrow} {deltaStr} {metric.unit}
+        {arrow} {deltaStr}
+        {metric.delta !== null ? ` ${metric.unit}` : ''}
       </td>
     </tr>
   )
