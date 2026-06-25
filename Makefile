@@ -8,7 +8,7 @@
         test test-backend test-frontend test-watch \
         typecheck typecheck-backend typecheck-frontend \
         lint lint-backend lint-frontend format format-backend format-frontend \
-        coverage ingest clean build
+        coverage ingest clean build run
 
 # ── Bootstrap ────────────────────────────────────────────────────────────────
 install:
@@ -77,6 +77,12 @@ coverage:
 	npm --prefix frontend run test -- --run --coverage
 	@echo "Backend: open backend/htmlcov/index.html"
 	@echo "Frontend: open frontend/coverage/index.html"
+
+# ── Run (production: build FE, serve from FastAPI) ──────────────────────────
+run:
+	npm --prefix frontend run build
+	uv run --directory backend uvicorn app.main:app \
+	  --host 127.0.0.1 --port 8000
 
 # ── Build ────────────────────────────────────────────────────────────────────
 build:
