@@ -1,11 +1,12 @@
 """tti backend — FastAPI application factory.
 
-Exposes the health-check endpoint and mounts the API router (to be wired in
-later phases).
+Exposes the health-check endpoint and mounts the API router.
 """
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from app.api.chat import router as chat_router
 
 
 def create_app() -> FastAPI:
@@ -24,6 +25,8 @@ def create_app() -> FastAPI:
     async def health() -> dict[str, str]:
         """Health-check endpoint."""
         return {"status": "ok"}
+
+    app.include_router(chat_router)
 
     return app
 
