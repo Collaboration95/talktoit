@@ -25,6 +25,7 @@ export function ChatInput({ onSubmit, isLoading }: ChatInputProps) {
       <textarea
         ref={inputRef}
         rows={2}
+        aria-label="Ask a question about your health data"
         placeholder="Ask about your health data…"
         disabled={isLoading}
         onKeyDown={(e) => {
