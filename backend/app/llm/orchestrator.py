@@ -152,7 +152,7 @@ class ChatOrchestrator:
         messages.append(
             {
                 "role": "assistant",
-                "content": assistant_message.content,
+                "content": assistant_message.content or "",
                 "tool_calls": [
                     {
                         "id": tool_call_id,
