@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.chat import router as chat_router
+from app.api.dashboard import router as dashboard_router
 
 
 def create_app() -> FastAPI:
@@ -27,6 +28,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(chat_router)
+    app.include_router(dashboard_router)
 
     return app
 
