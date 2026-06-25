@@ -38,6 +38,8 @@ def create_app() -> FastAPI:
     # API routes above take precedence; this catch-all handles SPA navigation.
     _dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
     if _dist.exists():
+        # Vite writes hashed assets to dist/assets/ by default (build.assetsDir).
+        # If that Vite config is ever changed this path must be updated too.
         app.mount("/assets", StaticFiles(directory=str(_dist / "assets")), name="assets")
 
         @app.get("/{full_path:path}", include_in_schema=False)

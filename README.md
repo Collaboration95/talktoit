@@ -39,9 +39,11 @@ cp .env.example .env
 # Ingest your Apple Health export (one-time, ~5-15 min for a full export)
 make ingest EXPORT_PATH=/path/to/export.xml
 
-# Run
-make run
-# → http://localhost:8000
+# Run (hot-reload dev mode: backend on :8000, frontend on :5173)
+make dev
+
+# Or: build the frontend and serve everything from one port
+# make run   # → http://localhost:8000
 ```
 
 ## Development
