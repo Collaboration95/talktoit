@@ -35,18 +35,34 @@ export interface CapabilityFlag {
   present: boolean
 }
 
+/** Returns a local-timezone ISO date string (YYYY-MM-DD) offset by `offsetDays` days back. */
+function localISODate(offsetDays = 0): string {
+  const d = new Date()
+  d.setDate(d.getDate() - offsetDays)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+async function checkedFetch(url: string): Promise<Response> {
+  const r = await fetch(url)
+  if (!r.ok) throw new Error(`Dashboard request failed: ${r.status} ${r.statusText}`)
+  return r
+}
+
 export async function fetchSummary(days = 7): Promise<ActivityRingDay[]> {
-  const end = new Date().toISOString().slice(0, 10)
-  const start = new Date(Date.now() - (days - 1) * 86400000).toISOString().slice(0, 10)
-  const r = await fetch(`/api/dashboard/summary?start=${start}&end=${end}`)
+  const end = localISODate(0)
+  const start = localISODate(days - 1)
+  const r = await checkedFetch(`/api/dashboard/summary?start=${start}&end=${end}`)
   const d = (await r.json()) as { days: ActivityRingDay[] }
   return d.days
 }
 
 export async function fetchWorkouts(days = 30): Promise<WorkoutSummary[]> {
-  const end = new Date().toISOString().slice(0, 10)
-  const start = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
-  const r = await fetch(`/api/dashboard/workouts?start=${start}&end=${end}`)
+  const end = localISODate(0)
+  const start = localISODate(days)
+  const r = await checkedFetch(`/api/dashboard/workouts?start=${start}&end=${end}`)
   const d = (await r.json()) as { workouts: WorkoutSummary[] }
   return d.workouts
 }
@@ -56,16 +72,16 @@ export async function fetchTrend(
   days = 30,
   granularity = 'day',
 ): Promise<TrendResponse> {
-  const end = new Date().toISOString().slice(0, 10)
-  const start = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
-  const r = await fetch(
+  const end = localISODate(0)
+  const start = localISODate(days)
+  const r = await checkedFetch(
     `/api/dashboard/${endpoint}?start=${start}&end=${end}&granularity=${granularity}`,
   )
   return r.json() as Promise<TrendResponse>
 }
 
 export async function fetchCapabilities(): Promise<CapabilityFlag[]> {
-  const r = await fetch('/api/dashboard/capabilities')
+  const r = await checkedFetch('/api/dashboard/capabilities')
   const d = (await r.json()) as { capabilities: CapabilityFlag[] }
   return d.capabilities
 }
