@@ -11,7 +11,7 @@ therefore convert local dates to UTC bounds before querying.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Literal
 from zoneinfo import ZoneInfo
 
@@ -202,11 +202,10 @@ def _utc_bounds(start: date, end: date, tz: str = DEFAULT_TZ) -> tuple[datetime,
     """
     zone = ZoneInfo(tz)
     utc_start = datetime(start.year, start.month, start.day, tzinfo=zone).astimezone(UTC)
-    # end is inclusive → upper bound is midnight of the day after end
-    end_next = datetime(end.year, end.month, end.day, tzinfo=zone) + __import__(
-        "datetime"
-    ).timedelta(days=1)
-    utc_end = end_next.astimezone(UTC)
+    # Advance the date first, then construct a new local midnight to avoid DST
+    # arithmetic (adding timedelta to a datetime crosses DST transitions incorrectly).
+    end_next = end + timedelta(days=1)
+    utc_end = datetime(end_next.year, end_next.month, end_next.day, tzinfo=zone).astimezone(UTC)
     return utc_start.replace(tzinfo=None), utc_end.replace(tzinfo=None)
 
 
@@ -333,7 +332,7 @@ def get_top_workouts(
     rows_sorted = sorted(rows, key=_sort_key, reverse=True)[:n]
 
     ranked_rows: list[RankedListRow] = []
-    for rank, row in enumerate(rows_sorted, start=1):
+    for row in rows_sorted:
         (
             _,
             act_type,
@@ -378,7 +377,7 @@ def get_top_workouts(
 
         ranked_rows.append(
             RankedListRow(
-                rank=rank,
+                rank=len(ranked_rows) + 1,
                 label=label,
                 value=primary_val,
                 unit=primary_unit,
