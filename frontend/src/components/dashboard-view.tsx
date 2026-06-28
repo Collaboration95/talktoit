@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { TrendLine } from '@/charts/trend-line'
+import { GaugeRings } from '@/charts/gauge-rings'
+import { WorkoutDetail } from '@/components/workout-detail'
 import type {
   ActivityRingDay,
   CapabilityFlag,
@@ -7,6 +9,8 @@ import type {
   WorkoutSummary,
 } from '@/api/dashboard'
 import { fetchCapabilities, fetchSummary, fetchTrend, fetchWorkouts } from '@/api/dashboard'
+
+type DashboardViewMode = { view: 'list' } | { view: 'detail'; workoutId: number }
 
 interface DashboardState {
   summary: ActivityRingDay[]
@@ -19,59 +23,29 @@ interface DashboardState {
   error: string | null
 }
 
-function fmt(val: number | null, unit = ''): string {
-  if (val === null || val === undefined) return '—'
-  return `${Math.round(val * 10) / 10}${unit ? ' ' + unit : ''}`
-}
-
 function NoData() {
   return <p className="text-sm text-gray-400 py-4">No data</p>
 }
 
 function ActivityRingsPanel({ days }: { days: ActivityRingDay[] }) {
   if (days.length === 0) return <NoData />
+  const latest = days[0]!
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full text-sm">
-        <thead>
-          <tr className="text-left text-gray-500 border-b">
-            <th className="pb-2 pr-4">Date</th>
-            <th className="pb-2 pr-4">Energy (kJ)</th>
-            <th className="pb-2 pr-4">Exercise (min)</th>
-            <th className="pb-2">Stand (hrs)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {days.map((d) => (
-            <tr key={d.date} className="border-b last:border-0">
-              <td className="py-1 pr-4 font-medium">{d.date}</td>
-              <td className="py-1 pr-4">
-                {fmt(d.energy_kj)}
-                {d.energy_goal_kj !== null && (
-                  <span className="text-gray-400"> / {fmt(d.energy_goal_kj)}</span>
-                )}
-              </td>
-              <td className="py-1 pr-4">
-                {fmt(d.exercise_min)}
-                {d.exercise_goal_min !== null && (
-                  <span className="text-gray-400"> / {fmt(d.exercise_goal_min)}</span>
-                )}
-              </td>
-              <td className="py-1">
-                {fmt(d.stand_hours)}
-                {d.stand_goal_hours !== null && (
-                  <span className="text-gray-400"> / {d.stand_goal_hours}</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <GaugeRings
+      energy={{ current: latest.energy_kj, goal: latest.energy_goal_kj }}
+      exercise={{ current: latest.exercise_min, goal: latest.exercise_goal_min }}
+      stand={{ current: latest.stand_hours, goal: latest.stand_goal_hours }}
+    />
   )
 }
 
-function WorkoutsPanel({ workouts }: { workouts: WorkoutSummary[] }) {
+function WorkoutsPanel({
+  workouts,
+  onSelect,
+}: {
+  workouts: WorkoutSummary[]
+  onSelect: (id: number) => void
+}) {
   if (workouts.length === 0) return <NoData />
   return (
     <div className="overflow-x-auto">
@@ -88,17 +62,35 @@ function WorkoutsPanel({ workouts }: { workouts: WorkoutSummary[] }) {
         </thead>
         <tbody>
           {workouts.map((w) => (
-            <tr key={w.id} className="border-b last:border-0">
+            <tr
+              key={w.id}
+              onClick={() => onSelect(w.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onSelect(w.id)
+                }
+              }}
+              tabIndex={0}
+              role="button"
+              className="border-b last:border-0 cursor-pointer hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-inset"
+            >
               <td className="py-1 pr-4 text-gray-500">{w.date.slice(0, 10)}</td>
               <td className="py-1 pr-4 font-medium">{w.activity_type}</td>
-              <td className="py-1 pr-4">{fmt(w.duration_minutes, 'min')}</td>
+              <td className="py-1 pr-4">
+                {w.duration_minutes !== null ? `${w.duration_minutes} min` : '—'}
+              </td>
               <td className="py-1 pr-4">
                 {w.avg_heart_rate !== null ? `${w.avg_heart_rate} bpm` : '—'}
               </td>
               <td className="py-1 pr-4">
-                {w.distance_meters !== null ? fmt(w.distance_meters / 1000, 'km') : '—'}
+                {w.distance_meters !== null
+                  ? `${Math.round((w.distance_meters / 1000) * 10) / 10} km`
+                  : '—'}
               </td>
-              <td className="py-1">{fmt(w.energy_burned_kj, 'kJ')}</td>
+              <td className="py-1">
+                {w.energy_burned_kj !== null ? `${w.energy_burned_kj} kJ` : '—'}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -148,6 +140,16 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
+/** Banner shown when the backend health check fails (R1-12). */
+function BackendDownBanner() {
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+      Cannot connect to the backend. Make sure <code className="font-mono">make dev</code> is
+      running on port 8000.
+    </div>
+  )
+}
+
 export function DashboardView() {
   const [state, setState] = useState<DashboardState>({
     summary: [],
@@ -159,6 +161,20 @@ export function DashboardView() {
     loading: true,
     error: null,
   })
+  const [mode, setMode] = useState<DashboardViewMode>({ view: 'list' })
+  const [backendDown, setBackendDown] = useState(false)
+
+  // Health check on mount (R1-12)
+  useEffect(() => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 3000)
+    fetch('/health', { signal: controller.signal })
+      .then((r) => {
+        if (!r.ok) setBackendDown(true)
+      })
+      .catch(() => setBackendDown(true))
+      .finally(() => clearTimeout(timer))
+  }, [])
 
   useEffect(() => {
     Promise.all([
@@ -206,14 +222,28 @@ export function DashboardView() {
     )
   }
 
+  // Workout detail view (R1-09)
+  if (mode.view === 'detail') {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-6">
+        <WorkoutDetail workoutId={mode.workoutId} onBack={() => setMode({ view: 'list' })} />
+      </div>
+    )
+  }
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 space-y-4">
-      <Section title="Activity Rings (Last 7 Days)">
+      {backendDown ? <BackendDownBanner /> : null}
+
+      <Section title="Activity Rings (Today)">
         <ActivityRingsPanel days={state.summary} />
       </Section>
 
       <Section title="Recent Workouts (Last 30 Days)">
-        <WorkoutsPanel workouts={state.workouts} />
+        <WorkoutsPanel
+          workouts={state.workouts}
+          onSelect={(id) => setMode({ view: 'detail', workoutId: id })}
+        />
       </Section>
 
       <Section title="Daily Steps (Last 30 Days)">

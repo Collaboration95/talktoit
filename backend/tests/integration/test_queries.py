@@ -5,7 +5,7 @@ Uses a real in-memory DuckDB seeded from the synthetic fixture — per ENGINEERI
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date
 from pathlib import Path
 
 import duckdb
@@ -229,3 +229,53 @@ def test_get_fallback_with_text() -> None:
     result = get_fallback("q", text="some answer")
     assert result.text == "some answer"
     assert result.question == "q"
+
+
+# ---------------------------------------------------------------------------
+# gps_route absent-vs-null hardening (R1-03)
+# ---------------------------------------------------------------------------
+
+
+def test_gps_route_absent_when_none(db: duckdb.DuckDBPyConnection) -> None:
+    """When gps_route is None, the serialized JSON must not contain the key.
+
+    The frontend checks ``"gps_route" in data`` to decide whether to render
+    a map. If the key is present-but-null, the frontend would incorrectly
+    think GPS data exists (SPEC §2.1 defines gps_route as genuinely optional).
+    """
+    result = get_last_workout(db, "Running")
+    assert result is not None
+    data_dict = result.model_dump(mode="json", exclude_none=True)
+    assert "gps_route" not in data_dict, (
+        "gps_route must be absent from serialized JSON when None; "
+        "frontend relies on 'gps_route' in data to decide map rendering"
+    )
+
+
+def test_gps_route_present_when_populated(db: duckdb.DuckDBPyConnection) -> None:
+    """When a workout has a GPS route, the key must be present.
+
+    Verifies the positive path: if gps_route is populated, it serializes
+    correctly and the frontend can detect it.
+    """
+    from datetime import datetime
+
+    # Build a WorkoutCardData with a mocked GPS route
+    from app.models.templates import GpsRoute, WorkoutCardData
+
+    workout = WorkoutCardData(
+        activity_type="Running",
+        date=datetime(2026, 6, 5, 7, 0, tzinfo=UTC),
+        duration_minutes=45.5,
+        avg_heart_rate=148,
+        max_heart_rate=178,
+        distance_meters=8500.0,
+        distance_unit="km",
+        energy_burned_kj=2500.0,
+        elevation_ascent_meters=45.0,
+        gps_route=GpsRoute(coordinates=[[103.8198, 1.3521], [103.8204, 1.3532]]),
+    )
+    data_dict = workout.model_dump(mode="json", exclude_none=True)
+    assert "gps_route" in data_dict
+    assert data_dict["gps_route"]["type"] == "LineString"
+    assert len(data_dict["gps_route"]["coordinates"]) == 2

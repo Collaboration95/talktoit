@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { askQuestion, ChatApiError } from '@/api/chat'
 import type { ChatEnvelope } from '@/types/templates'
 import { TemplateDispatch } from '@/components/template-dispatch'
@@ -14,6 +14,19 @@ type ChatState =
 /** Top-level chat page component: input → loading → template result. */
 export function ChatView() {
   const [state, setState] = useState<ChatState>({ status: 'idle' })
+  const [backendDown, setBackendDown] = useState(false)
+
+  // Health check on mount (R1-12): non-blocking, 3s timeout
+  useEffect(() => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 3000)
+    fetch('/health', { signal: controller.signal })
+      .then((r) => {
+        if (!r.ok) setBackendDown(true)
+      })
+      .catch(() => setBackendDown(true))
+      .finally(() => clearTimeout(timer))
+  }, [])
 
   const handleQuestion = useCallback(async (question: string) => {
     setState({ status: 'loading', question })
@@ -37,6 +50,13 @@ export function ChatView() {
         <h1 className="text-3xl font-bold text-gray-900">tti</h1>
         <p className="mt-1 text-gray-500">talk to your health data</p>
       </header>
+
+      {backendDown ? (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          Cannot connect to the backend. Make sure <code className="font-mono">make dev</code> is
+          running on port 8000.
+        </div>
+      ) : null}
 
       <div className="space-y-4">
         <ChatInput onSubmit={handleQuestion} isLoading={isLoading} />

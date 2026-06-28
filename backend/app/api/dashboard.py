@@ -6,7 +6,7 @@ from collections.abc import Generator
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.db.aggregations import (
     DEFAULT_TZ,
@@ -17,13 +17,16 @@ from app.db.aggregations import (
     utc_bounds,
 )
 from app.db.connection import connect
+from app.ingest.gpx import parse_gpx_route
 from app.models.dashboard import (
     ActivityRingDay,
     ActivitySummaryResponse,
     CapabilitiesResponse,
     CapabilityFlag,
+    KeyValuePair,
     TrendPoint,
     TrendResponse,
+    WorkoutDetail,
     WorkoutsResponse,
     WorkoutSummary,
 )
@@ -99,6 +102,54 @@ GROUP BY type
 
 _SQL_CAPABILITIES_WORKOUTS = """
 SELECT COUNT(*) FROM workouts
+"""
+
+_SQL_WORKOUT_DETAIL = """
+SELECT
+    w.id,
+    w.activity_type,
+    w.start_date,
+    w.duration,
+    w.duration_unit,
+    w.source_name,
+    hr.average          AS avg_hr,
+    hr.maximum          AS max_hr,
+    dist.sum            AS distance_m,
+    energy.sum          AS energy_kj,
+    TRY_CAST(elev.value AS DOUBLE) AS elevation_m
+FROM workouts w
+LEFT JOIN workout_statistics hr
+    ON hr.workout_id = w.id
+    AND hr.type = 'HKQuantityTypeIdentifierHeartRate'
+LEFT JOIN (
+    SELECT workout_id, sum
+    FROM workout_statistics
+    WHERE type IN (
+        'HKQuantityTypeIdentifierDistanceWalkingRunning',
+        'HKQuantityTypeIdentifierDistanceCycling',
+        'HKQuantityTypeIdentifierDistanceSwimming'
+    )
+) dist ON dist.workout_id = w.id
+LEFT JOIN workout_statistics energy
+    ON energy.workout_id = w.id
+    AND energy.type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
+LEFT JOIN workout_metadata elev
+    ON elev.workout_id = w.id
+    AND elev.key = 'HKElevationAscended'
+WHERE w.id = ?
+"""
+
+_SQL_WORKOUT_METADATA = """
+SELECT key, value
+FROM workout_metadata
+WHERE workout_id = ?
+"""
+
+_SQL_WORKOUT_ROUTE_PATH = """
+SELECT file_path
+FROM workout_routes
+WHERE workout_id = ?
+LIMIT 1
 """
 
 # ---------------------------------------------------------------------------
@@ -337,4 +388,65 @@ def _build_trend(
         metric_unit=unit,
         granularity=granularity,
         series=series,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Workout detail (R1-01)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/workouts/{workout_id}", response_model=WorkoutDetail)
+def get_workout_detail(
+    workout_id: int,
+    conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
+) -> WorkoutDetail:
+    """Return full detail for a single workout, including GPS and metadata."""
+    row = conn.execute(_SQL_WORKOUT_DETAIL, [workout_id]).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Workout not found")
+
+    (
+        wid,
+        activity_type,
+        start_date_utc,
+        duration,
+        duration_unit,
+        source_name,
+        avg_hr_raw,
+        max_hr_raw,
+        distance_m,
+        energy_kj,
+        elevation_m,
+    ) = row
+
+    local_dt = to_local_dt(start_date_utc, DEFAULT_TZ)
+    duration_minutes = _duration_minutes(duration, duration_unit)
+    avg_heart_rate = round(avg_hr_raw) if avg_hr_raw is not None else None
+    max_heart_rate = round(max_hr_raw) if max_hr_raw is not None else None
+
+    # Fetch metadata
+    meta_rows = conn.execute(_SQL_WORKOUT_METADATA, [workout_id]).fetchall()
+    metadata = [KeyValuePair(key=m[0], value=m[1]) for m in meta_rows]
+
+    # Fetch GPS route if it exists
+    gps_route = None
+    route_path_row = conn.execute(_SQL_WORKOUT_ROUTE_PATH, [workout_id]).fetchone()
+    if route_path_row is not None and route_path_row[0] is not None:
+        gps_route = parse_gpx_route(route_path_row[0])
+
+    return WorkoutDetail(
+        id=wid,
+        activity_type=activity_type,
+        date=local_dt.isoformat(),
+        duration_minutes=duration_minutes,
+        avg_heart_rate=avg_heart_rate,
+        max_heart_rate=max_heart_rate,
+        distance_meters=distance_m,
+        distance_unit="km",
+        energy_burned_kj=energy_kj,
+        elevation_ascent_meters=elevation_m,
+        source_name=source_name,
+        gps_route=gps_route,
+        metadata=metadata,
     )

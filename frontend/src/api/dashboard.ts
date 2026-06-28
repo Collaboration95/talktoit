@@ -35,6 +35,33 @@ export interface CapabilityFlag {
   present: boolean
 }
 
+// R1-01: Workout detail types
+export interface GpsRoute {
+  type: 'LineString'
+  coordinates: [number, number][]
+}
+
+export interface KeyValuePair {
+  key: string
+  value: string
+}
+
+export interface WorkoutDetail {
+  id: number
+  activity_type: string
+  date: string
+  duration_minutes: number | null
+  avg_heart_rate: number | null
+  max_heart_rate: number | null
+  distance_meters: number | null
+  distance_unit: 'km' | 'm'
+  energy_burned_kj: number | null
+  elevation_ascent_meters: number | null
+  source_name: string
+  gps_route: GpsRoute | null
+  metadata: KeyValuePair[]
+}
+
 /** Returns a local-timezone ISO date string (YYYY-MM-DD) offset by `offsetDays` days back. */
 function localISODate(offsetDays = 0): string {
   const d = new Date()
@@ -84,4 +111,10 @@ export async function fetchCapabilities(): Promise<CapabilityFlag[]> {
   const r = await checkedFetch('/api/dashboard/capabilities')
   const d = (await r.json()) as { capabilities: CapabilityFlag[] }
   return d.capabilities
+}
+
+/** Fetch full detail for a single workout (R1-01). */
+export async function fetchWorkoutDetail(id: number): Promise<WorkoutDetail> {
+  const r = await checkedFetch(`/api/dashboard/workouts/${id}`)
+  return r.json() as Promise<WorkoutDetail>
 }

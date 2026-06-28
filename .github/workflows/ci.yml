@@ -29,7 +29,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - run: uv sync --directory backend --dev
+      # Global coverage gate (--cov-fail-under=80 enforced by pytest-cov in pyproject.toml)
       - run: uv run --directory backend pytest
+      # Per-module coverage gates (R1-10): ingest ≥90%, llm ≥70%
+      - run: uv run --directory backend coverage report --include="app/ingest/*" --fail-under=90
+      - run: uv run --directory backend coverage report --include="app/llm/*" --fail-under=70
       - uses: codecov/codecov-action@v5
         with:
           files: ./backend/coverage.xml

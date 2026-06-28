@@ -132,9 +132,9 @@ indent-style = "space"
 
 ### 2.3 Type Checking
 
-**Tool: [Pyright](https://github.com/microsoft/pyright)** — **strict mode, with the two
-unknown-type inference rules relaxed** (see note below). Not full strict; honestly, "strict
-minus unknown-type inference."
+**Tool: [Pyright](https://github.com/microsoft/pyright)** — **strict mode, with five
+rules relaxed** (see note below). Not full strict; honestly, "strict minus unknown-type
+inference and unused-function checks."
 
 Reasons over mypy: faster incremental checks, better VSCode/Pylance integration, stricter
 generics inference, actively developed by Microsoft.
@@ -149,16 +149,25 @@ generics inference, actively developed by Microsoft.
   "reportMissingImports": true,
   "reportMissingTypeStubs": false,
   "reportUnknownMemberType": false,
-  "reportUnknownVariableType": false
+  "reportUnknownVariableType": false,
+  "reportUnknownArgumentType": false,
+  "reportUnusedFunction": false,
+  "reportInvalidTypeForm": false
 }
 ```
 
-`reportUnknownMemberType` and `reportUnknownVariableType` are relaxed because third-party
-libraries (DuckDB, lxml) ship incomplete stubs — we fix progressively, not upfront. These
-are two of the most load-bearing strict rules, so the result is *not* full strict; the
-config is honestly labelled "strict minus unknown-type inference." Revisit and re-enable
-both once `types-`/stub packages are added for the offending libraries (tracked as a tradeoff
-in §9, Open Questions).
+The following strict-mode rules are relaxed:
+- `reportUnknownMemberType`, `reportUnknownVariableType`, `reportUnknownArgumentType` —
+  DuckDB and lxml ship incomplete stubs, making these rules produce unavoidable false
+  positives on third-party objects.
+- `reportUnusedFunction` — test fixtures and FastAPI route dependencies (generator
+  functions consumed by `Depends`) trigger false positives since Pyright cannot see
+  pytest collection or FastAPI's dependency injection.
+- `reportInvalidTypeForm` — some dynamic patterns (e.g., `dict.setdefault` usage,
+  `unittest.mock.MagicMock`) produce spurious errors under this rule.
+
+Revisit and re-enable these gradually as `types-`/stub packages are added for the
+offending libraries. Tracked in §9, item 10.
 
 Run: `uv run --directory backend pyright`
 
@@ -235,6 +244,11 @@ dependencies.
 
 At scaffold time, commit `frontend/.nvmrc` containing `20` **and** set
 `"engines": { "node": "^20" }` in `frontend/package.json` (CI already pins `node-version: 20`).
+
+**`allowScripts`:** `frontend/package.json` whitelists three packages whose postinstall
+scripts are required: **esbuild** and **fsevents** (native binary compilation) and **msw**
+(service-worker download). This prevents `npm install` from prompting for script approval
+and documents which packages are trusted to run scripts during install.
 
 #### `frontend/package.json` scripts (canonical command names)
 
@@ -492,7 +506,7 @@ leave cwd at the repo root, breaking every relative path); frontend targets use
 
 # ── Bootstrap ────────────────────────────────────────────────────────────────
 install:
-	uv sync --directory backend
+	uv sync --directory backend --dev
 	npm --prefix frontend install
 
 # ── Development ──────────────────────────────────────────────────────────────
@@ -973,13 +987,13 @@ These are not settled. Flag any that should be decided differently:
    `package.json` with workspaces. The current approach is simpler; avoid workspaces unless
    there's a specific reason (shared type package, etc.).
 
-10. **Pyright unknown-type rules relaxed (tradeoff to revisit):** `reportUnknownMemberType` and
-    `reportUnknownVariableType` are off (§2.3) because DuckDB/lxml ship incomplete stubs, so the
-    config is "strict minus unknown-type inference," not full strict. Re-enable both once
-    `types-`/stub packages exist for those libraries — at which point the "strict" label
-    becomes literally true.
-
----
+10. **Pyright unknown-type rules relaxed (tradeoff to revisit):** `reportUnknownMemberType`,
+    `reportUnknownVariableType`, `reportUnknownArgumentType`, `reportUnusedFunction`,
+    and `reportInvalidTypeForm` are off (§2.3) because DuckDB/lxml ship incomplete stubs
+    and because some dynamic patterns (e.g., `setdefault` usage, `unittest.mock.MagicMock`)
+    produce unavoidable false positives. The config is "strict minus unknown-type inference
+    and unused-function checks." Re-enable progressively as `types-`/stub packages are added
+    for offending libraries.
 
 ## 10. First-Time Setup (README target)
 

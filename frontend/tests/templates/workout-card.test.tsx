@@ -44,4 +44,17 @@ describe('WorkoutCard', () => {
     render(<WorkoutCard data={{ ...validData, distance_meters: null }} />)
     expect(screen.getByText('Running')).toBeInTheDocument()
   })
+
+  // R1-03: gps_route absent-vs-null hardening
+  it('does not render GPS when gps_route key is absent', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { gps_route: _, ...dataWithoutGps } = { ...validData, gps_route: undefined }
+    render(<WorkoutCard data={dataWithoutGps as WorkoutCardData} />)
+    expect(screen.queryByText('GPS route available')).not.toBeInTheDocument()
+  })
+
+  it('does not render GPS when gps_route is null (defensive)', () => {
+    render(<WorkoutCard data={{ ...validData, gps_route: null }} />)
+    expect(screen.queryByText('GPS route available')).not.toBeInTheDocument()
+  })
 })
