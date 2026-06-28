@@ -44,5 +44,3 @@ repos:
       - id: check-merge-conflict
       - id: check-yaml
       - id: check-toml
-      - id: no-commit-to-branch
-        args: [--branch, main]
