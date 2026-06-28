@@ -33,7 +33,7 @@ def parse_gpx_route(file_path: str | Path) -> GpsRoute | None:
         return None
 
     try:
-        tree = etree.parse(str(path))  # noqa: S320 — GPX files are user-owned local files, not untrusted input
+        tree = etree.parse(str(path))
         root = tree.getroot()
     except Exception:
         return None

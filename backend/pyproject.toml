@@ -50,6 +50,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["ANN", "D", "S101"]
+# GPX files are user-owned local files, not untrusted input.
+"app/ingest/gpx.py" = ["S320"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -57,6 +59,10 @@ convention = "google"
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.coverage.run]
+# CLI entry points are exercised via make ingest, not unit tests.
+omit = ["app/ingest/run.py"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

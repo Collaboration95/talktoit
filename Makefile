@@ -5,10 +5,10 @@
 # `npm --prefix frontend run <script>`.
 
 .PHONY: install dev dev-backend dev-frontend \
-        test test-backend test-frontend test-watch \
+        test test-bk test-fe test-all test-backend test-frontend test-watch \
         typecheck typecheck-backend typecheck-frontend \
         lint lint-backend lint-frontend format format-backend format-frontend \
-        coverage ingest clean build run
+        coverage ingest clean build run check check-full
 
 # ── Bootstrap ────────────────────────────────────────────────────────────────
 install:
@@ -33,7 +33,10 @@ ingest:
 	uv run --directory backend python -m app.ingest.run $(EXPORT_PATH)
 
 # ── Tests ────────────────────────────────────────────────────────────────────
-test: test-backend test-frontend
+test: test-all   # alias
+test-all: test-backend test-frontend
+test-bk: test-backend
+test-fe: test-frontend
 
 test-backend:
 	uv run --directory backend pytest
@@ -87,6 +90,29 @@ run:
 # ── Build ────────────────────────────────────────────────────────────────────
 build:
 	npm --prefix frontend run build
+
+# ── CI checks (run before pushing) ──────────────────────────────────────────
+# Fast path — everything except tests (same as CI lint/typecheck jobs)
+check:
+	@echo "=== backend: lint + typecheck ==="
+	uv run --directory backend ruff format --check app tests
+	uv run --directory backend ruff check app tests
+	uv run --directory backend pyright
+	@echo "=== frontend: lint + typecheck + format ==="
+	npm --prefix frontend run lint
+	npm --prefix frontend run typecheck
+	npm --prefix frontend run format:check
+	@echo "=== all checks passed ==="
+
+# Full CI simulation — everything including tests and coverage
+check-full: check
+	@echo "=== backend: tests + per-module coverage ==="
+	uv run --directory backend pytest
+	uv run --directory backend coverage report --include="app/ingest/*" --fail-under=90
+	uv run --directory backend coverage report --include="app/llm/*" --fail-under=70
+	@echo "=== frontend: tests + coverage ==="
+	npm --prefix frontend run test -- --run --coverage
+	@echo "=== all checks passed (full CI) ==="
 
 # ── Clean ────────────────────────────────────────────────────────────────────
 clean:
