@@ -19,10 +19,11 @@ from __future__ import annotations
 import logging
 import re
 import time
-from datetime import UTC, datetime
+from datetime import UTC
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import ciso8601
 from lxml import etree  # type: ignore[import-untyped]
 
 from app.db.schema import SQL_CREATE_TABLES
@@ -33,9 +34,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Timestamps in Apple Health exports look like: "2026-06-05 07:00:00 +0800"
-TS_FORMAT = "%Y-%m-%d %H:%M:%S %z"
-
-# Map of known timezone offset string → UTC offset (seconds)
 # We normalise everything to UTC by parsing with the offset already present.
 # DuckDB stores TIMESTAMP without timezone; we store the UTC-normalised value.
 # Display-layer code converts back to the user's timezone as needed.
@@ -53,7 +51,20 @@ def _parse_timestamp(raw: str | None) -> str | None:
     """
     if not raw:
         return None
-    dt = datetime.strptime(raw.strip(), TS_FORMAT)
+    # Apple Health format: "2026-06-05 07:00:00 +0800"
+    # Split into datetime and offset parts for ciso8601 compatibility.
+    # ciso8601 is ~10x faster than datetime.strptime for ISO-8601 variants.
+    parts = raw.strip().rsplit(" ", 1)
+    if len(parts) != 2:
+        return None
+    dt_str, offset_str = parts
+    # Convert "2026-06-05 07:00:00" → "2026-06-05T07:00:00"
+    dt_str = dt_str.replace(" ", "T", 1)
+    # Convert "+0800" → "+08:00"
+    if len(offset_str) == 5:
+        offset_str = f"{offset_str[:3]}:{offset_str[3:]}"
+    iso_str = f"{dt_str}{offset_str}"
+    dt = ciso8601.parse_datetime(iso_str)
     dt_utc = dt.astimezone(UTC)
     return dt_utc.isoformat()
 
