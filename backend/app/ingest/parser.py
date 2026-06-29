@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -146,6 +147,10 @@ def ingest(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> IngestResult:
     record_id = 0
     workout_id = 0
 
+    overall_start = time.perf_counter()
+    file_size_mb = xml_path.stat().st_size / (1024 * 1024)
+    logger.info("File size: %.0f MB", file_size_mb)
+
     # ------------------------------------------------------------------
     # Pass 1: Records, record_metadata, hrv_beats
     # ------------------------------------------------------------------
@@ -178,6 +183,7 @@ def ingest(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> IngestResult:
             hrv_batch.clear()
 
     logger.info("Pass 1/3: Records ...")
+    pass1_start = time.perf_counter()
     ctx = etree.iterparse(
         str(xml_path),
         events=("end",),
@@ -236,14 +242,25 @@ def ingest(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> IngestResult:
 
         if record_id % FLUSH_EVERY == 0:
             _flush_records()
-            logger.info("  ... %d records processed", record_id)
+            elapsed = time.perf_counter() - pass1_start
+            rec_per_sec = record_id / elapsed if elapsed > 0 else 0
+            logger.info(
+                "  records: %d  |  %d rec/s  |  elapsed %.1fs",
+                record_id,
+                int(rec_per_sec),
+                elapsed,
+            )
 
     _flush_records()
+    pass1_elapsed = time.perf_counter() - pass1_start
+    pass1_rec_per_sec = result.records / pass1_elapsed if pass1_elapsed > 0 else 0
     logger.info(
-        "  Pass 1 done: %d records, %d metadata, %d hrv beats",
+        "  Pass 1 done: %d records, %d metadata, %d hrv beats  |  %.1fs  |  %d rec/s",
         result.records,
         result.record_metadata,
         result.hrv_beats,
+        pass1_elapsed,
+        int(pass1_rec_per_sec),
     )
 
     # ------------------------------------------------------------------
@@ -302,6 +319,7 @@ def ingest(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> IngestResult:
             wmeta_batch.clear()
 
     logger.info("Pass 2/3: Workouts ...")
+    pass2_start = time.perf_counter()
     ctx = etree.iterparse(
         str(xml_path),
         events=("end",),
@@ -403,16 +421,28 @@ def ingest(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> IngestResult:
 
         if workout_id % 500 == 0:
             _flush_workouts()
-            logger.info("  ... %d workouts processed", workout_id)
+            elapsed = time.perf_counter() - pass2_start
+            wkt_per_sec = workout_id / elapsed if elapsed > 0 else 0
+            logger.info(
+                "  workouts: %d  |  %d wkt/s  |  elapsed %.1fs",
+                workout_id,
+                int(wkt_per_sec),
+                elapsed,
+            )
 
     _flush_workouts()
+    pass2_elapsed = time.perf_counter() - pass2_start
+    pass2_wkt_per_sec = result.workouts / pass2_elapsed if pass2_elapsed > 0 else 0
     logger.info(
-        "  Pass 2 done: %d workouts, %d events, %d stats, %d routes, %d metadata",
+        "  Pass 2 done: %d workouts, %d events, %d stats, %d routes,"
+        " %d metadata  |  %.1fs  |  %d wkt/s",
         result.workouts,
         result.workout_events,
         result.workout_statistics,
         result.workout_routes,
         result.workout_metadata,
+        pass2_elapsed,
+        int(pass2_wkt_per_sec),
     )
 
     # ------------------------------------------------------------------
@@ -421,13 +451,16 @@ def ingest(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> IngestResult:
     summary_batch: list[tuple[str, float, float, str, float, float, float, float, int, int]] = []
 
     logger.info("Pass 3/3: ActivitySummaries ...")
+    pass3_start = time.perf_counter()
     ctx = etree.iterparse(
         str(xml_path),
         events=("end",),
         tag="ActivitySummary",
         resolve_entities=False,
     )
+    summ_count = 0
     for _event, elem in ctx:
+        summ_count += 1
         summary_batch.append(
             (
                 elem.get("dateComponents", ""),
@@ -448,12 +481,55 @@ def ingest(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> IngestResult:
         while elem.getprevious() is not None:
             del elem.getparent()[0]
 
+        if summ_count % 100 == 0:
+            elapsed = time.perf_counter() - pass3_start
+            summ_per_sec = summ_count / elapsed if elapsed > 0 else 0
+            logger.info(
+                "  summaries: %d  |  %d summ/s  |  elapsed %.1fs",
+                summ_count,
+                int(summ_per_sec),
+                elapsed,
+            )
+
     if summary_batch:
         db.executemany(
             "INSERT INTO activity_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             summary_batch,
         )
-    logger.info("  Pass 3 done: %d activity summaries", result.activity_summaries)
+    pass3_elapsed = time.perf_counter() - pass3_start
+    pass3_asp = result.activity_summaries / pass3_elapsed if pass3_elapsed > 0 else 0
+    logger.info(
+        "  Pass 3 done: %d activity summaries  |  %.1fs  |  %d summ/s",
+        result.activity_summaries,
+        pass3_elapsed,
+        int(pass3_asp),
+    )
 
-    logger.info("Ingestion complete.\n%s", result.summary())
+    total_elapsed = time.perf_counter() - overall_start
+    total_rows = (
+        result.records
+        + result.record_metadata
+        + result.hrv_beats
+        + result.workouts
+        + result.workout_events
+        + result.workout_statistics
+        + result.workout_routes
+        + result.workout_metadata
+        + result.activity_summaries
+    )
+    overall_rows_per_sec = total_rows / total_elapsed if total_elapsed > 0 else 0
+    mb_per_sec = file_size_mb / total_elapsed if total_elapsed > 0 else 0
+    logger.info(
+        "Ingestion complete in %.1f seconds.\n"
+        "  File size:          %.0f MB\n"
+        "  Total rows written: %d\n"
+        "  Throughput:         %d rows/s,  %.1f MB/s\n"
+        "%s",
+        total_elapsed,
+        file_size_mb,
+        total_rows,
+        int(overall_rows_per_sec),
+        mb_per_sec,
+        result.summary(),
+    )
     return result
