@@ -80,6 +80,11 @@ def _parse_int(raw: str | None) -> int | None:
     return int(raw)
 
 
+# Hoist regex compilation to module scope to avoid repeated recompilation
+# across millions of iterations (CPython's LRU cache can be evicted).
+_DEVICE_RE = re.compile(r"name:([^,>]+)")
+
+
 def _extract_device(raw: str | None) -> str | None:
     """Extract a human-readable device name from the Apple Health device blob.
 
@@ -89,7 +94,7 @@ def _extract_device(raw: str | None) -> str | None:
     """
     if not raw:
         return None
-    match = re.search(r"name:([^,>]+)", raw)
+    match = _DEVICE_RE.search(raw)
     return match.group(1).strip() if match else raw
 
 
@@ -150,6 +155,10 @@ def ingest(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> IngestResult:
     overall_start = time.perf_counter()
     file_size_mb = xml_path.stat().st_size / (1024 * 1024)
     logger.info("File size: %.0f MB", file_size_mb)
+
+    # Wrap entire ingestion in a single transaction to avoid per-batch fsync.
+    # Schema is recreated idempotently, so a mid-ingestion crash leaves the DB empty.
+    db.execute("BEGIN")
 
     # ------------------------------------------------------------------
     # Pass 1: Records, record_metadata, hrv_beats
@@ -504,6 +513,9 @@ def ingest(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> IngestResult:
         pass3_elapsed,
         int(pass3_asp),
     )
+
+    # Commit all inserted rows in a single transaction.
+    db.execute("COMMIT")
 
     total_elapsed = time.perf_counter() - overall_start
     total_rows = (
