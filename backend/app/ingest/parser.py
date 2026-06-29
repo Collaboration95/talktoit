@@ -1,27 +1,29 @@
 """Streaming Apple Health export XML → DuckDB ingestion.
 
-Uses ``lxml.etree.iterparse`` for memory-efficient parsing. Runs separate passes
-for Records, Workouts, and ActivitySummaries so each pass can clear elements
-immediately after processing.
+Uses ``lxml.etree.iterparse`` for memory-efficient, single-pass parsing.
+All element types (Record, Workout, ActivitySummary) are processed in one
+file scan, dispatching on the element tag.
 
 Memory: Peak RSS for the 597 MB test export (personal-assets/test-data/export_last6mo.xml)
-is bounded at roughly 350-400 MB on macOS, well under the file size - the iterparse
-+ elem.clear() + parent-removal strategy prevents a full DOM load. Verified 2026-06-27.
+is bounded at roughly 350-400 MB on macOS, well under the file size — the iterparse
++ elem.clear() strategy prevents a full DOM load. Verified 2026-06-27.
 
 Timezone: all timestamps from the export are in the timezone declared by the
 export's ``+0800`` offset. We parse with that offset and store as DuckDB
 TIMESTAMP (which is timezone-naive but represents UTC internally — callers must
-be aware). See the ``normalize_timestamp`` helper for details.
+be aware). See the ``_parse_timestamp`` helper for details.
 """
 
 from __future__ import annotations
 
 import logging
 import re
-from datetime import UTC, datetime
+import time
+from datetime import UTC
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import ciso8601
 from lxml import etree  # type: ignore[import-untyped]
 
 from app.db.schema import SQL_CREATE_TABLES
@@ -32,9 +34,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Timestamps in Apple Health exports look like: "2026-06-05 07:00:00 +0800"
-TS_FORMAT = "%Y-%m-%d %H:%M:%S %z"
-
-# Map of known timezone offset string → UTC offset (seconds)
 # We normalise everything to UTC by parsing with the offset already present.
 # DuckDB stores TIMESTAMP without timezone; we store the UTC-normalised value.
 # Display-layer code converts back to the user's timezone as needed.
@@ -52,7 +51,20 @@ def _parse_timestamp(raw: str | None) -> str | None:
     """
     if not raw:
         return None
-    dt = datetime.strptime(raw.strip(), TS_FORMAT)
+    # Apple Health format: "2026-06-05 07:00:00 +0800"
+    # Split into datetime and offset parts for ciso8601 compatibility.
+    # ciso8601 is ~10x faster than datetime.strptime for ISO-8601 variants.
+    parts = raw.strip().rsplit(" ", 1)
+    if len(parts) != 2:
+        return None
+    dt_str, offset_str = parts
+    # Convert "2026-06-05 07:00:00" → "2026-06-05T07:00:00"
+    dt_str = dt_str.replace(" ", "T", 1)
+    # Convert "+0800" → "+08:00"
+    if len(offset_str) == 5:
+        offset_str = f"{offset_str[:3]}:{offset_str[3:]}"
+    iso_str = f"{dt_str}{offset_str}"
+    dt = ciso8601.parse_datetime(iso_str)
     dt_utc = dt.astimezone(UTC)
     return dt_utc.isoformat()
 
@@ -79,6 +91,11 @@ def _parse_int(raw: str | None) -> int | None:
     return int(raw)
 
 
+# Hoist regex compilation to module scope to avoid repeated recompilation
+# across millions of iterations (CPython's LRU cache can be evicted).
+_DEVICE_RE = re.compile(r"name:([^,>]+)")
+
+
 def _extract_device(raw: str | None) -> str | None:
     """Extract a human-readable device name from the Apple Health device blob.
 
@@ -88,7 +105,7 @@ def _extract_device(raw: str | None) -> str | None:
     """
     if not raw:
         return None
-    match = re.search(r"name:([^,>]+)", raw)
+    match = _DEVICE_RE.search(raw)
     return match.group(1).strip() if match else raw
 
 
@@ -146,15 +163,49 @@ def ingest(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> IngestResult:
     record_id = 0
     workout_id = 0
 
+    overall_start = time.perf_counter()
+    file_size_mb = xml_path.stat().st_size / (1024 * 1024)
+    logger.info("File size: %.0f MB", file_size_mb)
+
+    # Wrap entire ingestion in a single transaction to avoid per-batch fsync.
+    # Schema is recreated idempotently, so a mid-ingestion crash leaves the DB empty.
+    db.execute("BEGIN")
+
     # ------------------------------------------------------------------
-    # Pass 1: Records, record_metadata, hrv_beats
+    # Single-pass ingestion: all element types in one iterparse loop
     # ------------------------------------------------------------------
+
+    # --- Batch lists (declared up front for all element types) ---
+    FLUSH_EVERY = 10_000
+
     record_batch: list[
         tuple[int, str, str, str | None, str | None, str | None, str | None, str, str, float | None]
     ] = []
     meta_batch: list[tuple[int, str, str]] = []
     hrv_batch: list[tuple[int, int, float]] = []
-    FLUSH_EVERY = 10_000
+
+    workout_batch: list[
+        tuple[int, str, float | None, str | None, str, str | None, str | None, str | None, str, str]
+    ] = []
+    event_batch: list[tuple[int, str, str | None, float | None, str | None]] = []
+    _StatsT = tuple[
+        int,
+        str,
+        str | None,
+        str | None,
+        float | None,
+        float | None,
+        float | None,
+        float | None,
+        str | None,
+    ]
+    stats_batch: list[_StatsT] = []
+    route_batch: list[tuple[int, str | None, str | None, str | None, str | None, str | None]] = []
+    wmeta_batch: list[tuple[int, str, str]] = []
+
+    summary_batch: list[tuple[str, float, float, str, float, float, float, float, int, int]] = []
+
+    # --- Flush helpers ---
 
     def _flush_records() -> None:
         nonlocal record_batch, meta_batch, hrv_batch
@@ -176,97 +227,6 @@ def ingest(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> IngestResult:
                 hrv_batch,
             )
             hrv_batch.clear()
-
-    logger.info("Pass 1/3: Records ...")
-    ctx = etree.iterparse(
-        str(xml_path),
-        events=("end",),
-        tag="Record",
-        resolve_entities=False,
-    )
-    for _event, elem in ctx:
-        record_id += 1
-        rec_type = elem.get("type", "")
-        source_name = elem.get("sourceName", "")
-        source_version = elem.get("sourceVersion") or None
-        device = _extract_device(elem.get("device"))
-        unit = elem.get("unit") or None
-        creation_date = _parse_timestamp(elem.get("creationDate"))
-        start_date = _parse_timestamp(elem.get("startDate"))
-        end_date = _parse_timestamp(elem.get("endDate"))
-        value = _parse_float(elem.get("value"))
-
-        record_batch.append(
-            (
-                record_id,
-                rec_type,
-                source_name,
-                source_version,
-                device,
-                unit,
-                creation_date,
-                start_date or "",
-                end_date or "",
-                value,
-            )
-        )
-        result.records += 1
-
-        # MetadataEntry children
-        for meta in elem.iterchildren("MetadataEntry"):
-            key = meta.get("key", "")
-            val = meta.get("value", "")
-            meta_batch.append((record_id, key, val))
-            result.record_metadata += 1
-
-        # HRV beats
-        hrv_list = elem.find("HeartRateVariabilityMetadataList")
-        if hrv_list is not None:
-            for beat in hrv_list.iterchildren("InstantaneousBeatsPerMinute"):
-                bpm = _parse_int(beat.get("bpm"))
-                time_off = _parse_float(beat.get("time"))
-                if bpm is not None and time_off is not None:
-                    hrv_batch.append((record_id, bpm, time_off))
-                    result.hrv_beats += 1
-
-        # Clear to release memory
-        elem.clear()
-        while elem.getprevious() is not None:
-            del elem.getparent()[0]
-
-        if record_id % FLUSH_EVERY == 0:
-            _flush_records()
-            logger.info("  ... %d records processed", record_id)
-
-    _flush_records()
-    logger.info(
-        "  Pass 1 done: %d records, %d metadata, %d hrv beats",
-        result.records,
-        result.record_metadata,
-        result.hrv_beats,
-    )
-
-    # ------------------------------------------------------------------
-    # Pass 2: Workouts + children (events, statistics, routes, metadata)
-    # ------------------------------------------------------------------
-    workout_batch: list[
-        tuple[int, str, float | None, str | None, str, str | None, str | None, str | None, str, str]
-    ] = []
-    event_batch: list[tuple[int, str, str | None, float | None, str | None]] = []
-    _StatsT = tuple[
-        int,
-        str,
-        str | None,
-        str | None,
-        float | None,
-        float | None,
-        float | None,
-        float | None,
-        str | None,
-    ]
-    stats_batch: list[_StatsT] = []
-    route_batch: list[tuple[int, str | None, str | None, str | None, str | None, str | None]] = []
-    wmeta_batch: list[tuple[int, str, str]] = []
 
     def _flush_workouts() -> None:
         nonlocal workout_batch, event_batch, stats_batch, route_batch, wmeta_batch
@@ -301,159 +261,271 @@ def ingest(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> IngestResult:
             )
             wmeta_batch.clear()
 
-    logger.info("Pass 2/3: Workouts ...")
+    def _flush_summaries() -> None:
+        nonlocal summary_batch
+        if summary_batch:
+            db.executemany(
+                "INSERT INTO activity_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                summary_batch,
+            )
+            summary_batch.clear()
+
+    # --- Single iterparse pass ---
+    logger.info("Ingesting all elements in single pass ...")
+    pass_start = time.perf_counter()
+    summ_count = 0
+
     ctx = etree.iterparse(
         str(xml_path),
         events=("end",),
-        tag="Workout",
+        tag=("Record", "Workout", "ActivitySummary"),
         resolve_entities=False,
     )
     for _event, elem in ctx:
-        workout_id += 1
-        activity_type = elem.get("workoutActivityType", "")
-        duration = _parse_float(elem.get("duration"))
-        duration_unit = elem.get("durationUnit") or None
-        source_name = elem.get("sourceName", "")
-        source_version = elem.get("sourceVersion") or None
-        device = _extract_device(elem.get("device"))
-        creation_date = _parse_timestamp(elem.get("creationDate"))
-        start_date = _parse_timestamp(elem.get("startDate"))
-        end_date = _parse_timestamp(elem.get("endDate"))
+        tag = elem.tag
 
-        workout_batch.append(
-            (
-                workout_id,
-                activity_type,
-                duration,
-                duration_unit,
-                source_name,
-                source_version,
-                device,
-                creation_date,
-                start_date or "",
-                end_date or "",
+        if tag == "Record":
+            record_id += 1
+            rec_type = elem.get("type", "")
+            source_name = elem.get("sourceName", "")
+            source_version = elem.get("sourceVersion") or None
+            device = _extract_device(elem.get("device"))
+            unit = elem.get("unit") or None
+            creation_date = _parse_timestamp(elem.get("creationDate"))
+            start_date = _parse_timestamp(elem.get("startDate"))
+            end_date = _parse_timestamp(elem.get("endDate"))
+            value = _parse_float(elem.get("value"))
+
+            record_batch.append(
+                (
+                    record_id,
+                    rec_type,
+                    source_name,
+                    source_version,
+                    device,
+                    unit,
+                    creation_date,
+                    start_date or "",
+                    end_date or "",
+                    value,
+                )
             )
-        )
-        result.workouts += 1
+            result.records += 1
 
-        # Children
-        for child in elem:
-            tag = etree.QName(child).localname if hasattr(child, "tag") else child.tag
+            # MetadataEntry children
+            for meta in elem.iterchildren("MetadataEntry"):
+                key = meta.get("key", "")
+                val = meta.get("value", "")
+                meta_batch.append((record_id, key, val))
+                result.record_metadata += 1
 
-            if tag == "WorkoutEvent":
-                event_batch.append(
-                    (
-                        workout_id,
-                        child.get("type", ""),
-                        _parse_timestamp(child.get("date")),
-                        _parse_float(child.get("duration")),
-                        child.get("durationUnit") or None,
-                    )
+            # HRV beats
+            hrv_list = elem.find("HeartRateVariabilityMetadataList")
+            if hrv_list is not None:
+                for beat in hrv_list.iterchildren("InstantaneousBeatsPerMinute"):
+                    bpm = _parse_int(beat.get("bpm"))
+                    time_off = _parse_float(beat.get("time"))
+                    if bpm is not None and time_off is not None:
+                        hrv_batch.append((record_id, bpm, time_off))
+                        result.hrv_beats += 1
+
+            if record_id % FLUSH_EVERY == 0:
+                _flush_records()
+                elapsed = time.perf_counter() - pass_start
+                rec_per_sec = record_id / elapsed if elapsed > 0 else 0
+                logger.info(
+                    "  records: %d  |  %d rec/s  |  elapsed %.1fs",
+                    record_id,
+                    int(rec_per_sec),
+                    elapsed,
                 )
-                result.workout_events += 1
 
-            elif tag == "WorkoutStatistics":
-                stats_batch.append(
-                    (
-                        workout_id,
-                        child.get("type", ""),
-                        _parse_timestamp(child.get("startDate")),
-                        _parse_timestamp(child.get("endDate")),
-                        _parse_float(child.get("average")),
-                        _parse_float(child.get("minimum")),
-                        _parse_float(child.get("maximum")),
-                        _parse_float(child.get("sum")),
-                        child.get("unit") or None,
-                    )
+        elif tag == "Workout":
+            workout_id += 1
+            activity_type = elem.get("workoutActivityType", "")
+            duration = _parse_float(elem.get("duration"))
+            duration_unit = elem.get("durationUnit") or None
+            source_name = elem.get("sourceName", "")
+            source_version = elem.get("sourceVersion") or None
+            device = _extract_device(elem.get("device"))
+            creation_date = _parse_timestamp(elem.get("creationDate"))
+            start_date = _parse_timestamp(elem.get("startDate"))
+            end_date = _parse_timestamp(elem.get("endDate"))
+
+            workout_batch.append(
+                (
+                    workout_id,
+                    activity_type,
+                    duration,
+                    duration_unit,
+                    source_name,
+                    source_version,
+                    device,
+                    creation_date,
+                    start_date or "",
+                    end_date or "",
                 )
-                result.workout_statistics += 1
+            )
+            result.workouts += 1
 
-            elif tag == "WorkoutRoute":
-                file_path = None
-                fr = child.find("FileReference")
-                if fr is not None:
-                    file_path = fr.get("path") or None
+            # Children
+            for child in elem:
+                child_tag = etree.QName(child).localname if hasattr(child, "tag") else child.tag
 
-                route_batch.append(
-                    (
-                        workout_id,
-                        child.get("sourceName") or None,
-                        _parse_timestamp(child.get("creationDate")),
-                        _parse_timestamp(child.get("startDate")),
-                        _parse_timestamp(child.get("endDate")),
-                        file_path,
+                if child_tag == "WorkoutEvent":
+                    event_batch.append(
+                        (
+                            workout_id,
+                            child.get("type", ""),
+                            _parse_timestamp(child.get("date")),
+                            _parse_float(child.get("duration")),
+                            child.get("durationUnit") or None,
+                        )
                     )
-                )
-                result.workout_routes += 1
+                    result.workout_events += 1
 
-            elif tag == "MetadataEntry":
-                wmeta_batch.append(
-                    (
-                        workout_id,
-                        child.get("key", ""),
-                        child.get("value", ""),
+                elif child_tag == "WorkoutStatistics":
+                    stats_batch.append(
+                        (
+                            workout_id,
+                            child.get("type", ""),
+                            _parse_timestamp(child.get("startDate")),
+                            _parse_timestamp(child.get("endDate")),
+                            _parse_float(child.get("average")),
+                            _parse_float(child.get("minimum")),
+                            _parse_float(child.get("maximum")),
+                            _parse_float(child.get("sum")),
+                            child.get("unit") or None,
+                        )
                     )
-                )
-                result.workout_metadata += 1
+                    result.workout_statistics += 1
 
-        # Clear to release memory
+                elif child_tag == "WorkoutRoute":
+                    file_path = None
+                    fr = child.find("FileReference")
+                    if fr is not None:
+                        file_path = fr.get("path") or None
+
+                    route_batch.append(
+                        (
+                            workout_id,
+                            child.get("sourceName") or None,
+                            _parse_timestamp(child.get("creationDate")),
+                            _parse_timestamp(child.get("startDate")),
+                            _parse_timestamp(child.get("endDate")),
+                            file_path,
+                        )
+                    )
+                    result.workout_routes += 1
+
+                elif child_tag == "MetadataEntry":
+                    wmeta_batch.append(
+                        (
+                            workout_id,
+                            child.get("key", ""),
+                            child.get("value", ""),
+                        )
+                    )
+                    result.workout_metadata += 1
+
+            if workout_id % 500 == 0:
+                _flush_workouts()
+                elapsed = time.perf_counter() - pass_start
+                wkt_per_sec = workout_id / elapsed if elapsed > 0 else 0
+                logger.info(
+                    "  workouts: %d  |  %d wkt/s  |  elapsed %.1fs",
+                    workout_id,
+                    int(wkt_per_sec),
+                    elapsed,
+                )
+
+        elif tag == "ActivitySummary":
+            summ_count += 1
+            summary_batch.append(
+                (
+                    elem.get("dateComponents", ""),
+                    _parse_float(elem.get("activeEnergyBurned")) or 0.0,
+                    _parse_float(elem.get("activeEnergyBurnedGoal")) or 0.0,
+                    elem.get("activeEnergyBurnedUnit", ""),
+                    _parse_float(elem.get("appleMoveTime")) or 0.0,
+                    _parse_float(elem.get("appleMoveTimeGoal")) or 0.0,
+                    _parse_float(elem.get("appleExerciseTime")) or 0.0,
+                    _parse_float(elem.get("appleExerciseTimeGoal")) or 0.0,
+                    _parse_int(elem.get("appleStandHours")) or 0,
+                    _parse_int(elem.get("appleStandHoursGoal")) or 0,
+                )
+            )
+            result.activity_summaries += 1
+
+            if summ_count % 100 == 0:
+                _flush_summaries()
+                elapsed = time.perf_counter() - pass_start
+                summ_per_sec = summ_count / elapsed if elapsed > 0 else 0
+                logger.info(
+                    "  summaries: %d  |  %d summ/s  |  elapsed %.1fs",
+                    summ_count,
+                    int(summ_per_sec),
+                    elapsed,
+                )
+
+        # Clear element to release memory (retain stubs to avoid O(n) deletion overhead).
+        # lxml uses libxml2's C-level doubly-linked list, so deletion is O(1) but the
+        # cumulative overhead across 1.35M records is ~0.5-1.0s. Retaining stubs costs
+        # ~72 MB (56 bytes/stub x 1.35M), which is acceptable.
         elem.clear()
-        while elem.getprevious() is not None:
-            del elem.getparent()[0]
 
-        if workout_id % 500 == 0:
-            _flush_workouts()
-            logger.info("  ... %d workouts processed", workout_id)
-
+    # --- Final flush ---
+    _flush_records()
     _flush_workouts()
+    _flush_summaries()
+
+    pass_elapsed = time.perf_counter() - pass_start
+    overall_rec_per_sec = result.records / pass_elapsed if pass_elapsed > 0 else 0
     logger.info(
-        "  Pass 2 done: %d workouts, %d events, %d stats, %d routes, %d metadata",
+        "  Single pass done: %d records (%d metadata, %d hrv),"
+        " %d workouts (%d events, %d stats, %d routes, %d metadata),"
+        " %d summaries  |  %.1fs  |  %d rec/s",
+        result.records,
+        result.record_metadata,
+        result.hrv_beats,
         result.workouts,
         result.workout_events,
         result.workout_statistics,
         result.workout_routes,
         result.workout_metadata,
+        result.activity_summaries,
+        pass_elapsed,
+        int(overall_rec_per_sec),
     )
 
-    # ------------------------------------------------------------------
-    # Pass 3: ActivitySummaries
-    # ------------------------------------------------------------------
-    summary_batch: list[tuple[str, float, float, str, float, float, float, float, int, int]] = []
+    # Commit all inserted rows in a single transaction.
+    db.execute("COMMIT")
 
-    logger.info("Pass 3/3: ActivitySummaries ...")
-    ctx = etree.iterparse(
-        str(xml_path),
-        events=("end",),
-        tag="ActivitySummary",
-        resolve_entities=False,
+    total_elapsed = time.perf_counter() - overall_start
+    total_rows = (
+        result.records
+        + result.record_metadata
+        + result.hrv_beats
+        + result.workouts
+        + result.workout_events
+        + result.workout_statistics
+        + result.workout_routes
+        + result.workout_metadata
+        + result.activity_summaries
     )
-    for _event, elem in ctx:
-        summary_batch.append(
-            (
-                elem.get("dateComponents", ""),
-                _parse_float(elem.get("activeEnergyBurned")) or 0.0,
-                _parse_float(elem.get("activeEnergyBurnedGoal")) or 0.0,
-                elem.get("activeEnergyBurnedUnit", ""),
-                _parse_float(elem.get("appleMoveTime")) or 0.0,
-                _parse_float(elem.get("appleMoveTimeGoal")) or 0.0,
-                _parse_float(elem.get("appleExerciseTime")) or 0.0,
-                _parse_float(elem.get("appleExerciseTimeGoal")) or 0.0,
-                _parse_int(elem.get("appleStandHours")) or 0,
-                _parse_int(elem.get("appleStandHoursGoal")) or 0,
-            )
-        )
-        result.activity_summaries += 1
-
-        elem.clear()
-        while elem.getprevious() is not None:
-            del elem.getparent()[0]
-
-    if summary_batch:
-        db.executemany(
-            "INSERT INTO activity_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            summary_batch,
-        )
-    logger.info("  Pass 3 done: %d activity summaries", result.activity_summaries)
-
-    logger.info("Ingestion complete.\n%s", result.summary())
+    overall_rows_per_sec = total_rows / total_elapsed if total_elapsed > 0 else 0
+    mb_per_sec = file_size_mb / total_elapsed if total_elapsed > 0 else 0
+    logger.info(
+        "Ingestion complete in %.1f seconds.\n"
+        "  File size:          %.0f MB\n"
+        "  Total rows written: %d\n"
+        "  Throughput:         %d rows/s,  %.1f MB/s\n"
+        "%s",
+        total_elapsed,
+        file_size_mb,
+        total_rows,
+        int(overall_rows_per_sec),
+        mb_per_sec,
+        result.summary(),
+    )
     return result
