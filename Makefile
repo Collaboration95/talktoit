@@ -30,7 +30,7 @@ dev-frontend:
 # ── Ingest ───────────────────────────────────────────────────────────────────
 ingest:
 	@test -n "$(EXPORT_PATH)" || (echo "Usage: make ingest EXPORT_PATH=/path/to/export.xml" && exit 1)
-	uv run --directory backend python -m app.ingest.run $(EXPORT_PATH)
+	uv run --directory backend python -m app.ingest.run "$(realpath $(EXPORT_PATH))"
 
 # ── Tests ────────────────────────────────────────────────────────────────────
 test: test-all   # alias
