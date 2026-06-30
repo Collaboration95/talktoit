@@ -28,9 +28,23 @@ dev-frontend:
 	npm --prefix frontend run dev
 
 # ── Ingest ───────────────────────────────────────────────────────────────────
+# V2 parallel byte-scan ingestion (default)
+# Usage: make ingest EXPORT_PATH=/path/to/export.xml [WORKERS=N] [LEGACY=1]
 ingest:
-	@test -n "$(EXPORT_PATH)" || (echo "Usage: make ingest EXPORT_PATH=/path/to/export.xml" && exit 1)
+	@test -n "$(EXPORT_PATH)" || (echo "Usage: make ingest EXPORT_PATH=/path/to/export.xml [WORKERS=N] [LEGACY=1]" && exit 1)
+ifdef LEGACY
+	TTI_INGEST_WORKERS=$(or $(WORKERS),1) uv run --directory backend python -m app.ingest.run --legacy "$(realpath $(EXPORT_PATH))"
+else
+ifdef WORKERS
+	TTI_INGEST_WORKERS=$(WORKERS) uv run --directory backend python -m app.ingest.run "$(realpath $(EXPORT_PATH))"
+else
 	uv run --directory backend python -m app.ingest.run "$(realpath $(EXPORT_PATH))"
+endif
+endif
+
+# ── Benchmark tests ─────────────────────────────────────────────────────────
+test-bench:
+	uv run --directory backend pytest -m benchmark --benchmark-only
 
 # ── Tests ────────────────────────────────────────────────────────────────────
 test: test-all   # alias
