@@ -19,10 +19,11 @@ import re
 import shutil
 import tempfile
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from app.ingest.bytescan import parse_byte_range
+from app.ingest.bytescan import WorkerResult, parse_byte_range
 from app.ingest.reconcile import load_shards_into_duckdb
 
 if TYPE_CHECKING:
@@ -151,20 +152,54 @@ def ingest(
             for i, (start, end) in enumerate(ranges):
                 logger.info(f"  Worker {i}: [{start:,}, {end:,}) = {end - start:,} bytes")
 
-            # Phase 0: Single-threaded execution for spike validation
-            # Phase 2 will add multiprocessing here
-            results = []
-            for i, (start, end) in enumerate(ranges):
-                logger.info(f"Processing worker {i}...")
-                result = parse_byte_range(
-                    xml_path=str(xml_path),
-                    start_byte=start,
-                    end_byte=end,
-                    worker_idx=i,
-                    shard_dir=str(shard_dir),
-                )
-                results.append(result)
-                logger.info(f"Worker {i} complete: {result.records_count} records")
+            # Phase 2: Parallel execution using ProcessPoolExecutor
+            if n_workers == 1:
+                # Single worker - execute synchronously
+                logger.info("Processing with single worker...")
+                results: list[WorkerResult] = []
+                for i, (start, end) in enumerate(ranges):
+                    result = parse_byte_range(
+                        xml_path=str(xml_path),
+                        start_byte=start,
+                        end_byte=end,
+                        worker_idx=i,
+                        shard_dir=str(shard_dir),
+                    )
+                    results.append(result)
+                    logger.info(f"Worker {i} complete: {result.records_count} records")
+            else:
+                # Multiple workers - execute in parallel
+                logger.info(f"Processing with {len(ranges)} parallel workers...")
+                results: list[WorkerResult] = []
+                with ProcessPoolExecutor(max_workers=len(ranges)) as executor:
+                    # Submit all worker tasks
+                    future_to_worker = {}
+                    for i, (start, end) in enumerate(ranges):
+                        future = executor.submit(
+                            parse_byte_range,
+                            xml_path=str(xml_path),
+                            start_byte=start,
+                            end_byte=end,
+                            worker_idx=i,
+                            shard_dir=str(shard_dir),
+                        )
+                        future_to_worker[future] = i
+
+                    # Collect results as they complete
+                    for future in as_completed(future_to_worker):
+                        worker_idx = future_to_worker[future]
+                        try:
+                            result = future.result()
+                            results.append(result)
+                            logger.info(
+                                f"Worker {worker_idx} complete: {result.records_count} records"
+                            )
+                        except Exception as e:
+                            logger.error(f"Worker {worker_idx} failed: {e}")
+                            raise
+
+                # Sort results by worker_idx to maintain consistent ordering
+                results.sort(key=lambda r: r.worker_idx)
 
     # Aggregate results
     total_records = sum(r.records_count for r in results)
@@ -196,7 +231,9 @@ def ingest(
     }
 
 
-def ingest_v2(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> dict[str, Any]:
+def ingest_v2(
+    xml_path: str | Path, db: duckdb.DuckDBPyConnection, n_workers: int | None = None
+) -> dict[str, Any]:
     """High-level V2 ingestion pipeline.
 
     This function orchestrates the complete V2 ingestion process:
@@ -207,6 +244,7 @@ def ingest_v2(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> dict[str, 
     Args:
         xml_path: Path to the Apple Health export XML file
         db: DuckDB connection to load data into
+        n_workers: Number of parallel workers (default: auto-detect based on CPU count)
 
     Returns:
         Dictionary with ingestion statistics matching legacy parser format:
@@ -230,7 +268,7 @@ def ingest_v2(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> dict[str, 
 
     # Phase 1: Parse XML to Parquet shards
     parse_start = time.time()
-    result = ingest(xml_path)
+    result = ingest(xml_path, n_workers=n_workers)
     parse_time = time.time() - parse_start
 
     logger.info(f"Parse phase complete: {parse_time:.2f}s")
