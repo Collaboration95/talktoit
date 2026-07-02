@@ -1,3 +1,4 @@
+# ruff: noqa: S608
 """DuckDB reconciliation phase: load Parquet shards and assign global IDs.
 
 This module implements the DuckDB phase B of the parallel ingestion pipeline:
@@ -12,7 +13,9 @@ during parsing, then global IDs are computed in DuckDB using window functions.
 
 from __future__ import annotations
 
+import glob
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -23,18 +26,48 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# SQL statements to load Parquet shards and reconcile IDs
-# These statements assume the schema has already been created via SQL_CREATE_TABLES
-SQL_LOAD_AND_RECONCILE = """
--- Create a temporary mapping table to track worker_idx/local_id to global id
+
+def _find_tables_with_data(shard_dir: str) -> set[str]:
+    """Scan shard directory and return set of table prefixes that have parquet data."""
+    tables: set[str] = set()
+    for f in glob.glob(os.path.join(shard_dir, "*.parquet")):
+        basename = os.path.basename(f)
+        # Extract table prefix (e.g. "records" from "records-0000-0000.parquet")
+        prefix = basename.split("-")[0]
+        tables.add(prefix)
+    return tables
+
+
+def _build_load_sql(shard_dir: str) -> list[str]:
+    """Build SQL statements for loading shards, skipping tables with no data.
+
+    Scans the shard directory for parquet files grouped by table prefix, and
+    only generates SQL statements for tables that have data. This gracefully
+    handles zero-row tables (e.g. hrv_beats with no beats).
+
+    Args:
+        shard_dir: Directory containing Parquet shards (as a string with forward slashes).
+
+    Returns:
+        List of SQL statements to execute in order.
+    """
+    tables_with_data = _find_tables_with_data(shard_dir)
+    logger.info(f"Tables with data: {sorted(tables_with_data)}")
+
+    statements: list[str] = []
+
+    # Record ID mapping (requires records data)
+    if "records" in tables_with_data:
+        statements.append(f"""  # noqa: S608
 CREATE TEMPORARY TABLE record_id_mapping AS
 SELECT
     worker_idx,
     local_id,
     ROW_NUMBER() OVER (ORDER BY worker_idx, local_id) AS id
-FROM read_parquet('{shard_dir}/records-*.parquet');
+FROM read_parquet('{shard_dir}/records-*.parquet')
+""")
 
--- Load records using the mapping table
+        statements.append(f"""  # noqa: S608
 INSERT INTO records
 SELECT
     m.id,
@@ -48,35 +81,43 @@ SELECT
     r.end_date,
     r.value
 FROM read_parquet('{shard_dir}/records-*.parquet') r
-JOIN record_id_mapping m ON r.worker_idx = m.worker_idx AND r.local_id = m.local_id;
+JOIN record_id_mapping m ON r.worker_idx = m.worker_idx AND r.local_id = m.local_id
+""")
 
--- Load record_metadata with rewritten FKs using the mapping table
+    if "record_metadata" in tables_with_data:
+        statements.append(f"""  # noqa: S608
 INSERT INTO record_metadata
 SELECT
     m.id AS record_id,
     rm.key,
     rm.value
 FROM read_parquet('{shard_dir}/record_metadata-*.parquet') rm
-JOIN record_id_mapping m ON rm.worker_idx = m.worker_idx AND rm.parent_local_id = m.local_id;
+JOIN record_id_mapping m ON rm.worker_idx = m.worker_idx AND rm.parent_local_id = m.local_id
+""")
 
--- Load hrv_beats with rewritten FKs using the mapping table
+    if "hrv_beats" in tables_with_data:
+        statements.append(f"""  # noqa: S608
 INSERT INTO hrv_beats
 SELECT
     m.id AS record_id,
     h.bpm,
     h.time_offset
 FROM read_parquet('{shard_dir}/hrv_beats-*.parquet') h
-JOIN record_id_mapping m ON h.worker_idx = m.worker_idx AND h.parent_local_id = m.local_id;
+JOIN record_id_mapping m ON h.worker_idx = m.worker_idx AND h.parent_local_id = m.local_id
+""")
 
--- Create a temporary mapping table for workouts
+    # Workout ID mapping (requires workouts data)
+    if "workouts" in tables_with_data:
+        statements.append(f"""  # noqa: S608
 CREATE TEMPORARY TABLE workout_id_mapping AS
 SELECT
     worker_idx,
     local_id,
     ROW_NUMBER() OVER (ORDER BY worker_idx, local_id) AS id
-FROM read_parquet('{shard_dir}/workouts-*.parquet');
+FROM read_parquet('{shard_dir}/workouts-*.parquet')
+""")
 
--- Load workouts using the mapping table
+        statements.append(f"""  # noqa: S608
 INSERT INTO workouts
 SELECT
     m.id,
@@ -90,9 +131,11 @@ SELECT
     w.start_date,
     w.end_date
 FROM read_parquet('{shard_dir}/workouts-*.parquet') w
-JOIN workout_id_mapping m ON w.worker_idx = m.worker_idx AND w.local_id = m.local_id;
+JOIN workout_id_mapping m ON w.worker_idx = m.worker_idx AND w.local_id = m.local_id
+""")
 
--- Load workout_events with rewritten FKs using the mapping table
+    if "workout_events" in tables_with_data:
+        statements.append(f"""  # noqa: S608
 INSERT INTO workout_events
 SELECT
     m.id AS workout_id,
@@ -101,9 +144,11 @@ SELECT
     e.duration,
     e.duration_unit
 FROM read_parquet('{shard_dir}/workout_events-*.parquet') e
-JOIN workout_id_mapping m ON e.worker_idx = m.worker_idx AND e.parent_local_id = m.local_id;
+JOIN workout_id_mapping m ON e.worker_idx = m.worker_idx AND e.parent_local_id = m.local_id
+""")
 
--- Load workout_statistics with rewritten FKs using the mapping table
+    if "workout_statistics" in tables_with_data:
+        statements.append(f"""  # noqa: S608
 INSERT INTO workout_statistics
 SELECT
     m.id AS workout_id,
@@ -116,9 +161,11 @@ SELECT
     s.sum,
     s.unit
 FROM read_parquet('{shard_dir}/workout_statistics-*.parquet') s
-JOIN workout_id_mapping m ON s.worker_idx = m.worker_idx AND s.parent_local_id = m.local_id;
+JOIN workout_id_mapping m ON s.worker_idx = m.worker_idx AND s.parent_local_id = m.local_id
+""")
 
--- Load workout_routes with rewritten FKs using the mapping table
+    if "workout_routes" in tables_with_data:
+        statements.append(f"""  # noqa: S608
 INSERT INTO workout_routes
 SELECT
     m.id AS workout_id,
@@ -128,26 +175,34 @@ SELECT
     r.end_date,
     r.file_path
 FROM read_parquet('{shard_dir}/workout_routes-*.parquet') r
-JOIN workout_id_mapping m ON r.worker_idx = m.worker_idx AND r.parent_local_id = m.local_id;
+JOIN workout_id_mapping m ON r.worker_idx = m.worker_idx AND r.parent_local_id = m.local_id
+""")
 
--- Load workout_metadata with rewritten FKs using the mapping table
+    if "workout_metadata" in tables_with_data:
+        statements.append(f"""  # noqa: S608
 INSERT INTO workout_metadata
 SELECT
     m.id AS workout_id,
     wm.key,
     wm.value
 FROM read_parquet('{shard_dir}/workout_metadata-*.parquet') wm
-JOIN workout_id_mapping m ON wm.worker_idx = m.worker_idx AND wm.parent_local_id = m.local_id;
+JOIN workout_id_mapping m ON wm.worker_idx = m.worker_idx AND wm.parent_local_id = m.local_id
+""")
 
--- Load activity_summaries (no FK reconciliation needed, keyed by date_components)
+    if "activity_summaries" in tables_with_data:
+        statements.append(f"""  # noqa: S608
 INSERT INTO activity_summaries
 SELECT *
-FROM read_parquet('{shard_dir}/activity_summaries-*.parquet');
+FROM read_parquet('{shard_dir}/activity_summaries-*.parquet')
+""")
 
--- Clean up temporary mapping tables
-DROP TABLE record_id_mapping;
-DROP TABLE workout_id_mapping;
-"""
+    # Clean up temporary mapping tables (only if they were created)
+    if "records" in tables_with_data:
+        statements.append("DROP TABLE IF EXISTS record_id_mapping")
+    if "workouts" in tables_with_data:
+        statements.append("DROP TABLE IF EXISTS workout_id_mapping")
+
+    return statements
 
 
 def load_shards_into_duckdb(db: duckdb.DuckDBPyConnection, shard_dir: str | Path) -> None:
@@ -173,8 +228,6 @@ def load_shards_into_duckdb(db: duckdb.DuckDBPyConnection, shard_dir: str | Path
     logger.info(f"Loading Parquet shards from {shard_dir}")
 
     # Verify parquet files exist before loading
-    import glob
-
     parquet_files = glob.glob(str(shard_dir / "*.parquet"))
     if not parquet_files:
         logger.warning(f"No parquet files found in {shard_dir}")
@@ -187,34 +240,19 @@ def load_shards_into_duckdb(db: duckdb.DuckDBPyConnection, shard_dir: str | Path
     # Convert path to string with forward slashes for DuckDB compatibility
     shard_dir_str = str(shard_dir).replace("\\", "/")
 
+    # Build SQL statements dynamically based on which tables have data
+    statements = _build_load_sql(shard_dir_str)
+
+    if not statements:
+        logger.warning("No tables to load - no parquet files found with recognized prefixes")
+        return
+
+    logger.info(f"Found {len(statements)} statements to execute")
+
     # Wrap everything in a single transaction for atomicity
     db.execute("BEGIN")
 
     try:
-        # Format the SQL with the shard directory
-        sql = SQL_LOAD_AND_RECONCILE.format(shard_dir=shard_dir_str)
-
-        # Log the formatted SQL for debugging
-        logger.debug(f"Formatted SQL length: {len(sql)}")
-        logger.debug(f"Shard dir in SQL: {shard_dir_str}")
-
-        # Execute each statement
-        # Split by semicolon and filter out empty statements
-        # Note: Comments are part of statements, so we don't filter them out
-        raw_statements = sql.split(";")
-        statements = []
-        for stmt in raw_statements:
-            # Remove comment lines and check if there's any SQL left
-            lines = [
-                line
-                for line in stmt.split("\n")
-                if line.strip() and not line.strip().startswith("--")
-            ]
-            if lines:
-                statements.append(stmt.strip())
-
-        logger.info(f"Found {len(statements)} statements to execute")
-
         for i, statement in enumerate(statements):
             if statement:
                 logger.info(f"Executing statement {i + 1}/{len(statements)}: {statement[:150]}...")
@@ -228,12 +266,14 @@ def load_shards_into_duckdb(db: duckdb.DuckDBPyConnection, shard_dir: str | Path
                             table_name = parts[2]
                             # Query the count for this table
                             count_result = db.execute(
-                                f"SELECT COUNT(*) FROM {table_name}"  # noqa: S608  # noqa: S608  # noqa: S608
+                                f"SELECT COUNT(*) FROM {table_name}"
                             ).fetchone()
                             count = count_result[0] if count_result else 0
-                            logger.info(f"✓ Inserted into {table_name}: {count} rows total")
+                            logger.info(f"\u2713 Inserted into {table_name}: {count} rows total")
                 except Exception as stmt_error:
-                    logger.error(f"✗ Failed to execute statement {i + 1}: {statement[:150]}...")
+                    logger.error(
+                        f"\u2717 Failed to execute statement {i + 1}: {statement[:150]}..."
+                    )
                     logger.error(f"Error: {stmt_error}")
                     raise
 

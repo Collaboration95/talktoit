@@ -34,3 +34,6 @@ frontend/*.tsbuildinfo
 
 # Claude agent artifacts
 .claude/
+
+# Scratch / temp notes
+tmp/

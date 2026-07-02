@@ -235,10 +235,10 @@ _HRV_BEAT_RE = re.compile(
 _WORKOUT_EVENT_RE = re.compile(
     rb"<WorkoutEvent\s+"
     rb'type="(?P<type>[^"]*)"'
-    rb'(?:.*?date="(?P<date>[^"]*)")?'
-    rb'(?:.*?duration="(?P<duration>[^"]*)")?'
-    rb'(?:.*?durationUnit="(?P<durationUnit>[^"]*)")?',
-    re.DOTALL,
+    rb'(?:\s+date="(?P<date>[^"]*)")?'
+    rb'(?:\s+duration="(?P<duration>[^"]*)")?'
+    rb'(?:\s+durationUnit="(?P<durationUnit>[^"]*)")?'
+    rb"\s*/>"
 )
 
 # Match complete WorkoutStatistics elements first
