@@ -62,6 +62,17 @@ def test_dispatch_tool_fallback(db: duckdb.DuckDBPyConnection) -> None:
     assert data["text"] == "I don't know"
 
 
+def test_dispatch_tool_strips_tool_name_whitespace(db: duckdb.DuckDBPyConnection) -> None:
+    template_id, data = dispatch_tool(
+        "\tget_top_workouts\n",
+        {"activity_type": "Running", "metric": "distance", "n": 5},
+        db,
+        "some question",
+    )
+    assert template_id == "ranked_list"
+    assert data["rows"][0]["rank"] == 1
+
+
 def test_dispatch_tool_unknown_tool_raises(db: duckdb.DuckDBPyConnection) -> None:
     with pytest.raises(ValueError, match="Unknown tool"):
         dispatch_tool("nonexistent_tool", {}, db, "some question")

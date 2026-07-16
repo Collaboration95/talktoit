@@ -59,5 +59,5 @@ class ChatResponse(BaseModel):
             # This re-serialises with the model's defaults and type coercion,
             # ensuring the data dict conforms exactly to the template schema.
             validated = model.model_validate(self.data)
-            self.data = validated.model_dump(mode="json", exclude_none=True)
+            self.data = validated.model_dump(mode="json")
         return self

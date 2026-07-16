@@ -53,6 +53,14 @@ make dev       # backend on :8000, frontend on :5173 (hot reload)
 make test      # run all tests
 make lint      # lint backend + frontend
 make typecheck # type check backend + frontend
+make run-cli   # headless chat REPL against the backend + DuckDB
+```
+
+For automation or smoke checks, pass a question directly:
+
+```bash
+make run-cli QUESTION="Which gym session had the highest heart rate last month?"
+make run-cli QUESTION="Show my last run" JSON=1
 ```
 
 ## Configuration (`.env`)

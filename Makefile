@@ -8,7 +8,7 @@
         test test-bk test-fe test-all test-backend test-frontend test-watch \
         typecheck typecheck-backend typecheck-frontend \
         lint lint-backend lint-frontend format format-backend format-frontend \
-        coverage ingest clean build run check check-full
+        coverage ingest clean build run run-cli check check-full groq-smoke
 
 # ── Bootstrap ────────────────────────────────────────────────────────────────
 install:
@@ -100,6 +100,15 @@ run:
 	npm --prefix frontend run build
 	uv run --directory backend uvicorn app.main:app \
 	  --host 127.0.0.1 --port 8000
+
+groq-smoke:
+	bash scripts/groq_smoke.sh "$(QUESTION)"
+
+run-cli:
+	uv run --directory backend python -m app.cli.chat \
+	  $(if $(QUESTION),--question "$(QUESTION)",) \
+	  $(if $(JSON),--json,) \
+	  $(if $(DB_PATH),--db-path "$(DB_PATH)",)
 
 # ── Build ────────────────────────────────────────────────────────────────────
 build:

@@ -201,6 +201,9 @@ TOOL_TEMPLATE_IDS: dict[str, str] = {
     "get_fallback_answer": "fallback",
 }
 
+# Stable tool-name ordering for prompt generation and validation.
+TOOL_NAMES: tuple[str, ...] = tuple(TOOL_TEMPLATE_IDS)
+
 # ---------------------------------------------------------------------------
 # Individual tool implementations
 # ---------------------------------------------------------------------------
@@ -230,7 +233,7 @@ def _tool_get_last_workout(
             text=f"No {activity_type} workouts found.",
         )
         return ("fallback", fallback.model_dump(mode="json"))
-    return ("workout_card", result.model_dump(mode="json", exclude_none=True))
+    return ("workout_card", result.model_dump(mode="json"))
 
 
 def _tool_get_top_workouts(
@@ -252,7 +255,7 @@ def _tool_get_top_workouts(
     start: date | None = date.fromisoformat(args["start_date"]) if args.get("start_date") else None
     end: date | None = date.fromisoformat(args["end_date"]) if args.get("end_date") else None
     result = queries.get_top_workouts(conn, activity_type, metric, n=n, start=start, end=end)
-    return ("ranked_list", result.model_dump(mode="json", exclude_none=True))
+    return ("ranked_list", result.model_dump(mode="json"))
 
 
 def _tool_get_trend(
@@ -273,7 +276,7 @@ def _tool_get_trend(
     start = date.fromisoformat(args["start_date"])
     end = date.fromisoformat(args["end_date"])
     result = queries.get_trend(conn, metric_id, granularity, start, end)
-    return ("trend_chart", result.model_dump(mode="json", exclude_none=True))
+    return ("trend_chart", result.model_dump(mode="json"))
 
 
 def _tool_get_period_summary(
@@ -293,7 +296,7 @@ def _tool_get_period_summary(
     end = date.fromisoformat(args["end_date"])
     title: str | None = args.get("title")
     result = queries.get_period_summary(conn, start, end, title=title)
-    return ("period_summary", result.model_dump(mode="json", exclude_none=True))
+    return ("period_summary", result.model_dump(mode="json"))
 
 
 def _tool_get_comparison(
@@ -326,7 +329,7 @@ def _tool_get_comparison(
         last_label,
         activity_type=activity_type,
     )
-    return ("comparison", result.model_dump(mode="json", exclude_none=True))
+    return ("comparison", result.model_dump(mode="json"))
 
 
 def _tool_get_fallback_answer(
@@ -345,6 +348,25 @@ def _tool_get_fallback_answer(
     text: str = args.get("text", "")
     result = queries.get_fallback(question, text=text)
     return ("fallback", result.model_dump(mode="json"))
+
+
+def normalize_tool_name(tool_name: str) -> str:
+    """Canonicalize a tool name returned by the model.
+
+    The regression that triggered this work used a leading tab before a valid
+    tool name. Stripping surrounding whitespace keeps benign formatting noise
+    from breaking dispatch.
+    """
+    return tool_name.strip()
+
+
+def render_tool_catalog() -> str:
+    """Render the tool catalog as human-readable prompt text."""
+    lines: list[str] = []
+    for schema in TOOL_SCHEMAS:
+        function = schema["function"]
+        lines.append(f"- {function['name']}: {function['description']}")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -374,6 +396,7 @@ def dispatch_tool(
     Raises:
         ValueError: When ``tool_name`` is not a recognised tool.
     """
+    tool_name = normalize_tool_name(tool_name)
     if tool_name == "get_last_workout":
         return _tool_get_last_workout(args, conn, question)
     if tool_name == "get_top_workouts":

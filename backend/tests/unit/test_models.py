@@ -59,6 +59,11 @@ def test_chat_response_accepts_fallback_data() -> None:
         narrative="",
     )
     assert response.template_id == "fallback"
+    assert response.data["question"] == "What is the meaning of life?"
+    assert "table" in response.data
+    assert response.data["table"] is None
+    assert "text" in response.data
+    assert response.data["text"] == "I don't know."
 
 
 def test_chat_response_accepts_trend_chart_data() -> None:
