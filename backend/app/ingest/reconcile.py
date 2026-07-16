@@ -58,7 +58,7 @@ def _build_load_sql(shard_dir: str) -> list[str]:
 
     # Record ID mapping (requires records data)
     if "records" in tables_with_data:
-        statements.append(f"""  # noqa: S608
+        statements.append(f"""
 CREATE TEMPORARY TABLE record_id_mapping AS
 SELECT
     worker_idx,
@@ -67,7 +67,7 @@ SELECT
 FROM read_parquet('{shard_dir}/records-*.parquet')
 """)
 
-        statements.append(f"""  # noqa: S608
+        statements.append(f"""
 INSERT INTO records
 SELECT
     m.id,
@@ -85,7 +85,7 @@ JOIN record_id_mapping m ON r.worker_idx = m.worker_idx AND r.local_id = m.local
 """)
 
     if "record_metadata" in tables_with_data:
-        statements.append(f"""  # noqa: S608
+        statements.append(f"""
 INSERT INTO record_metadata
 SELECT
     m.id AS record_id,
@@ -96,7 +96,7 @@ JOIN record_id_mapping m ON rm.worker_idx = m.worker_idx AND rm.parent_local_id 
 """)
 
     if "hrv_beats" in tables_with_data:
-        statements.append(f"""  # noqa: S608
+        statements.append(f"""
 INSERT INTO hrv_beats
 SELECT
     m.id AS record_id,
@@ -108,7 +108,7 @@ JOIN record_id_mapping m ON h.worker_idx = m.worker_idx AND h.parent_local_id = 
 
     # Workout ID mapping (requires workouts data)
     if "workouts" in tables_with_data:
-        statements.append(f"""  # noqa: S608
+        statements.append(f"""
 CREATE TEMPORARY TABLE workout_id_mapping AS
 SELECT
     worker_idx,
@@ -117,7 +117,7 @@ SELECT
 FROM read_parquet('{shard_dir}/workouts-*.parquet')
 """)
 
-        statements.append(f"""  # noqa: S608
+        statements.append(f"""
 INSERT INTO workouts
 SELECT
     m.id,
@@ -135,7 +135,7 @@ JOIN workout_id_mapping m ON w.worker_idx = m.worker_idx AND w.local_id = m.loca
 """)
 
     if "workout_events" in tables_with_data:
-        statements.append(f"""  # noqa: S608
+        statements.append(f"""
 INSERT INTO workout_events
 SELECT
     m.id AS workout_id,
@@ -148,7 +148,7 @@ JOIN workout_id_mapping m ON e.worker_idx = m.worker_idx AND e.parent_local_id =
 """)
 
     if "workout_statistics" in tables_with_data:
-        statements.append(f"""  # noqa: S608
+        statements.append(f"""
 INSERT INTO workout_statistics
 SELECT
     m.id AS workout_id,
@@ -165,7 +165,7 @@ JOIN workout_id_mapping m ON s.worker_idx = m.worker_idx AND s.parent_local_id =
 """)
 
     if "workout_routes" in tables_with_data:
-        statements.append(f"""  # noqa: S608
+        statements.append(f"""
 INSERT INTO workout_routes
 SELECT
     m.id AS workout_id,
@@ -179,7 +179,7 @@ JOIN workout_id_mapping m ON r.worker_idx = m.worker_idx AND r.parent_local_id =
 """)
 
     if "workout_metadata" in tables_with_data:
-        statements.append(f"""  # noqa: S608
+        statements.append(f"""
 INSERT INTO workout_metadata
 SELECT
     m.id AS workout_id,
@@ -190,7 +190,7 @@ JOIN workout_id_mapping m ON wm.worker_idx = m.worker_idx AND wm.parent_local_id
 """)
 
     if "activity_summaries" in tables_with_data:
-        statements.append(f"""  # noqa: S608
+        statements.append(f"""
 INSERT INTO activity_summaries
 SELECT *
 FROM read_parquet('{shard_dir}/activity_summaries-*.parquet')

@@ -7,6 +7,9 @@ personal-assets/
 docs/planning/*
 !docs/planning/README.md
 
+# Archived docs — not relevant to current active development
+docs/archive/
+
 # Environment
 .env
 
