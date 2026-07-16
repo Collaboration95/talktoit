@@ -1,8 +1,8 @@
-"""Chat orchestrator: question → LLM tool call → template envelope.
+"""Chat orchestrator: question → LLM plan → local dispatch → template envelope.
 
 One-shot design (no history). The LLM is given the tool catalog and calls
-exactly one tool per question. Robust to: unknown template_id from model,
-tool errors, empty data.
+exactly one tool per question. Robust to: malformed planner output,
+unknown tool names, tool errors, and empty data.
 """
 
 from __future__ import annotations
@@ -10,16 +10,13 @@ from __future__ import annotations
 import json
 import logging
 from datetime import date
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import openai
-from openai.types.chat.chat_completion_message_function_tool_call import (
-    ChatCompletionMessageFunctionToolCall,
-)
 
 from app.db.queries import get_fallback
 from app.llm.client import DEFAULT_MODEL
-from app.llm.tools import TOOL_SCHEMAS, dispatch_tool
+from app.llm.tools import TOOL_NAMES, dispatch_tool, normalize_tool_name, render_tool_catalog
 from app.models.chat import ChatResponse
 from app.models.templates import FallbackData
 
@@ -28,19 +25,36 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM_PROMPT = """You are a personal health data assistant for an Apple Health user.
-You have access to tools that query the user's health data stored in a local DuckDB database.
+_PLANNER_PROMPT = """You are a planning assistant for a personal health data app.
+Choose exactly one tool for the user's question and return only a JSON object.
+
+Allowed tools:
+{tool_catalog}
+
+Return JSON with this shape:
+{{
+  "tool_name": "get_last_workout",
+  "arguments": {{}}
+}}
 
 Rules:
-1. Always call exactly one tool to answer the question.
-2. Use get_fallback_answer for questions you cannot answer with the other tools.
-3. After the tool returns data, write a short narrative (1-2 sentences) that frames the result naturally.
-4. Never mention raw database rows, SQL, or technical implementation details.
-5. Be concise and friendly.
+1. tool_name must be one of: {tool_names}
+2. Use get_fallback_answer if no other tool fits the question.
+3. Keep arguments valid JSON and only include fields the tool accepts.
+4. Interpret date ranges in the Asia/Singapore timezone.
+5. Today's date is {today}.
+"""
 
-The user's timezone is Asia/Singapore (+0800). All date references in your tool calls should use this timezone context.
-Today's date: {today}
-"""  # noqa: E501
+_NARRATIVE_PROMPT = """You are a personal health data assistant for an Apple Health user.
+You have already received the tool result for the user's question.
+
+Rules:
+1. Write a short narrative (1-2 sentences) that answers naturally.
+2. Never mention raw database rows, SQL, JSON, or implementation details.
+3. Be concise and friendly.
+4. The user's timezone is Asia/Singapore (+0800).
+5. Today's date is {today}.
+"""
 
 
 def _make_fallback_response(question: str, narrative: str = "") -> ChatResponse:
@@ -61,8 +75,44 @@ def _make_fallback_response(question: str, narrative: str = "") -> ChatResponse:
     )
 
 
+def _parse_tool_plan(content: str | None) -> dict[str, Any] | None:
+    """Parse the model's planner response into a JSON object.
+
+    The planner is instructed to return a single JSON object, but this helper
+    still tolerates fenced code blocks or surrounding text so the caller can
+    fall back cleanly when the model drifts.
+    """
+    if not content:
+        return None
+
+    text = content.strip()
+    if text.startswith("```"):
+        first_newline = text.find("\n")
+        if first_newline != -1:
+            text = text[first_newline + 1 :]
+        if text.endswith("```"):
+            text = text[:-3].strip()
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        text = text[start : end + 1]
+
+    try:
+        payload = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        logger.warning("LLM planner returned invalid JSON")
+        return None
+
+    if not isinstance(payload, dict):
+        logger.warning("LLM planner returned a non-object payload")
+        return None
+
+    return payload
+
+
 class ChatOrchestrator:
-    """Orchestrates one-shot LLM tool calls to answer health questions.
+    """Orchestrates one-shot LLM planning to answer health questions.
 
     Attributes:
         client: The async OpenAI-compatible client.
@@ -101,44 +151,50 @@ class ChatOrchestrator:
             A :class:`ChatResponse` envelope with ``template_id``, ``data``,
             and ``narrative``.
         """
-        system_prompt = _SYSTEM_PROMPT.format(today=date.today().isoformat())
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system_prompt},
+        today = date.today().isoformat()
+        planner_prompt = _PLANNER_PROMPT.format(
+            today=today,
+            tool_catalog=render_tool_catalog(),
+            tool_names=", ".join(TOOL_NAMES),
+        )
+        planner_messages: list[dict[str, Any]] = [
+            {"role": "system", "content": planner_prompt},
             {"role": "user", "content": question},
         ]
 
-        # ── Turn 1: force a tool call ────────────────────────────────────────
+        # ── Turn 1: plan the tool call ───────────────────────────────────────
         try:
-            tool_response = await self.client.chat.completions.create(
+            planner_response = await self.client.chat.completions.create(
                 model=self.model,
-                messages=messages,  # type: ignore[arg-type]
-                tools=TOOL_SCHEMAS,  # type: ignore[arg-type]
-                tool_choice="required",
+                messages=planner_messages,  # type: ignore[arg-type]
+                temperature=0,
             )
         except Exception:
-            logger.exception("LLM tool-call request failed")
+            logger.exception("LLM planner request failed")
             return _make_fallback_response(question)
 
-        # ── Extract tool call ────────────────────────────────────────────────
-        choice = tool_response.choices[0]
-        assistant_message = choice.message
-
-        if not assistant_message.tool_calls:
-            logger.warning("LLM returned no tool calls — falling back")
+        if not planner_response.choices:
+            logger.warning("LLM planner returned no choices — falling back")
             return _make_fallback_response(question)
 
-        raw_tool_call = assistant_message.tool_calls[0]
-        if not hasattr(raw_tool_call, "function"):
-            logger.warning("LLM returned a non-function tool call — falling back")
+        plan_content = planner_response.choices[0].message.content
+        plan = _parse_tool_plan(plan_content)
+        if plan is None:
             return _make_fallback_response(question)
-        tool_call = cast(ChatCompletionMessageFunctionToolCall, raw_tool_call)
-        tool_name = tool_call.function.name
-        tool_call_id = tool_call.id
 
-        try:
-            args: dict[str, Any] = json.loads(tool_call.function.arguments)
-        except (json.JSONDecodeError, ValueError):
-            logger.exception("Failed to parse tool call arguments")
+        raw_tool_name = plan.get("tool_name", "")
+        if not isinstance(raw_tool_name, str):
+            logger.warning("LLM planner returned a non-string tool name")
+            return _make_fallback_response(question)
+
+        tool_name = normalize_tool_name(raw_tool_name)
+        if tool_name not in TOOL_NAMES:
+            logger.warning("LLM planner returned unknown tool name %r", tool_name)
+            return _make_fallback_response(question)
+
+        args = plan.get("arguments", {})
+        if not isinstance(args, dict):
+            logger.warning("LLM planner returned invalid tool arguments")
             return _make_fallback_response(question)
 
         # ── Execute the tool ─────────────────────────────────────────────────
@@ -148,36 +204,24 @@ class ChatOrchestrator:
             logger.exception("Tool dispatch failed for tool %r", tool_name)
             return _make_fallback_response(question)
 
-        # ── Build messages for the narrative turn ────────────────────────────
-        messages.append(
+        narrative_prompt = _NARRATIVE_PROMPT.format(today=today)
+        narrative_messages: list[dict[str, Any]] = [
+            {"role": "system", "content": narrative_prompt},
             {
-                "role": "assistant",
-                "content": assistant_message.content or "",
-                "tool_calls": [
-                    {
-                        "id": tool_call_id,
-                        "type": "function",
-                        "function": {
-                            "name": tool_name,
-                            "arguments": tool_call.function.arguments,
-                        },
-                    }
-                ],
-            }
-        )
-        messages.append(
-            {
-                "role": "tool",
-                "tool_call_id": tool_call_id,
-                "content": json.dumps(data_dict, default=str),
-            }
-        )
+                "role": "user",
+                "content": (
+                    f"Question: {question}\n\n"
+                    f"Tool used: {tool_name}\n\n"
+                    f"Tool result:\n{json.dumps(data_dict, default=str)}"
+                ),
+            },
+        ]
 
         # ── Turn 2: narrative ────────────────────────────────────────────────
         try:
             narrative_response = await self.client.chat.completions.create(
                 model=self.model,
-                messages=messages,  # type: ignore[arg-type]
+                messages=narrative_messages,  # type: ignore[arg-type]
             )
             narrative = narrative_response.choices[0].message.content or ""
         except Exception:

@@ -35,17 +35,11 @@ def db() -> duckdb.DuckDBPyConnection:
 # ---------------------------------------------------------------------------
 
 
-def _make_tool_call_response(tool_name: str, args: dict[str, Any]) -> MagicMock:
-    """Build a minimal ChatCompletion mock for a tool-use response."""
-    fn_mock = MagicMock()
-    fn_mock.name = tool_name
-    fn_mock.arguments = json.dumps(args)
-    tool_call = MagicMock()
-    tool_call.function = fn_mock
-    tool_call.id = "call_test_123"
+def _make_planner_response(tool_name: str, args: dict[str, Any]) -> MagicMock:
+    """Build a minimal ChatCompletion mock for the planner turn."""
     message = MagicMock()
-    message.tool_calls = [tool_call]
-    message.content = None
+    message.tool_calls = None
+    message.content = json.dumps({"tool_name": tool_name, "arguments": args})
     choice = MagicMock()
     choice.message = message
     response = MagicMock()
@@ -66,13 +60,13 @@ def _make_narrative_response(text: str) -> MagicMock:
 
 
 def _make_stub_client(tool_name: str, args: dict[str, Any], narrative: str) -> MagicMock:
-    """Create a stub LLM client that returns a fixed tool call then a narrative."""
-    tool_resp = _make_tool_call_response(tool_name, args)
+    """Create a stub LLM client that returns a fixed plan then a narrative."""
+    plan_resp = _make_planner_response(tool_name, args)
     narrative_resp = _make_narrative_response(narrative)
     client = MagicMock()
     client.chat = MagicMock()
     client.chat.completions = MagicMock()
-    client.chat.completions.create = AsyncMock(side_effect=[tool_resp, narrative_resp])
+    client.chat.completions.create = AsyncMock(side_effect=[plan_resp, narrative_resp])
     return client
 
 
@@ -103,7 +97,7 @@ async def test_get_top_workouts_returns_ranked_list(
     db: duckdb.DuckDBPyConnection,
 ) -> None:
     client = _make_stub_client(
-        "get_top_workouts",
+        "\tget_top_workouts",
         {"activity_type": "Running", "metric": "distance", "n": 5},
         "Test narrative.",
     )
@@ -114,6 +108,20 @@ async def test_get_top_workouts_returns_ranked_list(
     assert "rows" in response.data
     assert len(response.data["rows"]) == 1
     assert response.data["rows"][0]["rank"] == 1
+
+
+async def test_invalid_planner_output_falls_back(
+    db: duckdb.DuckDBPyConnection,
+) -> None:
+    client = _make_stub_client(
+        "not-a-real-tool",
+        {"activity_type": "Running"},
+        "Test narrative.",
+    )
+    orchestrator = ChatOrchestrator(client=client, conn=db)  # type: ignore[arg-type]
+    response = await orchestrator.answer("Show my last run")
+
+    assert response.template_id == "fallback"
 
 
 async def test_get_trend_returns_trend_chart(
