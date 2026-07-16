@@ -16,7 +16,7 @@ A self-hostable web app for Apple Health users. Drop in your export, ask questio
 ## Quick start
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/Collaboration95/talktoit.git
 cd tti
 
 # Install tools (one-time)
