@@ -50,7 +50,7 @@ describe('ChatView', () => {
     resolve!(new Response())
   })
 
-  it('renders a workout card template on success', async () => {
+  it('renders a workout card template on success with the query shown above', async () => {
     server.use(http.post('/api/chat', () => HttpResponse.json(WORKOUT_ENVELOPE)))
     const user = userEvent.setup()
     render(<ChatView />)
@@ -59,6 +59,8 @@ describe('ChatView', () => {
     await waitFor(() => {
       expect(screen.getByText('Running')).toBeInTheDocument()
     })
+    // Query is displayed above the answer
+    expect(screen.getByText('last run')).toBeInTheDocument()
     expect(screen.getByText('Your last run was on June 5.')).toBeInTheDocument()
   })
 
@@ -73,7 +75,7 @@ describe('ChatView', () => {
     })
   })
 
-  it('seed prompt submits directly', async () => {
+  it('seed prompt submits directly and shows the query', async () => {
     server.use(http.post('/api/chat', () => HttpResponse.json(WORKOUT_ENVELOPE)))
     const user = userEvent.setup()
     render(<ChatView />)
@@ -81,5 +83,7 @@ describe('ChatView', () => {
     await waitFor(() => {
       expect(screen.getByText('Running')).toBeInTheDocument()
     })
+    // Query label is visible
+    expect(screen.getByText('Query')).toBeInTheDocument()
   })
 })
