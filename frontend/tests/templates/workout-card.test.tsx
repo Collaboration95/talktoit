@@ -22,12 +22,12 @@ describe('WorkoutCard', () => {
 
   it('renders duration', () => {
     render(<WorkoutCard data={validData} />)
-    expect(screen.getByText('45.5 min')).toBeInTheDocument()
+    expect(screen.getByText('46 min')).toBeInTheDocument()
   })
 
   it('renders distance as km', () => {
     render(<WorkoutCard data={validData} />)
-    expect(screen.getByText('8.50 km')).toBeInTheDocument()
+    expect(screen.getByText('8.5 km')).toBeInTheDocument()
   })
 
   it('renders narrative when provided', () => {

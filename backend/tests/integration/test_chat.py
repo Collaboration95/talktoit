@@ -93,6 +93,57 @@ async def test_get_last_workout_returns_workout_card(
     assert response.narrative == "Test narrative."
 
 
+async def test_narrative_prompt_uses_compact_tool_result(
+    db: duckdb.DuckDBPyConnection,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _make_stub_client(
+        "get_last_workout",
+        {"activity_type": "Running"},
+        "Test narrative.",
+    )
+
+    def fake_dispatch(
+        tool_name: str,
+        args: dict[str, Any],
+        conn: duckdb.DuckDBPyConnection,
+        question: str,
+    ):
+        assert tool_name == "get_last_workout"
+        return (
+            "workout_card",
+            {
+                "activity_type": "Running",
+                "date": "2026-06-08T20:08:48+08:00",
+                "duration_minutes": 61.05181868268979,
+                "avg_heart_rate": 157,
+                "max_heart_rate": 171,
+                "distance_meters": 10020.4,
+                "distance_unit": "km",
+                "energy_burned_kj": 886.059,
+                "elevation_ascent_meters": 45.2,
+                "gps_route": {
+                    "type": "LineString",
+                    "coordinates": [[103.8198, 1.3521], [103.8204, 1.3532]],
+                },
+            },
+        )
+
+    monkeypatch.setattr("app.llm.orchestrator.dispatch_tool", fake_dispatch)
+
+    orchestrator = ChatOrchestrator(client=client, conn=db)  # type: ignore[arg-type]
+    await orchestrator.answer("Show my last run")
+
+    narrative_messages = client.chat.completions.create.await_args_list[1].kwargs["messages"]
+    prompt_content = narrative_messages[1]["content"]
+    assert '"duration_minutes":61' in prompt_content
+    assert '"avg_heart_rate":157' in prompt_content
+    assert '"max_heart_rate":171' in prompt_content
+    assert '"distance_meters":10020' in prompt_content
+    assert '"energy_burned_kj":886' in prompt_content
+    assert '"gps_route"' not in prompt_content
+
+
 async def test_planner_receives_local_coverage_instead_of_computer_date(
     db: duckdb.DuckDBPyConnection,
 ) -> None:

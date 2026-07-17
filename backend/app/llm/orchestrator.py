@@ -18,6 +18,7 @@ from app.db.data_profile import get_data_profile
 from app.db.queries import get_fallback
 from app.llm.client import DEFAULT_MODEL
 from app.llm.local_planner import plan_local_question
+from app.llm.prompt_format import compact_tool_result_for_llm
 from app.llm.tools import TOOL_NAMES, dispatch_tool, normalize_tool_name, render_tool_catalog
 from app.models.chat import ChatResponse
 from app.models.templates import FallbackData
@@ -141,12 +142,16 @@ def _validated_plan(plan: dict[str, Any] | None) -> tuple[str, dict[str, Any]] |
 
 def _local_narrative(template_id: str, data: dict[str, Any]) -> str:
     """Provide a useful answer if only the optional remote narrator failed."""
-    title = data.get("title")
-    if isinstance(title, str) and title:
-        return f"Here is your local {title.lower()}."
     if template_id == "workout_card":
-        activity_type = data.get("activity_type", "workout")
-        return f"Here is your most recent {activity_type}."
+        return "Here is your most recent workout."
+    if template_id == "ranked_list":
+        return "Here is the ranked list for your question."
+    if template_id == "trend_chart":
+        return "Here is the trend for your question."
+    if template_id == "period_summary":
+        return "Here is your training summary."
+    if template_id == "comparison":
+        return "Here is the comparison for your selected periods."
     return "I found the matching data in your local health database."
 
 
@@ -237,6 +242,11 @@ class ChatOrchestrator:
             return _make_fallback_response(question)
 
         narrative_prompt = _NARRATIVE_PROMPT.format(today=today)
+        compact_result = json.dumps(
+            compact_tool_result_for_llm(data_dict),
+            default=str,
+            separators=(",", ":"),
+        )
         narrative_messages: list[dict[str, Any]] = [
             {"role": "system", "content": narrative_prompt},
             {
@@ -244,7 +254,8 @@ class ChatOrchestrator:
                 "content": (
                     f"Question: {question}\n\n"
                     f"Tool used: {tool_name}\n\n"
-                    f"Tool result:\n{json.dumps(data_dict, default=str)}"
+                    f"Tool result (rounded and compact):\n"
+                    f"{compact_result}"
                 ),
             },
         ]

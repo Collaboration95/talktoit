@@ -1,4 +1,5 @@
 import type { PeriodSummaryData } from '@/types/templates'
+import { formatDateRange, formatMetricValue } from '@/lib/format'
 
 interface PeriodSummaryProps {
   data: PeriodSummaryData
@@ -12,7 +13,7 @@ export function PeriodSummary({ data, narrative }: PeriodSummaryProps) {
       {narrative ? <p className="mb-4 text-gray-600">{narrative}</p> : null}
       <h2 className="font-bold text-gray-900">{data.title}</h2>
       <p className="mb-4 text-sm text-gray-500">
-        {data.period_start} – {data.period_end}
+        {formatDateRange(data.period_start, data.period_end)}
       </p>
       {data.metrics.length === 0 ? (
         <p className="text-gray-500">No data available for this period.</p>
@@ -22,7 +23,7 @@ export function PeriodSummary({ data, narrative }: PeriodSummaryProps) {
           <div key={m.label} className="rounded-lg bg-gray-50 p-3">
             <p className="text-xs text-gray-500">{m.label}</p>
             <p className="mt-1 font-semibold text-gray-900">
-              {m.value !== null ? `${m.value} ${m.unit}` : '—'}
+              {formatMetricValue(m.value, m.unit) ?? '—'}
             </p>
           </div>
         ))}
