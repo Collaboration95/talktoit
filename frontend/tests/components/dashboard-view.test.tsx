@@ -113,10 +113,10 @@ describe('DashboardView', () => {
     setupHandlers()
     render(<DashboardView />)
     await waitFor(() => {
-      expect(screen.getByText('Running')).toBeInTheDocument()
+      expect(screen.getAllByText('Running').length).toBeGreaterThanOrEqual(1)
     })
     // Check workout row details
-    expect(screen.getByText('45.5 min')).toBeInTheDocument()
+    expect(screen.getByText('46 min')).toBeInTheDocument()
   })
 
   it('renders trend charts after load', async () => {

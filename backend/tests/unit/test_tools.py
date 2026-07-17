@@ -12,7 +12,7 @@ import duckdb
 import pytest
 
 from app.ingest.parser import ingest
-from app.llm.tools import dispatch_tool
+from app.llm.tools import dispatch_tool, render_tool_catalog
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "sample.xml"
 
@@ -76,3 +76,11 @@ def test_dispatch_tool_strips_tool_name_whitespace(db: duckdb.DuckDBPyConnection
 def test_dispatch_tool_unknown_tool_raises(db: duckdb.DuckDBPyConnection) -> None:
     with pytest.raises(ValueError, match="Unknown tool"):
         dispatch_tool("nonexistent_tool", {}, db, "some question")
+
+
+def test_tool_catalog_includes_required_argument_contracts() -> None:
+    catalog = render_tool_catalog()
+
+    assert '"name": "get_comparison"' in catalog
+    assert '"required"' in catalog
+    assert '"this_start"' in catalog

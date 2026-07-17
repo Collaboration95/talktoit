@@ -93,6 +93,27 @@ async def test_get_last_workout_returns_workout_card(
     assert response.narrative == "Test narrative."
 
 
+async def test_planner_receives_local_coverage_instead_of_computer_date(
+    db: duckdb.DuckDBPyConnection,
+) -> None:
+    """Relative language must be anchored to the health export's latest day."""
+    client = _make_stub_client(
+        "get_last_workout",
+        {"activity_type": "Running"},
+        "Test narrative.",
+    )
+    orchestrator = ChatOrchestrator(client=client, conn=db)  # type: ignore[arg-type]
+
+    await orchestrator.answer("Show my last run")
+
+    planner_messages = client.chat.completions.create.await_args_list[0].kwargs["messages"]
+    planner_prompt = planner_messages[0]["content"]
+    assert "Treat 2026-06-10 as today" in planner_prompt
+    assert "Available workout types:" in planner_prompt
+    assert "Running" in planner_prompt
+    assert "Traditional Strength Training" in planner_prompt
+
+
 async def test_get_top_workouts_returns_ranked_list(
     db: duckdb.DuckDBPyConnection,
 ) -> None:
@@ -110,7 +131,7 @@ async def test_get_top_workouts_returns_ranked_list(
     assert response.data["rows"][0]["rank"] == 1
 
 
-async def test_invalid_planner_output_falls_back(
+async def test_invalid_planner_output_uses_local_fallback_plan(
     db: duckdb.DuckDBPyConnection,
 ) -> None:
     client = _make_stub_client(
@@ -121,7 +142,8 @@ async def test_invalid_planner_output_falls_back(
     orchestrator = ChatOrchestrator(client=client, conn=db)  # type: ignore[arg-type]
     response = await orchestrator.answer("Show my last run")
 
-    assert response.template_id == "fallback"
+    assert response.template_id == "workout_card"
+    assert response.narrative == "Here is your most recent Running."
 
 
 async def test_get_trend_returns_trend_chart(

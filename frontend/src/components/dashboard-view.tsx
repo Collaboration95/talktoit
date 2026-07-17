@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { TrendLine } from '@/charts/trend-line'
 import { GaugeRings } from '@/charts/gauge-rings'
 import { WorkoutDetail } from '@/components/workout-detail'
@@ -27,6 +27,20 @@ function NoData() {
   return <p className="text-sm text-gray-400 py-4">No data</p>
 }
 
+function displayActivityType(activityType: string): string {
+  return activityType.replace(/^HKWorkoutActivityType/, '').replace(/([a-z])([A-Z])/g, '$1 $2')
+}
+
+function formatDate(isoDate: string): string {
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(
+    new Date(`${isoDate.slice(0, 10)}T12:00:00`),
+  )
+}
+
+function formatNumber(value: number, maximumFractionDigits = 0): string {
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits }).format(value)
+}
+
 function ActivityRingsPanel({ days }: { days: ActivityRingDay[] }) {
   if (days.length === 0) return <NoData />
   const latest = days[0]!
@@ -46,55 +60,104 @@ function WorkoutsPanel({
   workouts: WorkoutSummary[]
   onSelect: (id: number) => void
 }) {
+  const [selectedType, setSelectedType] = useState<string | null>(null)
+  const workoutTypes = useMemo(
+    () =>
+      [...new Set(workouts.map((workout) => workout.activity_type))].sort((a, b) =>
+        displayActivityType(a).localeCompare(displayActivityType(b)),
+      ),
+    [workouts],
+  )
   if (workouts.length === 0) return <NoData />
+  const filteredWorkouts = selectedType
+    ? workouts.filter((workout) => workout.activity_type === selectedType)
+    : workouts
+
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full text-sm">
-        <thead>
-          <tr className="text-left text-gray-500 border-b">
-            <th className="pb-2 pr-4">Date</th>
-            <th className="pb-2 pr-4">Type</th>
-            <th className="pb-2 pr-4">Duration</th>
-            <th className="pb-2 pr-4">Avg HR</th>
-            <th className="pb-2 pr-4">Distance</th>
-            <th className="pb-2">Energy</th>
-          </tr>
-        </thead>
-        <tbody>
-          {workouts.map((w) => (
-            <tr
-              key={w.id}
-              onClick={() => onSelect(w.id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  onSelect(w.id)
-                }
-              }}
-              tabIndex={0}
-              role="button"
-              className="border-b last:border-0 cursor-pointer hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-inset"
+    <div>
+      <div className="mb-4 flex flex-wrap gap-2" aria-label="Filter workouts by type">
+        <button
+          type="button"
+          aria-pressed={selectedType === null}
+          onClick={() => setSelectedType(null)}
+          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+            selectedType === null
+              ? 'border-blue-600 bg-blue-600 text-white'
+              : 'border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-700'
+          }`}
+        >
+          All <span className="opacity-80">{workouts.length}</span>
+        </button>
+        {workoutTypes.map((type) => {
+          const count = workouts.filter((workout) => workout.activity_type === type).length
+          const selected = selectedType === type
+          return (
+            <button
+              key={type}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => setSelectedType(selected ? null : type)}
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                selected
+                  ? 'border-blue-600 bg-blue-600 text-white'
+                  : 'border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-700'
+              }`}
             >
-              <td className="py-1 pr-4 text-gray-500">{w.date.slice(0, 10)}</td>
-              <td className="py-1 pr-4 font-medium">{w.activity_type}</td>
-              <td className="py-1 pr-4">
-                {w.duration_minutes !== null ? `${w.duration_minutes} min` : '—'}
-              </td>
-              <td className="py-1 pr-4">
-                {w.avg_heart_rate !== null ? `${w.avg_heart_rate} bpm` : '—'}
-              </td>
-              <td className="py-1 pr-4">
-                {w.distance_meters !== null
-                  ? `${Math.round((w.distance_meters / 1000) * 10) / 10} km`
-                  : '—'}
-              </td>
-              <td className="py-1">
-                {w.energy_burned_kj !== null ? `${w.energy_burned_kj} kJ` : '—'}
-              </td>
+              {displayActivityType(type)} <span className="opacity-80">{count}</span>
+            </button>
+          )
+        })}
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-gray-100">
+        <table className="w-full min-w-[680px] text-sm">
+          <thead>
+            <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+              <th className="px-3 py-3">Date</th>
+              <th className="px-3 py-3">Workout</th>
+              <th className="px-3 py-3 text-right">Duration</th>
+              <th className="px-3 py-3 text-right">Avg HR</th>
+              <th className="px-3 py-3 text-right">Distance</th>
+              <th className="px-3 py-3 text-right">Energy</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {filteredWorkouts.map((w) => (
+              <tr
+                key={w.id}
+                onClick={() => onSelect(w.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    onSelect(w.id)
+                  }
+                }}
+                tabIndex={0}
+                role="button"
+                className="cursor-pointer border-b last:border-0 hover:bg-blue-50/60 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-400"
+              >
+                <td className="whitespace-nowrap px-3 py-3 text-gray-500">{formatDate(w.date)}</td>
+                <td className="px-3 py-3 font-medium text-gray-900" title={w.activity_type}>
+                  {displayActivityType(w.activity_type)}
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
+                  {w.duration_minutes !== null ? `${formatNumber(w.duration_minutes)} min` : '—'}
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
+                  {w.avg_heart_rate !== null ? `${w.avg_heart_rate} bpm` : '—'}
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
+                  {w.distance_meters !== null
+                    ? `${formatNumber(w.distance_meters / 1000, 1)} km`
+                    : '—'}
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
+                  {w.energy_burned_kj !== null ? `${formatNumber(w.energy_burned_kj, 1)} kJ` : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
@@ -178,11 +241,11 @@ export function DashboardView() {
 
   useEffect(() => {
     Promise.all([
-      fetchSummary(7),
-      fetchWorkouts(30),
-      fetchTrend('steps', 30, 'day'),
-      fetchTrend('heart', 90, 'week'),
-      fetchTrend('sleep', 30, 'day'),
+      fetchSummary(),
+      fetchWorkouts(),
+      fetchTrend('steps', 'day'),
+      fetchTrend('heart', 'week'),
+      fetchTrend('sleep', 'day'),
       fetchCapabilities(),
     ])
       .then(([summary, workouts, steps, heart, sleep, caps]) => {
@@ -235,26 +298,26 @@ export function DashboardView() {
     <div className="mx-auto max-w-4xl px-4 py-6 space-y-4">
       {backendDown ? <BackendDownBanner /> : null}
 
-      <Section title="Activity Rings (Today)">
+      <Section title="Activity Rings (Latest available day)">
         <ActivityRingsPanel days={state.summary} />
       </Section>
 
-      <Section title="Recent Workouts (Last 30 Days)">
+      <Section title="Recent Workouts (Latest 30 data days)">
         <WorkoutsPanel
           workouts={state.workouts}
           onSelect={(id) => setMode({ view: 'detail', workoutId: id })}
         />
       </Section>
 
-      <Section title="Daily Steps (Last 30 Days)">
+      <Section title="Daily Steps (Latest 30 data days)">
         <TrendPanel trend={state.steps} title="Steps" />
       </Section>
 
-      <Section title="Resting Heart Rate (Last 90 Days)">
+      <Section title="Resting Heart Rate (Latest 90 data days)">
         <TrendPanel trend={state.heart} title="Resting HR" />
       </Section>
 
-      <Section title="Sleep Duration (Last 30 Days)">
+      <Section title="Sleep Duration (Latest 30 data days)">
         <TrendPanel trend={state.sleep} title="Sleep" />
       </Section>
 

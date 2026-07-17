@@ -69,10 +69,28 @@ def test_get_top_workouts_by_distance_running(db: duckdb.DuckDBPyConnection) -> 
     assert len(result.rows) == 1
     row = result.rows[0]
     assert row.rank == 1
-    assert row.value == pytest.approx(8500.0)
-    assert row.unit == "m"
+    assert row.value == pytest.approx(8.5)
+    assert row.unit == "km"
     assert row.secondary_value == pytest.approx(45.5)
     assert row.secondary_unit == "min"
+
+
+def test_distance_queries_normalise_kilometre_source_units(db: duckdb.DuckDBPyConnection) -> None:
+    """Apple Health exports can store the same statistic in km instead of m."""
+    db.execute(
+        """
+        UPDATE workout_statistics
+        SET sum = 8.5, unit = 'km'
+        WHERE workout_id = 1
+          AND type = 'HKQuantityTypeIdentifierDistanceWalkingRunning'
+        """
+    )
+
+    result = get_last_workout(db, "Running")
+
+    assert result is not None
+    assert result.distance_meters == pytest.approx(8500.0)
+    assert result.distance_unit == "m"
 
 
 def test_get_top_workouts_by_duration_cycling(db: duckdb.DuckDBPyConnection) -> None:

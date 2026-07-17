@@ -297,6 +297,17 @@ async def test_http_steps(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_default_dashboard_window_anchors_to_latest_local_data(client: AsyncClient) -> None:
+    """A stale export must not generate a window ending at the computer clock."""
+    response = await client.get("/api/dashboard/steps")
+
+    assert response.status_code == 200
+    series = response.json()["series"]
+    assert series[-1]["bucket"] == "2026-06-10"
+    assert any(point["value"] is not None for point in series)
+
+
+@pytest.mark.asyncio
 async def test_http_heart(client: AsyncClient) -> None:
     """GET /api/dashboard/heart returns a trend response."""
     r = await client.get(

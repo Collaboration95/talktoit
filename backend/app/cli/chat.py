@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import sys
 from pathlib import Path
 
@@ -32,6 +33,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Optional DuckDB path override. Defaults to TTI_DB_PATH or backend/data/health.duckdb."
         ),
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print planner and connection failures to stderr.",
     )
     return parser.parse_args(argv)
 
@@ -84,6 +90,7 @@ def _print_response(response: ChatResponse, json_output: bool) -> None:
 def main(argv: list[str] | None = None) -> int:
     """Run the CLI and return a shell exit status."""
     args = _parse_args(argv)
+    logging.basicConfig(level=logging.INFO if args.verbose else logging.CRITICAL)
     question = _resolve_question(args.question)
     response = asyncio.run(_ask_question(question, db_path=args.db_path))
     _print_response(response, args.json)

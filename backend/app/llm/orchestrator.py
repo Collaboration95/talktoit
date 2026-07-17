@@ -14,8 +14,10 @@ from typing import TYPE_CHECKING, Any
 
 import openai
 
+from app.db.data_profile import get_data_profile
 from app.db.queries import get_fallback
 from app.llm.client import DEFAULT_MODEL
+from app.llm.local_planner import plan_local_question
 from app.llm.tools import TOOL_NAMES, dispatch_tool, normalize_tool_name, render_tool_catalog
 from app.models.chat import ChatResponse
 from app.models.templates import FallbackData
@@ -42,7 +44,13 @@ Rules:
 2. Use get_fallback_answer if no other tool fits the question.
 3. Keep arguments valid JSON and only include fields the tool accepts.
 4. Interpret date ranges in the Asia/Singapore timezone.
-5. Today's date is {today}.
+5. Dataset context (generated locally): {data_context}
+6. Use the dataset's "today" when resolving relative dates, never the computer clock.
+7. Map common wording as follows: run/jog → Running; bike → Cycling;
+   gym/weights → Traditional Strength Training. For "longest", rank by duration;
+   for "highest heart rate", rank by avg_hr.
+8. For a request to compare periods, use get_comparison. For training volume in a
+   single period, use get_period_summary. For a metric over time, use get_trend.
 """
 
 _NARRATIVE_PROMPT = """You are a personal health data assistant for an Apple Health user.
@@ -53,7 +61,7 @@ Rules:
 2. Never mention raw database rows, SQL, JSON, or implementation details.
 3. Be concise and friendly.
 4. The user's timezone is Asia/Singapore (+0800).
-5. Today's date is {today}.
+5. The local dataset is current through {today}; use that date for relative language.
 """
 
 
@@ -111,6 +119,35 @@ def _parse_tool_plan(content: str | None) -> dict[str, Any] | None:
     return payload
 
 
+def _validated_plan(plan: dict[str, Any] | None) -> tuple[str, dict[str, Any]] | None:
+    """Validate a model or local planner payload before dispatching it."""
+    if plan is None:
+        return None
+
+    raw_tool_name = plan.get("tool_name", "")
+    if not isinstance(raw_tool_name, str):
+        return None
+    tool_name = normalize_tool_name(raw_tool_name)
+    if tool_name not in TOOL_NAMES:
+        return None
+
+    args = plan.get("arguments", {})
+    if not isinstance(args, dict):
+        return None
+    return tool_name, args
+
+
+def _local_narrative(template_id: str, data: dict[str, Any]) -> str:
+    """Provide a useful answer if only the optional remote narrator failed."""
+    title = data.get("title")
+    if isinstance(title, str) and title:
+        return f"Here is your local {title.lower()}."
+    if template_id == "workout_card":
+        activity_type = data.get("activity_type", "workout")
+        return f"Here is your most recent {activity_type}."
+    return "I found the matching data in your local health database."
+
+
 class ChatOrchestrator:
     """Orchestrates one-shot LLM planning to answer health questions.
 
@@ -151,9 +188,11 @@ class ChatOrchestrator:
             A :class:`ChatResponse` envelope with ``template_id``, ``data``,
             and ``narrative``.
         """
-        today = date.today().isoformat()
+        data_profile = get_data_profile(self.conn)
+        today = (data_profile.latest_date or date.today()).isoformat()
         planner_prompt = _PLANNER_PROMPT.format(
             today=today,
+            data_context=data_profile.planner_summary(),
             tool_catalog=render_tool_catalog(),
             tool_names=", ".join(TOOL_NAMES),
         )
@@ -163,39 +202,31 @@ class ChatOrchestrator:
         ]
 
         # ── Turn 1: plan the tool call ───────────────────────────────────────
+        plan: dict[str, Any] | None = None
+        used_local_plan = False
         try:
             planner_response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=planner_messages,  # type: ignore[arg-type]
                 temperature=0,
             )
+            if planner_response.choices:
+                plan = _parse_tool_plan(planner_response.choices[0].message.content)
+            else:
+                logger.warning("LLM planner returned no choices")
         except Exception:
             logger.exception("LLM planner request failed")
-            return _make_fallback_response(question)
 
-        if not planner_response.choices:
-            logger.warning("LLM planner returned no choices — falling back")
+        resolved_plan = _validated_plan(plan)
+        if resolved_plan is None:
+            local_plan = plan_local_question(question, data_profile)
+            resolved_plan = _validated_plan(local_plan)
+            used_local_plan = resolved_plan is not None
+            if used_local_plan:
+                logger.info("Using local fallback planner for question")
+        if resolved_plan is None:
             return _make_fallback_response(question)
-
-        plan_content = planner_response.choices[0].message.content
-        plan = _parse_tool_plan(plan_content)
-        if plan is None:
-            return _make_fallback_response(question)
-
-        raw_tool_name = plan.get("tool_name", "")
-        if not isinstance(raw_tool_name, str):
-            logger.warning("LLM planner returned a non-string tool name")
-            return _make_fallback_response(question)
-
-        tool_name = normalize_tool_name(raw_tool_name)
-        if tool_name not in TOOL_NAMES:
-            logger.warning("LLM planner returned unknown tool name %r", tool_name)
-            return _make_fallback_response(question)
-
-        args = plan.get("arguments", {})
-        if not isinstance(args, dict):
-            logger.warning("LLM planner returned invalid tool arguments")
-            return _make_fallback_response(question)
+        tool_name, args = resolved_plan
 
         # ── Execute the tool ─────────────────────────────────────────────────
         try:
@@ -218,6 +249,13 @@ class ChatOrchestrator:
         ]
 
         # ── Turn 2: narrative ────────────────────────────────────────────────
+        if used_local_plan:
+            return ChatResponse(
+                template_id=template_id,
+                data=data_dict,
+                narrative=_local_narrative(template_id, data_dict),
+            )
+
         try:
             narrative_response = await self.client.chat.completions.create(
                 model=self.model,
@@ -226,7 +264,7 @@ class ChatOrchestrator:
             narrative = narrative_response.choices[0].message.content or ""
         except Exception:
             logger.exception("LLM narrative request failed")
-            narrative = ""
+            narrative = _local_narrative(template_id, data_dict)
 
         return ChatResponse(
             template_id=template_id,
