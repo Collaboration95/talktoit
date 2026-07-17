@@ -59,6 +59,13 @@ def test_get_last_workout_no_match(db: duckdb.DuckDBPyConnection) -> None:
     assert result is None
 
 
+def test_get_last_workout_can_require_a_long_session(db: duckdb.DuckDBPyConnection) -> None:
+    result = get_last_workout(db, "Running", min_duration_minutes=30)
+
+    assert result is not None
+    assert result.duration_minutes == pytest.approx(45.5)
+
+
 # ---------------------------------------------------------------------------
 # get_top_workouts
 # ---------------------------------------------------------------------------

@@ -36,7 +36,11 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                         "description": (
                             "Workout type e.g. Running, Cycling, TraditionalStrengthTraining"
                         ),
-                    }
+                    },
+                    "min_duration_minutes": {
+                        "type": "number",
+                        "description": "Optional minimum duration for a qualifying workout",
+                    },
                 },
                 "required": ["activity_type"],
             },
@@ -227,7 +231,9 @@ def _tool_get_last_workout(
         Tuple of (template_id, data_dict).
     """
     activity_type: str = resolve_activity_type(conn, args["activity_type"])
-    result = queries.get_last_workout(conn, activity_type)
+    raw_min_duration = args.get("min_duration_minutes")
+    min_duration = float(raw_min_duration) if raw_min_duration is not None else None
+    result = queries.get_last_workout(conn, activity_type, min_duration)
     if result is None:
         fallback = FallbackData(
             question=question,

@@ -85,6 +85,7 @@ LEFT JOIN workout_metadata elev
     ON elev.workout_id = w.id
     AND elev.key = 'HKElevationAscended'
 WHERE w.activity_type = ?
+  AND (? IS NULL OR CASE WHEN w.duration_unit = 'hr' THEN w.duration * 60 ELSE w.duration END >= ?)
 ORDER BY w.start_date DESC
 LIMIT 1
 """
@@ -213,6 +214,7 @@ _to_local_dt = to_local_dt
 def get_last_workout(
     conn: duckdb.DuckDBPyConnection,
     activity_type: str,
+    min_duration_minutes: float | None = None,
     tz: str = DEFAULT_TZ,
 ) -> WorkoutCardData | None:
     """Fetch the most recent workout of the given type.
@@ -220,13 +222,16 @@ def get_last_workout(
     Args:
         conn: Open DuckDB connection.
         activity_type: Activity type string as stored in the DB (e.g. ``"Running"``).
+        min_duration_minutes: Optional lower duration threshold for a qualifying workout.
         tz: IANA timezone for converting the UTC start_date to local time.
 
     Returns:
         A :class:`WorkoutCardData` for the most recent matching workout, or
         ``None`` if no workout of that type exists.
     """
-    row = conn.execute(_SQL_LAST_WORKOUT, [activity_type]).fetchone()
+    row = conn.execute(
+        _SQL_LAST_WORKOUT, [activity_type, min_duration_minutes, min_duration_minutes]
+    ).fetchone()
     if row is None:
         return None
 

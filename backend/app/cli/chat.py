@@ -66,7 +66,7 @@ def _resolve_question(question: str | None) -> str:
 
 async def _ask_question(question: str, db_path: Path | None = None) -> ChatResponse:
     """Run one question against the orchestrator and return the response."""
-    conn = connect(db_path)
+    conn = connect(db_path, read_only=True)
     try:
         client = make_client()
         orchestrator = ChatOrchestrator(client=client, conn=conn, model=get_model())

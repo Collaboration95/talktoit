@@ -62,6 +62,8 @@ Rules:
 3. Be concise and friendly.
 4. The user's timezone is Asia/Singapore (+0800).
 5. The local dataset is current through {today}; use that date for relative language.
+6. State only facts present in the tool result. Do not call a workout long, intense,
+   or a best effort unless the result itself establishes that claim.
 """
 
 
@@ -202,8 +204,11 @@ class ChatOrchestrator:
         ]
 
         # ── Turn 1: plan the tool call ───────────────────────────────────────
+        # Recognised time and activity phrases are resolved locally first for
+        # correctness, while the model remains available for open-ended input.
+        local_plan = _validated_plan(plan_local_question(question, data_profile))
+        used_local_plan = local_plan is not None
         plan: dict[str, Any] | None = None
-        used_local_plan = False
         try:
             planner_response = await self.client.chat.completions.create(
                 model=self.model,
@@ -217,13 +222,9 @@ class ChatOrchestrator:
         except Exception:
             logger.exception("LLM planner request failed")
 
-        resolved_plan = _validated_plan(plan)
-        if resolved_plan is None:
-            local_plan = plan_local_question(question, data_profile)
-            resolved_plan = _validated_plan(local_plan)
-            used_local_plan = resolved_plan is not None
-            if used_local_plan:
-                logger.info("Using local fallback planner for question")
+        resolved_plan = local_plan or _validated_plan(plan)
+        if local_plan is not None:
+            logger.info("Using deterministic local plan for recognised question")
         if resolved_plan is None:
             return _make_fallback_response(question)
         tool_name, args = resolved_plan
@@ -249,7 +250,7 @@ class ChatOrchestrator:
         ]
 
         # ── Turn 2: narrative ────────────────────────────────────────────────
-        if used_local_plan:
+        if used_local_plan and template_id == "trend_chart":
             return ChatResponse(
                 template_id=template_id,
                 data=data_dict,

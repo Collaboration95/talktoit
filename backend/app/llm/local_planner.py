@@ -109,7 +109,14 @@ def plan_local_question(question: str, profile: DataProfile) -> dict[str, Any] |
     if activity_type is not None and any(
         phrase in lower for phrase in ("top", "longest", "highest heart", "highest hr")
     ):
-        metric = "avg_hr" if "heart" in lower or " hr" in lower else "duration"
+        if "distance" in lower:
+            metric = "distance"
+        elif "heart" in lower or " hr" in lower:
+            metric = "avg_hr"
+        elif "energy" in lower or "calorie" in lower:
+            metric = "energy"
+        else:
+            metric = "duration"
         arguments: dict[str, Any] = {"activity_type": activity_type, "metric": metric, "n": 5}
         if "which" in lower:
             arguments["n"] = 1
@@ -121,6 +128,9 @@ def plan_local_question(question: str, profile: DataProfile) -> dict[str, Any] |
     if activity_type is not None and any(
         phrase in lower for phrase in ("last", "latest", "most recent")
     ):
-        return {"tool_name": "get_last_workout", "arguments": {"activity_type": activity_type}}
+        arguments: dict[str, Any] = {"activity_type": activity_type}
+        if "long" in lower:
+            arguments["min_duration_minutes"] = 30
+        return {"tool_name": "get_last_workout", "arguments": arguments}
 
     return None

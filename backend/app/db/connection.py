@@ -12,7 +12,9 @@ from pathlib import Path
 import duckdb
 
 
-def connect(db_path: str | Path | None = None) -> duckdb.DuckDBPyConnection:
+def connect(
+    db_path: str | Path | None = None, *, read_only: bool = False
+) -> duckdb.DuckDBPyConnection:
     """Open a DuckDB connection to the project database.
 
     Args:
@@ -20,6 +22,7 @@ def connect(db_path: str | Path | None = None) -> duckdb.DuckDBPyConnection:
             ``backend/data/health.duckdb`` relative to the repo root (two
             levels up from this file). Can be overridden via the
             ``TTI_DB_PATH`` environment variable.
+        read_only: Open a shared read-only connection for query-only callers.
 
     Returns:
         An open DuckDB connection (read/write, auto-commit).
@@ -33,6 +36,7 @@ def connect(db_path: str | Path | None = None) -> duckdb.DuckDBPyConnection:
         db_path = repo_root / "data" / "health.duckdb"
 
     path = Path(db_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = duckdb.connect(str(path))
+    if not read_only:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    conn = duckdb.connect(str(path), read_only=read_only)
     return conn

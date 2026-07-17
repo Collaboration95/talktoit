@@ -143,7 +143,7 @@ async def test_invalid_planner_output_uses_local_fallback_plan(
     response = await orchestrator.answer("Show my last run")
 
     assert response.template_id == "workout_card"
-    assert response.narrative == "Here is your most recent Running."
+    assert response.narrative == "Test narrative."
 
 
 async def test_get_trend_returns_trend_chart(
@@ -160,11 +160,12 @@ async def test_get_trend_returns_trend_chart(
         "Test narrative.",
     )
     orchestrator = ChatOrchestrator(client=client, conn=db)  # type: ignore[arg-type]
-    response = await orchestrator.answer("Show resting HR trend")
+    response = await orchestrator.answer("Plot my pulse metric")
 
     assert response.template_id == "trend_chart"
     assert "series" in response.data
     assert len(response.data["series"]) == 2
+    assert response.narrative == "Test narrative."
 
 
 async def test_get_period_summary(
@@ -199,7 +200,7 @@ async def test_get_comparison(
         "Test narrative.",
     )
     orchestrator = ChatOrchestrator(client=client, conn=db)  # type: ignore[arg-type]
-    response = await orchestrator.answer("Compare this week to last week")
+    response = await orchestrator.answer("Compare my two selected periods")
 
     assert response.template_id == "comparison"
     assert "metrics" in response.data

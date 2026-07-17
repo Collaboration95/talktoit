@@ -174,7 +174,7 @@ LIMIT 1
 
 def _get_conn() -> Generator[duckdb.DuckDBPyConnection, None, None]:
     """FastAPI dependency — open a DB connection for the request lifetime."""
-    conn = connect()
+    conn = connect(read_only=True)
     try:
         yield conn
     finally:

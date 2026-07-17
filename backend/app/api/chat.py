@@ -21,7 +21,7 @@ def _get_conn() -> Generator[duckdb.DuckDBPyConnection, None, None]:
     Yields:
         An open DuckDB connection that is closed after the request completes.
     """
-    conn = connect()
+    conn = connect(read_only=True)
     try:
         yield conn
     finally:

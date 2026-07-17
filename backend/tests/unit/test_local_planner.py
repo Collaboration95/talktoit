@@ -20,7 +20,7 @@ def _profile(latest_date: date | None = date(2026, 6, 17)) -> DataProfile:
 def test_plans_last_run() -> None:
     assert plan_local_question("Show me my last long run", _profile()) == {
         "tool_name": "get_last_workout",
-        "arguments": {"activity_type": "Running"},
+        "arguments": {"activity_type": "Running", "min_duration_minutes": 30},
     }
 
 
@@ -49,6 +49,14 @@ def test_plans_longest_runs_this_year() -> None:
     assert plan["arguments"]["metric"] == "duration"
     assert plan["arguments"]["start_date"] == "2026-01-01"
     assert plan["arguments"]["end_date"] == "2026-06-17"
+
+
+def test_plans_top_running_workouts_by_distance() -> None:
+    plan = plan_local_question("Top running workouts by distance", _profile())
+
+    assert plan is not None
+    assert plan["tool_name"] == "get_top_workouts"
+    assert plan["arguments"]["metric"] == "distance"
 
 
 def test_plans_resting_heart_rate_trend() -> None:
