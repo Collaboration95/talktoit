@@ -1,4 +1,5 @@
 import type { ComparisonData, ComparisonMetric } from '@/types/templates'
+import { formatMetricValue, formatSignedMetricValue } from '@/lib/format'
 
 interface ComparisonProps {
   data: ComparisonData
@@ -50,20 +51,17 @@ function directionColor(direction: ComparisonMetric['direction']): string {
 function ComparisonRow({ metric }: { metric: ComparisonMetric }) {
   const arrow = directionArrow(metric.direction)
   const color = directionColor(metric.direction)
-  const deltaStr =
-    metric.delta !== null ? `${metric.delta > 0 ? '+' : ''}${metric.delta.toFixed(1)}` : '—'
   return (
     <tr className="border-b last:border-0">
       <td className="py-2 pr-4 font-medium text-gray-700">{metric.label}</td>
       <td className="py-2 pr-4 text-gray-900">
-        {metric.this_value !== null ? `${metric.this_value} ${metric.unit}` : '—'}
+        {formatMetricValue(metric.this_value, metric.unit) ?? '—'}
       </td>
       <td className="py-2 pr-4 text-gray-500">
-        {metric.last_value !== null ? `${metric.last_value} ${metric.unit}` : '—'}
+        {formatMetricValue(metric.last_value, metric.unit) ?? '—'}
       </td>
       <td className={`py-2 font-medium ${color}`}>
-        {arrow} {deltaStr}
-        {metric.delta !== null ? ` ${metric.unit}` : ''}
+        {arrow} {formatSignedMetricValue(metric.delta, metric.unit)}
       </td>
     </tr>
   )

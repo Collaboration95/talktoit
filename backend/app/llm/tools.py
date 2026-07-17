@@ -7,10 +7,12 @@ defined in SPEC §4.
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from typing import TYPE_CHECKING, Any, Literal
 
 from app.db import queries
+from app.db.data_profile import display_activity_type, resolve_activity_type
 from app.models.templates import FallbackData
 
 if TYPE_CHECKING:
@@ -34,7 +36,11 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                         "description": (
                             "Workout type e.g. Running, Cycling, TraditionalStrengthTraining"
                         ),
-                    }
+                    },
+                    "min_duration_minutes": {
+                        "type": "number",
+                        "description": "Optional minimum duration for a qualifying workout",
+                    },
                 },
                 "required": ["activity_type"],
             },
@@ -224,8 +230,10 @@ def _tool_get_last_workout(
     Returns:
         Tuple of (template_id, data_dict).
     """
-    activity_type: str = args["activity_type"]
-    result = queries.get_last_workout(conn, activity_type)
+    activity_type: str = resolve_activity_type(conn, args["activity_type"])
+    raw_min_duration = args.get("min_duration_minutes")
+    min_duration = float(raw_min_duration) if raw_min_duration is not None else None
+    result = queries.get_last_workout(conn, activity_type, min_duration)
     if result is None:
         fallback = FallbackData(
             question=question,
@@ -233,7 +241,9 @@ def _tool_get_last_workout(
             text=f"No {activity_type} workouts found.",
         )
         return ("fallback", fallback.model_dump(mode="json"))
-    return ("workout_card", result.model_dump(mode="json"))
+    data = result.model_dump(mode="json")
+    data["activity_type"] = display_activity_type(data["activity_type"])
+    return ("workout_card", data)
 
 
 def _tool_get_top_workouts(
@@ -249,13 +259,17 @@ def _tool_get_top_workouts(
     Returns:
         Tuple of (template_id, data_dict).
     """
-    activity_type: str = args["activity_type"]
+    activity_type: str = resolve_activity_type(conn, args["activity_type"])
     metric: Literal["distance", "duration", "avg_hr", "energy"] = args["metric"]
     n: int = args.get("n", 5)
     start: date | None = date.fromisoformat(args["start_date"]) if args.get("start_date") else None
     end: date | None = date.fromisoformat(args["end_date"]) if args.get("end_date") else None
     result = queries.get_top_workouts(conn, activity_type, metric, n=n, start=start, end=end)
-    return ("ranked_list", result.model_dump(mode="json"))
+    data = result.model_dump(mode="json")
+    data["title"] = data["title"].replace(activity_type, display_activity_type(activity_type))
+    for row in data["rows"]:
+        row["label"] = row["label"].replace(activity_type, display_activity_type(activity_type))
+    return ("ranked_list", data)
 
 
 def _tool_get_trend(
@@ -318,7 +332,10 @@ def _tool_get_comparison(
     last_end = date.fromisoformat(args["last_end"])
     this_label: str = args["this_label"]
     last_label: str = args["last_label"]
-    activity_type: str | None = args.get("activity_type")
+    requested_type: str | None = args.get("activity_type")
+    activity_type = (
+        resolve_activity_type(conn, requested_type) if requested_type is not None else None
+    )
     result = queries.get_comparison(
         conn,
         this_start,
@@ -329,7 +346,10 @@ def _tool_get_comparison(
         last_label,
         activity_type=activity_type,
     )
-    return ("comparison", result.model_dump(mode="json"))
+    data = result.model_dump(mode="json")
+    if activity_type is not None:
+        data["title"] = data["title"].replace(activity_type, display_activity_type(activity_type))
+    return ("comparison", data)
 
 
 def _tool_get_fallback_answer(
@@ -361,12 +381,9 @@ def normalize_tool_name(tool_name: str) -> str:
 
 
 def render_tool_catalog() -> str:
-    """Render the tool catalog as human-readable prompt text."""
-    lines: list[str] = []
-    for schema in TOOL_SCHEMAS:
-        function = schema["function"]
-        lines.append(f"- {function['name']}: {function['description']}")
-    return "\n".join(lines)
+    """Render full function contracts so a text-only planner can supply arguments."""
+    functions = [schema["function"] for schema in TOOL_SCHEMAS]
+    return json.dumps(functions, indent=2)
 
 
 # ---------------------------------------------------------------------------

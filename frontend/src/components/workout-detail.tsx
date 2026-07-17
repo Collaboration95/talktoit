@@ -2,6 +2,12 @@ import { useEffect, useState } from 'react'
 import { fetchWorkoutDetail } from '@/api/dashboard'
 import type { WorkoutDetail as WorkoutDetailType } from '@/api/dashboard'
 import ReactECharts from 'echarts-for-react'
+import {
+  formatDateTime,
+  formatDistanceKm,
+  formatDurationMinutes,
+  formatMetricValue,
+} from '@/lib/format'
 
 interface WorkoutDetailProps {
   workoutId: number
@@ -45,23 +51,23 @@ export function WorkoutDetail({ workoutId, onBack }: WorkoutDetailProps) {
     )
   }
 
-  const distanceKm = data.distance_meters !== null ? (data.distance_meters / 1000).toFixed(2) : null
+  const distanceKm = formatDistanceKm(data.distance_meters)
 
   const detailMetrics: { label: string; value: string | null }[] = [
     {
       label: 'Duration',
-      value: data.duration_minutes !== null ? `${data.duration_minutes} min` : null,
+      value: formatDurationMinutes(data.duration_minutes),
     },
-    { label: 'Avg HR', value: data.avg_heart_rate !== null ? `${data.avg_heart_rate} bpm` : null },
-    { label: 'Max HR', value: data.max_heart_rate !== null ? `${data.max_heart_rate} bpm` : null },
-    { label: 'Distance', value: distanceKm !== null ? `${distanceKm} km` : null },
+    { label: 'Avg HR', value: formatMetricValue(data.avg_heart_rate, 'bpm') },
+    { label: 'Max HR', value: formatMetricValue(data.max_heart_rate, 'bpm') },
+    { label: 'Distance', value: distanceKm },
     {
       label: 'Energy',
-      value: data.energy_burned_kj !== null ? `${data.energy_burned_kj} kJ` : null,
+      value: formatMetricValue(data.energy_burned_kj, 'kJ'),
     },
     {
       label: 'Elevation',
-      value: data.elevation_ascent_meters !== null ? `${data.elevation_ascent_meters} m` : null,
+      value: formatMetricValue(data.elevation_ascent_meters, 'm'),
     },
   ]
 
@@ -73,7 +79,7 @@ export function WorkoutDetail({ workoutId, onBack }: WorkoutDetailProps) {
 
       <h2 className="text-xl font-bold text-gray-900">{data.activity_type}</h2>
       <p className="text-sm text-gray-500">
-        {new Date(data.date).toLocaleString()} · via {data.source_name}
+        {formatDateTime(data.date)} · via {data.source_name}
       </p>
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -82,7 +88,7 @@ export function WorkoutDetail({ workoutId, onBack }: WorkoutDetailProps) {
             m.value !== null && (
               <div key={m.label} className="rounded-lg bg-gray-50 p-3">
                 <p className="text-xs text-gray-500">{m.label}</p>
-                <p className="mt-1 font-semibold text-gray-900">{m.value}</p>
+                <p className="mt-1 font-semibold tabular-nums text-gray-900">{m.value}</p>
               </div>
             ),
         )}

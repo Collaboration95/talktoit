@@ -93,6 +93,78 @@ async def test_get_last_workout_returns_workout_card(
     assert response.narrative == "Test narrative."
 
 
+async def test_narrative_prompt_uses_compact_tool_result(
+    db: duckdb.DuckDBPyConnection,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _make_stub_client(
+        "get_last_workout",
+        {"activity_type": "Running"},
+        "Test narrative.",
+    )
+
+    def fake_dispatch(
+        tool_name: str,
+        args: dict[str, Any],
+        conn: duckdb.DuckDBPyConnection,
+        question: str,
+    ):
+        assert tool_name == "get_last_workout"
+        return (
+            "workout_card",
+            {
+                "activity_type": "Running",
+                "date": "2026-06-08T20:08:48+08:00",
+                "duration_minutes": 61.05181868268979,
+                "avg_heart_rate": 157,
+                "max_heart_rate": 171,
+                "distance_meters": 10020.4,
+                "distance_unit": "km",
+                "energy_burned_kj": 886.059,
+                "elevation_ascent_meters": 45.2,
+                "gps_route": {
+                    "type": "LineString",
+                    "coordinates": [[103.8198, 1.3521], [103.8204, 1.3532]],
+                },
+            },
+        )
+
+    monkeypatch.setattr("app.llm.orchestrator.dispatch_tool", fake_dispatch)
+
+    orchestrator = ChatOrchestrator(client=client, conn=db)  # type: ignore[arg-type]
+    await orchestrator.answer("Show my last run")
+
+    narrative_messages = client.chat.completions.create.await_args_list[1].kwargs["messages"]
+    prompt_content = narrative_messages[1]["content"]
+    assert '"duration_minutes":61' in prompt_content
+    assert '"avg_heart_rate":157' in prompt_content
+    assert '"max_heart_rate":171' in prompt_content
+    assert '"distance_meters":10020' in prompt_content
+    assert '"energy_burned_kj":886' in prompt_content
+    assert '"gps_route"' not in prompt_content
+
+
+async def test_planner_receives_local_coverage_instead_of_computer_date(
+    db: duckdb.DuckDBPyConnection,
+) -> None:
+    """Relative language must be anchored to the health export's latest day."""
+    client = _make_stub_client(
+        "get_last_workout",
+        {"activity_type": "Running"},
+        "Test narrative.",
+    )
+    orchestrator = ChatOrchestrator(client=client, conn=db)  # type: ignore[arg-type]
+
+    await orchestrator.answer("Show my last run")
+
+    planner_messages = client.chat.completions.create.await_args_list[0].kwargs["messages"]
+    planner_prompt = planner_messages[0]["content"]
+    assert "Treat 2026-06-10 as today" in planner_prompt
+    assert "Available workout types:" in planner_prompt
+    assert "Running" in planner_prompt
+    assert "Traditional Strength Training" in planner_prompt
+
+
 async def test_get_top_workouts_returns_ranked_list(
     db: duckdb.DuckDBPyConnection,
 ) -> None:
@@ -110,7 +182,7 @@ async def test_get_top_workouts_returns_ranked_list(
     assert response.data["rows"][0]["rank"] == 1
 
 
-async def test_invalid_planner_output_falls_back(
+async def test_invalid_planner_output_uses_local_fallback_plan(
     db: duckdb.DuckDBPyConnection,
 ) -> None:
     client = _make_stub_client(
@@ -121,7 +193,8 @@ async def test_invalid_planner_output_falls_back(
     orchestrator = ChatOrchestrator(client=client, conn=db)  # type: ignore[arg-type]
     response = await orchestrator.answer("Show my last run")
 
-    assert response.template_id == "fallback"
+    assert response.template_id == "workout_card"
+    assert response.narrative == "Test narrative."
 
 
 async def test_get_trend_returns_trend_chart(
@@ -138,11 +211,12 @@ async def test_get_trend_returns_trend_chart(
         "Test narrative.",
     )
     orchestrator = ChatOrchestrator(client=client, conn=db)  # type: ignore[arg-type]
-    response = await orchestrator.answer("Show resting HR trend")
+    response = await orchestrator.answer("Plot my pulse metric")
 
     assert response.template_id == "trend_chart"
     assert "series" in response.data
     assert len(response.data["series"]) == 2
+    assert response.narrative == "Test narrative."
 
 
 async def test_get_period_summary(
@@ -177,7 +251,7 @@ async def test_get_comparison(
         "Test narrative.",
     )
     orchestrator = ChatOrchestrator(client=client, conn=db)  # type: ignore[arg-type]
-    response = await orchestrator.answer("Compare this week to last week")
+    response = await orchestrator.answer("Compare my two selected periods")
 
     assert response.template_id == "comparison"
     assert "metrics" in response.data

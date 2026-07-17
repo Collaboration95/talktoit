@@ -3,10 +3,11 @@ import { Fallback } from '@/templates/fallback'
 import type { FallbackData } from '@/types/templates'
 
 describe('Fallback', () => {
-  it('renders question', () => {
+  it('renders a helpful empty state without exposing the raw question', () => {
     const data: FallbackData = { question: 'test question', table: null, text: null }
     render(<Fallback data={data} />)
-    expect(screen.getByText(/test question/)).toBeInTheDocument()
+    expect(screen.getByText(/No answer is available yet/i)).toBeInTheDocument()
+    expect(screen.queryByText(/Question:/i)).not.toBeInTheDocument()
   })
 
   it('renders text when provided', () => {
@@ -29,6 +30,6 @@ describe('Fallback', () => {
   it('renders empty state when both text and table are null', () => {
     const data: FallbackData = { question: 'q', table: null, text: null }
     render(<Fallback data={data} />)
-    expect(screen.getByText('No answer available for this question.')).toBeInTheDocument()
+    expect(screen.getByText(/Try rephrasing/i)).toBeInTheDocument()
   })
 })

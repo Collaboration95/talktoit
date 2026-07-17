@@ -2,19 +2,6 @@ import { render, screen } from '@testing-library/react'
 import { RankedList } from '@/templates/ranked-list'
 import type { RankedListData } from '@/types/templates'
 
-// Mock @tremor/react BarList to avoid complex setup
-vi.mock('@tremor/react', () => ({
-  BarList: ({ data }: { data: { name: string; value: number }[] }) => (
-    <ul>
-      {data.map((d) => (
-        <li key={d.name}>
-          {d.name}: {d.value}
-        </li>
-      ))}
-    </ul>
-  ),
-}))
-
 const validData: RankedListData = {
   title: 'Top 5 Runs',
   rows: [
@@ -27,6 +14,11 @@ describe('RankedList', () => {
   it('renders title', () => {
     render(<RankedList data={validData} />)
     expect(screen.getByText('Top 5 Runs')).toBeInTheDocument()
+  })
+
+  it('renders rounded metric values', () => {
+    render(<RankedList data={validData} />)
+    expect(screen.getByText('8,500 m')).toBeInTheDocument()
   })
 
   it('renders empty state when rows is empty', () => {

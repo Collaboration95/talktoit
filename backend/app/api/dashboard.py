@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -17,6 +17,7 @@ from app.db.aggregations import (
     utc_bounds,
 )
 from app.db.connection import connect
+from app.db.data_profile import get_data_profile
 from app.ingest.gpx import parse_gpx_route
 from app.models.dashboard import (
     ActivityRingDay,
@@ -52,17 +53,24 @@ ORDER BY date_components DESC
 _SQL_WORKOUTS_LIST = """
 SELECT w.id, w.activity_type, w.start_date, w.duration, w.duration_unit,
     hr.average AS avg_hr,
-    dist.sum AS distance_m,
+    dist.distance_m AS distance_m,
     energy.sum AS energy_kj
 FROM workouts w
 LEFT JOIN workout_statistics hr
     ON hr.workout_id = w.id
     AND hr.type = 'HKQuantityTypeIdentifierHeartRate'
 LEFT JOIN (
-    SELECT workout_id, sum FROM workout_statistics
+    SELECT workout_id,
+        SUM(CASE
+            WHEN LOWER(unit) = 'km' THEN sum * 1000.0
+            WHEN LOWER(unit) IN ('mi', 'mile', 'miles') THEN sum * 1609.344
+            ELSE sum
+        END) AS distance_m
+    FROM workout_statistics
     WHERE type IN ('HKQuantityTypeIdentifierDistanceWalkingRunning',
                    'HKQuantityTypeIdentifierDistanceCycling',
                    'HKQuantityTypeIdentifierDistanceSwimming')
+    GROUP BY workout_id
 ) dist ON dist.workout_id = w.id
 LEFT JOIN workout_statistics energy
     ON energy.workout_id = w.id
@@ -114,7 +122,7 @@ SELECT
     w.source_name,
     hr.average          AS avg_hr,
     hr.maximum          AS max_hr,
-    dist.sum            AS distance_m,
+    dist.distance_m     AS distance_m,
     energy.sum          AS energy_kj,
     TRY_CAST(elev.value AS DOUBLE) AS elevation_m
 FROM workouts w
@@ -122,13 +130,20 @@ LEFT JOIN workout_statistics hr
     ON hr.workout_id = w.id
     AND hr.type = 'HKQuantityTypeIdentifierHeartRate'
 LEFT JOIN (
-    SELECT workout_id, sum
+    SELECT workout_id,
+        SUM(CASE
+            WHEN LOWER(unit) = 'km' THEN sum * 1000.0
+            WHEN LOWER(unit) IN ('mi', 'mile', 'miles') THEN sum * 1609.344
+            ELSE sum
+        END) AS distance_m
+    FROM workout_statistics
     FROM workout_statistics
     WHERE type IN (
         'HKQuantityTypeIdentifierDistanceWalkingRunning',
         'HKQuantityTypeIdentifierDistanceCycling',
         'HKQuantityTypeIdentifierDistanceSwimming'
     )
+    GROUP BY workout_id
 ) dist ON dist.workout_id = w.id
 LEFT JOIN workout_statistics energy
     ON energy.workout_id = w.id
@@ -159,7 +174,7 @@ LIMIT 1
 
 def _get_conn() -> Generator[duckdb.DuckDBPyConnection, None, None]:
     """FastAPI dependency — open a DB connection for the request lifetime."""
-    conn = connect()
+    conn = connect(read_only=True)
     try:
         yield conn
     finally:
@@ -171,12 +186,22 @@ def _get_conn() -> Generator[duckdb.DuckDBPyConnection, None, None]:
 # ---------------------------------------------------------------------------
 
 
-def _default_start(days_back: int) -> date:
-    return date.today() - timedelta(days=days_back)
+def _resolve_window(
+    conn: duckdb.DuckDBPyConnection,
+    start: str | None,
+    end: str | None,
+    days: int,
+) -> tuple[date, date]:
+    """Resolve a date range against the last day present in local data.
 
-
-def _default_end() -> date:
-    return date.today()
+    An Apple Health export is a snapshot, so using the computer clock creates
+    empty future buckets after an export becomes stale. Explicit dates still
+    take precedence for API consumers and tests.
+    """
+    end_date = date.fromisoformat(end) if end else get_data_profile(conn).latest_date
+    end_date = end_date or date.today()
+    start_date = date.fromisoformat(start) if start else end_date - timedelta(days=days - 1)
+    return start_date, end_date
 
 
 def _duration_minutes(duration: float | None, unit: str | None) -> float | None:
@@ -199,8 +224,7 @@ def get_summary(
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
 ) -> ActivitySummaryResponse:
     """Return activity ring data for a date range (default: last 7 days)."""
-    start_date = date.fromisoformat(start) if start else _default_start(6)
-    end_date = date.fromisoformat(end) if end else _default_end()
+    start_date, end_date = _resolve_window(conn, start, end, days=7)
 
     rows = conn.execute(
         _SQL_ACTIVITY_SUMMARY, [start_date.isoformat(), end_date.isoformat()]
@@ -227,9 +251,8 @@ def get_workouts(
     end: str | None = None,
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
 ) -> WorkoutsResponse:
-    """Return workouts for a date range (default: last 30 days)."""
-    start_date = date.fromisoformat(start) if start else _default_start(30)
-    end_date = date.fromisoformat(end) if end else _default_end()
+    """Return workouts for a date range (default: latest 30 local-data days)."""
+    start_date, end_date = _resolve_window(conn, start, end, days=30)
 
     utc_start, utc_end = utc_bounds(start_date, end_date, DEFAULT_TZ)
     rows = conn.execute(_SQL_WORKOUTS_LIST, [utc_start, utc_end]).fetchall()
@@ -269,9 +292,8 @@ def get_steps(
     end: str | None = None,
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
 ) -> TrendResponse:
-    """Return daily step count trend (default: last 30 days)."""
-    start_date = date.fromisoformat(start) if start else _default_start(30)
-    end_date = date.fromisoformat(end) if end else _default_end()
+    """Return daily step count trend (default: latest 30 local-data days)."""
+    start_date, end_date = _resolve_window(conn, start, end, days=30)
     return _build_trend(
         conn, "HKQuantityTypeIdentifierStepCount", granularity, start_date, end_date, "sum"
     )
@@ -284,9 +306,8 @@ def get_heart(
     end: str | None = None,
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
 ) -> TrendResponse:
-    """Return weekly resting HR trend (default: last 90 days)."""
-    start_date = date.fromisoformat(start) if start else _default_start(90)
-    end_date = date.fromisoformat(end) if end else _default_end()
+    """Return weekly resting HR trend (default: latest 90 local-data days)."""
+    start_date, end_date = _resolve_window(conn, start, end, days=90)
     return _build_trend(
         conn, "HKQuantityTypeIdentifierRestingHeartRate", granularity, start_date, end_date, "avg"
     )
@@ -299,19 +320,35 @@ def get_sleep(
     end: str | None = None,
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
 ) -> TrendResponse:
-    """Return daily sleep duration trend (default: last 30 days)."""
-    start_date = date.fromisoformat(start) if start else _default_start(30)
-    end_date = date.fromisoformat(end) if end else _default_end()
+    """Return daily sleep duration trend (default: latest 30 local-data days)."""
+    start_date, end_date = _resolve_window(conn, start, end, days=30)
 
     utc_start, utc_end = utc_bounds(start_date, end_date, DEFAULT_TZ)
     rows = conn.execute(_SQL_SLEEP_RECORDS, [utc_start, utc_end]).fetchall()
 
-    bucket_sums: dict[str, float] = {}
+    # Apple Health commonly stores overlapping in-bed, awake, and stage
+    # intervals.  The raw category value is not persisted, so sum-of-rows
+    # double-counts sleep. Merge intervals instead to report elapsed time.
+    bucket_intervals: dict[str, list[tuple[datetime, datetime]]] = {}
     for start_dt_utc, end_dt_utc in rows:
-        duration_hours = (end_dt_utc - start_dt_utc).total_seconds() / 3600.0
         local_dt = to_local_dt(start_dt_utc, DEFAULT_TZ)
         key = bucket_key(local_dt.date(), granularity)  # type: ignore[arg-type]
-        bucket_sums[key] = bucket_sums.get(key, 0.0) + duration_hours
+        bucket_intervals.setdefault(key, []).append(
+            (to_local_dt(start_dt_utc, DEFAULT_TZ), to_local_dt(end_dt_utc, DEFAULT_TZ))
+        )
+
+    bucket_sums: dict[str, float] = {}
+    for key, intervals in bucket_intervals.items():
+        merged: list[list[datetime]] = []
+        for interval_start, interval_end in sorted(intervals):
+            if not merged or interval_start > merged[-1][1]:
+                merged.append([interval_start, interval_end])
+            elif interval_end > merged[-1][1]:
+                merged[-1][1] = interval_end
+        bucket_sums[key] = sum(
+            (interval_end - interval_start).total_seconds() / 3600.0
+            for interval_start, interval_end in merged
+        )
 
     all_buckets = generate_buckets(start_date, end_date, granularity)  # type: ignore[arg-type]
     series = [TrendPoint(bucket=b, value=bucket_sums.get(b)) for b in all_buckets]
@@ -443,7 +480,7 @@ def get_workout_detail(
         avg_heart_rate=avg_heart_rate,
         max_heart_rate=max_heart_rate,
         distance_meters=distance_m,
-        distance_unit="km",
+        distance_unit="m",
         energy_burned_kj=energy_kj,
         elevation_ascent_meters=elevation_m,
         source_name=source_name,

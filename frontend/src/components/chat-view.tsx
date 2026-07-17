@@ -78,12 +78,22 @@ export function ChatView() {
         )}
         {state.status === 'error' && (
           <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-            <p className="text-sm font-medium text-red-700">Error</p>
+            <p className="text-sm font-medium text-red-700">Could not load an answer</p>
             <p className="mt-1 text-sm text-red-600">{state.message}</p>
-            <p className="mt-1 text-xs text-red-400">Question: {state.question}</p>
+            <p className="mt-2 text-xs text-red-500">
+              Try a shorter question or one of the suggested prompts above.
+            </p>
           </div>
         )}
-        {state.status === 'success' && <TemplateDispatch envelope={state.envelope} />}
+        {state.status === 'success' && (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Query</p>
+              <p className="mt-0.5 text-sm text-gray-700">{state.question}</p>
+            </div>
+            <TemplateDispatch envelope={state.envelope} />
+          </div>
+        )}
       </div>
     </div>
   )

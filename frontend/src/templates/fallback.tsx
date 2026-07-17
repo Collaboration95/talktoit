@@ -7,11 +7,16 @@ interface FallbackProps {
 
 /** Renders a generic fallback for unmatched or unanswerable questions. */
 export function Fallback({ data, narrative }: FallbackProps) {
+  const hasStructuredContent = data.text !== null || (data.table !== null && data.table.length > 0)
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-      <p className="mb-2 text-sm text-gray-400">Question: {data.question}</p>
-      {narrative ? <p className="mb-3 text-gray-600">{narrative}</p> : null}
-      {data.text ? <p className="text-gray-700">{data.text}</p> : null}
+      <h2 className="text-lg font-semibold text-gray-900">
+        {hasStructuredContent ? 'Answer unavailable' : 'Could not answer from your health data'}
+      </h2>
+      <p className="mt-1 text-sm text-gray-500">
+        {narrative ?? 'Try asking about workouts, trends, comparisons, or weekly summaries.'}
+      </p>
+      {data.text ? <p className="mt-3 text-gray-700">{data.text}</p> : null}
       {data.table !== null && data.table.length > 0 ? (
         <table className="mt-3 w-full text-sm">
           <tbody>
@@ -25,7 +30,10 @@ export function Fallback({ data, narrative }: FallbackProps) {
         </table>
       ) : null}
       {data.text === null && (data.table === null || data.table.length === 0) ? (
-        <p className="text-gray-500">No answer available for this question.</p>
+        <p className="mt-3 text-gray-500">
+          No answer is available yet. Try rephrasing with a workout type, a date range, or a
+          specific metric.
+        </p>
       ) : null}
     </div>
   )

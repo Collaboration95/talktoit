@@ -56,7 +56,7 @@ SELECT
     w.duration_unit,
     hr.average          AS avg_hr,
     hr.maximum          AS max_hr,
-    dist.sum            AS distance_m,
+    dist.distance_m     AS distance_m,
     energy.sum          AS energy_kj,
     TRY_CAST(elev.value AS DOUBLE) AS elevation_m
 FROM workouts w
@@ -64,13 +64,19 @@ LEFT JOIN workout_statistics hr
     ON hr.workout_id = w.id
     AND hr.type = 'HKQuantityTypeIdentifierHeartRate'
 LEFT JOIN (
-    SELECT workout_id, sum
+    SELECT workout_id,
+        SUM(CASE
+            WHEN LOWER(unit) = 'km' THEN sum * 1000.0
+            WHEN LOWER(unit) IN ('mi', 'mile', 'miles') THEN sum * 1609.344
+            ELSE sum
+        END) AS distance_m
     FROM workout_statistics
     WHERE type IN (
         'HKQuantityTypeIdentifierDistanceWalkingRunning',
         'HKQuantityTypeIdentifierDistanceCycling',
         'HKQuantityTypeIdentifierDistanceSwimming'
     )
+    GROUP BY workout_id
 ) dist ON dist.workout_id = w.id
 LEFT JOIN workout_statistics energy
     ON energy.workout_id = w.id
@@ -79,6 +85,7 @@ LEFT JOIN workout_metadata elev
     ON elev.workout_id = w.id
     AND elev.key = 'HKElevationAscended'
 WHERE w.activity_type = ?
+  AND (? IS NULL OR CASE WHEN w.duration_unit = 'hr' THEN w.duration * 60 ELSE w.duration END >= ?)
 ORDER BY w.start_date DESC
 LIMIT 1
 """
@@ -92,20 +99,26 @@ SELECT
     w.duration_unit,
     hr.average   AS avg_hr,
     hr.maximum   AS max_hr,
-    dist.sum     AS distance_m,
+    dist.distance_m AS distance_m,
     energy.sum   AS energy_kj
 FROM workouts w
 LEFT JOIN workout_statistics hr
     ON hr.workout_id = w.id
     AND hr.type = 'HKQuantityTypeIdentifierHeartRate'
 LEFT JOIN (
-    SELECT workout_id, sum
+    SELECT workout_id,
+        SUM(CASE
+            WHEN LOWER(unit) = 'km' THEN sum * 1000.0
+            WHEN LOWER(unit) IN ('mi', 'mile', 'miles') THEN sum * 1609.344
+            ELSE sum
+        END) AS distance_m
     FROM workout_statistics
     WHERE type IN (
         'HKQuantityTypeIdentifierDistanceWalkingRunning',
         'HKQuantityTypeIdentifierDistanceCycling',
         'HKQuantityTypeIdentifierDistanceSwimming'
     )
+    GROUP BY workout_id
 ) dist ON dist.workout_id = w.id
 LEFT JOIN workout_statistics energy
     ON energy.workout_id = w.id
@@ -132,7 +145,11 @@ WHERE start_date >= ? AND start_date < ?
 """
 
 _SQL_DISTANCE = """
-SELECT SUM(ws.sum)
+SELECT SUM(CASE
+    WHEN LOWER(ws.unit) = 'km' THEN ws.sum * 1000.0
+    WHEN LOWER(ws.unit) IN ('mi', 'mile', 'miles') THEN ws.sum * 1609.344
+    ELSE ws.sum
+END)
 FROM workout_statistics ws
 JOIN workouts w ON ws.workout_id = w.id
 WHERE ws.type IN (
@@ -158,7 +175,11 @@ WHERE w.start_date >= ? AND w.start_date < ? AND w.activity_type = ?
 """
 
 _SQL_DISTANCE_FILTERED = """
-SELECT SUM(ws.sum)
+SELECT SUM(CASE
+    WHEN LOWER(ws.unit) = 'km' THEN ws.sum * 1000.0
+    WHEN LOWER(ws.unit) IN ('mi', 'mile', 'miles') THEN ws.sum * 1609.344
+    ELSE ws.sum
+END)
 FROM workout_statistics ws
 JOIN workouts w ON ws.workout_id = w.id
 WHERE ws.type IN (
@@ -193,6 +214,7 @@ _to_local_dt = to_local_dt
 def get_last_workout(
     conn: duckdb.DuckDBPyConnection,
     activity_type: str,
+    min_duration_minutes: float | None = None,
     tz: str = DEFAULT_TZ,
 ) -> WorkoutCardData | None:
     """Fetch the most recent workout of the given type.
@@ -200,13 +222,16 @@ def get_last_workout(
     Args:
         conn: Open DuckDB connection.
         activity_type: Activity type string as stored in the DB (e.g. ``"Running"``).
+        min_duration_minutes: Optional lower duration threshold for a qualifying workout.
         tz: IANA timezone for converting the UTC start_date to local time.
 
     Returns:
         A :class:`WorkoutCardData` for the most recent matching workout, or
         ``None`` if no workout of that type exists.
     """
-    row = conn.execute(_SQL_LAST_WORKOUT, [activity_type]).fetchone()
+    row = conn.execute(
+        _SQL_LAST_WORKOUT, [activity_type, min_duration_minutes, min_duration_minutes]
+    ).fetchone()
     if row is None:
         return None
 
@@ -235,7 +260,7 @@ def get_last_workout(
         avg_heart_rate=avg_heart_rate,
         max_heart_rate=max_heart_rate,
         distance_meters=distance_m,
-        distance_unit="km",
+        distance_unit="m",
         energy_burned_kj=energy_kj,
         elevation_ascent_meters=elevation_m,
         gps_route=None,
@@ -314,16 +339,18 @@ def get_top_workouts(
 
         duration_min = minutes_from_duration(duration, duration_unit)
 
+        distance_km = distance_m / 1000.0 if distance_m is not None else None
+
         if metric == "distance":
-            primary_val: float | None = distance_m
-            primary_unit = "m"
+            primary_val: float | None = distance_km
+            primary_unit = "km"
             secondary_val: float | None = duration_min
             secondary_unit: str | None = "min"
         elif metric == "duration":
             primary_val = duration_min
             primary_unit = "min"
-            secondary_val = distance_m
-            secondary_unit = "m"
+            secondary_val = distance_km
+            secondary_unit = "km"
         elif metric == "avg_hr":
             primary_val = avg_hr
             primary_unit = "bpm"

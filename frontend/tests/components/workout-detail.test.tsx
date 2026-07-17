@@ -50,8 +50,8 @@ describe('WorkoutDetail', () => {
     await waitFor(() => {
       expect(screen.getByText('Running')).toBeInTheDocument()
     })
-    expect(screen.getByText('45.5 min')).toBeInTheDocument()
-    expect(screen.getByText('8.50 km')).toBeInTheDocument()
+    expect(screen.getByText('46 min')).toBeInTheDocument()
+    expect(screen.getByText('8.5 km')).toBeInTheDocument()
     expect(screen.getByText('148 bpm')).toBeInTheDocument()
     expect(screen.getByText('178 bpm')).toBeInTheDocument()
   })
