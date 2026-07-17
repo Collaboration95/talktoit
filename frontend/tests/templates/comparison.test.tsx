@@ -42,4 +42,9 @@ describe('Comparison', () => {
     render(<Comparison data={validData} />)
     expect(screen.getAllByText('—').length).toBeGreaterThan(0)
   })
+
+  it('formats deltas with units', () => {
+    render(<Comparison data={validData} />)
+    expect(screen.getByText(/\+2 sessions/)).toBeInTheDocument()
+  })
 })

@@ -9,6 +9,7 @@ import type {
   WorkoutSummary,
 } from '@/api/dashboard'
 import { fetchCapabilities, fetchSummary, fetchTrend, fetchWorkouts } from '@/api/dashboard'
+import { formatDateOnly, formatNumber } from '@/lib/format'
 
 type DashboardViewMode = { view: 'list' } | { view: 'detail'; workoutId: number }
 
@@ -32,13 +33,7 @@ function displayActivityType(activityType: string): string {
 }
 
 function formatDate(isoDate: string): string {
-  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(
-    new Date(`${isoDate.slice(0, 10)}T12:00:00`),
-  )
-}
-
-function formatNumber(value: number, maximumFractionDigits = 0): string {
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits }).format(value)
+  return formatDateOnly(isoDate)
 }
 
 function ActivityRingsPanel({ days }: { days: ActivityRingDay[] }) {
@@ -140,7 +135,7 @@ function WorkoutsPanel({
                   {displayActivityType(w.activity_type)}
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
-                  {w.duration_minutes !== null ? `${formatNumber(w.duration_minutes)} min` : '—'}
+                  {w.duration_minutes !== null ? `${formatNumber(w.duration_minutes, 0)} min` : '—'}
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
                   {w.avg_heart_rate !== null ? `${w.avg_heart_rate} bpm` : '—'}
@@ -151,7 +146,7 @@ function WorkoutsPanel({
                     : '—'}
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
-                  {w.energy_burned_kj !== null ? `${formatNumber(w.energy_burned_kj, 1)} kJ` : '—'}
+                  {w.energy_burned_kj !== null ? `${formatNumber(w.energy_burned_kj, 0)} kJ` : '—'}
                 </td>
               </tr>
             ))}

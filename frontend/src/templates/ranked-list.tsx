@@ -6,7 +6,7 @@ interface RankedListProps {
   narrative?: string
 }
 
-/** Renders an ordered ranked list using Tremor BarList. */
+/** Renders an ordered ranked list using a compact custom list. */
 export function RankedList({ data, narrative }: RankedListProps) {
   if (data.rows.length === 0) {
     return (
