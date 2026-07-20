@@ -201,6 +201,38 @@ describe('DashboardView', () => {
     expect(await screen.findByRole('button', { name: 'January' })).toBeInTheDocument()
   })
 
+  it('does not let an older scoped response replace a newer saved view', async () => {
+    window.history.replaceState({}, '', '?start=2024-01-01&end=2024-01-31')
+    setupHandlers()
+    let releaseOldSummary: (() => void) | undefined
+    server.use(
+      http.get('/api/dashboard/summary', ({ request }) => {
+        if (new URL(request.url).searchParams.get('start') === '2024-01-01') {
+          return new Promise((resolve) => {
+            releaseOldSummary = () => resolve(HttpResponse.json({ days: [] }))
+          })
+        }
+        return HttpResponse.json({ days: [] })
+      }),
+      http.get('/api/saved-views', () =>
+        HttpResponse.json([
+          {
+            id: 'sv_february',
+            title: 'February',
+            query: { tab: 'overview', start: '2024-02-01', end: '2024-02-29' },
+          },
+        ]),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<DashboardView />)
+    await user.click(await screen.findByRole('button', { name: 'February' }))
+    expect(await screen.findByText('Showing 2024-02-01 to 2024-02-29')).toBeInTheDocument()
+    await act(async () => releaseOldSummary?.())
+    expect(screen.getByText('Showing 2024-02-01 to 2024-02-29')).toBeInTheDocument()
+    window.history.replaceState({}, '', '/')
+  })
+
   it('renders measured sleep stages separately from the sleep trend', async () => {
     setupHandlers()
     render(<DashboardView />)

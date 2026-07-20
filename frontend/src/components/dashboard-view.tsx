@@ -334,6 +334,7 @@ export function DashboardView() {
   }, [])
 
   useEffect(() => {
+    let active = true
     Promise.allSettled([
       fetchSummary(scope),
       fetchWorkouts(scope),
@@ -353,6 +354,7 @@ export function DashboardView() {
         capsResult,
       ] = results
       if (
+        !active ||
         !summaryResult ||
         !workoutsResult ||
         !stepsResult ||
@@ -377,6 +379,9 @@ export function DashboardView() {
         error: null,
       })
     })
+    return () => {
+      active = false
+    }
   }, [scope])
 
   const loadMoreWorkouts = () => {
@@ -431,11 +436,14 @@ export function DashboardView() {
 
   if (state.loading) {
     return (
-      <div
-        className="flex items-center justify-center min-h-64 text-gray-500"
-        data-testid="loading"
-      >
-        Loading dashboard…
+      <div className="mx-auto max-w-4xl px-4 py-6 space-y-4">
+        <div
+          className="flex items-center justify-center min-h-64 text-gray-500"
+          data-testid="loading"
+        >
+          Loading dashboard…
+        </div>
+        <SavedViewsPanel views={savedViews} onApply={applySavedView} />
       </div>
     )
   }
