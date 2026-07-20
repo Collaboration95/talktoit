@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
+from app.analytics.metric_catalog import METRIC_CATALOG
 from app.db.aggregations import (
     DEFAULT_TZ,
     METRIC_META,
@@ -118,14 +119,7 @@ WHERE type = 'HKCategoryTypeIdentifierSleepAnalysis'
 ORDER BY start_date
 """
 
-_SQL_CAPABILITIES_RECORDS = """
-SELECT type, COUNT(*) AS cnt FROM records
-WHERE type IN ('HKQuantityTypeIdentifierRestingHeartRate',
-               'HKQuantityTypeIdentifierStepCount',
-               'HKCategoryTypeIdentifierSleepAnalysis',
-               'HKQuantityTypeIdentifierHeartRateVariabilitySDNN')
-GROUP BY type
-"""
+_SQL_CAPABILITIES_RECORDS = "SELECT DISTINCT type FROM records"
 
 _SQL_CAPABILITIES_WORKOUTS = """
 SELECT COUNT(*) FROM workouts
@@ -444,21 +438,19 @@ def get_capabilities(
 ) -> CapabilitiesResponse:
     """Return which data sources are present in the export."""
     rows = conn.execute(_SQL_CAPABILITIES_RECORDS).fetchall()
-    present_types = {row[0] for row in rows if row[1] > 0}
+    present_types = {row[0] for row in rows}
 
     workout_count_row = conn.execute(_SQL_CAPABILITIES_WORKOUTS).fetchone()
     has_workouts = (workout_count_row[0] > 0) if workout_count_row else False
 
-    resting_hr_type = "HKQuantityTypeIdentifierRestingHeartRate"
-    steps_type = "HKQuantityTypeIdentifierStepCount"
-    sleep_type = "HKCategoryTypeIdentifierSleepAnalysis"
-    hrv_type = "HKQuantityTypeIdentifierHeartRateVariabilitySDNN"
-
     capabilities = [
-        CapabilityFlag(name="resting_hr", present=resting_hr_type in present_types),
-        CapabilityFlag(name="steps", present=steps_type in present_types),
-        CapabilityFlag(name="sleep", present=sleep_type in present_types),
-        CapabilityFlag(name="hrv", present=hrv_type in present_types),
+        CapabilityFlag(
+            name=metric.id,
+            present=bool(set(metric.apple_types).intersection(present_types)),
+        )
+        for metric in METRIC_CATALOG.values()
+        if metric.apple_types
+    ] + [
         CapabilityFlag(name="workouts", present=has_workouts),
     ]
     return CapabilitiesResponse(capabilities=capabilities)
