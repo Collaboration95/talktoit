@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import duckdb
+import pytest
 
 from app.ingest.coordinator import ingest_v2
 from app.ingest.parser import ingest
+
+pytestmark = pytest.mark.ingest_contract
 
 
 def test_legacy_ingest_preserves_category_text_value(tmp_path) -> None:

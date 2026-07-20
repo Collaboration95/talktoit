@@ -6,9 +6,12 @@ import sys
 from pathlib import Path
 
 import duckdb
+import pytest
 
 from app.ingest import run
 from app.ingest.compatibility import V2CompatibilityError
+
+pytestmark = pytest.mark.ingest_contract
 
 
 def test_v2_compatibility_failure_can_fallback_to_legacy_staging(tmp_path, monkeypatch) -> None:

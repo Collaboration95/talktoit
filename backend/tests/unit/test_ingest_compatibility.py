@@ -8,6 +8,8 @@ import pytest
 from app.db.schema import SQL_CREATE_TABLES
 from app.ingest.compatibility import V2CompatibilityError, require_v2_compatibility
 
+pytestmark = pytest.mark.ingest_contract
+
 
 def _empty_db() -> duckdb.DuckDBPyConnection:
     conn = duckdb.connect(":memory:")

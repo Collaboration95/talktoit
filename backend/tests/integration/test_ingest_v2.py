@@ -7,6 +7,8 @@ import pytest
 
 from app.ingest.coordinator import ingest_v2
 
+pytestmark = pytest.mark.ingest_contract
+
 
 @pytest.fixture
 def sample_xml_path():
