@@ -14,6 +14,8 @@ class FollowupContext:
     dataset_version_id: str
     tool_name: str
     arguments: dict[str, Any]
+    turn_id: str | None = None
+    label: str | None = None
 
 
 def resolve_followup(
@@ -65,6 +67,34 @@ def resolve_followup(
         arguments["activity_type"] = activity_type
         return {"tool_name": "get_top_workouts", "arguments": arguments}
     return None
+
+
+def followup_disambiguation(
+    question: str,
+    contexts: list[FollowupContext],
+    active_dataset_version_id: str | None,
+) -> str | None:
+    """Return a concise local choice prompt for ambiguous supported references.
+
+    Only persisted plan labels and user-written questions are used here.  Raw
+    result payloads, route geometry, and metadata never enter this message or
+    a provider prompt.
+    """
+    lower = question.casefold()
+    if not any(
+        phrase in lower
+        for phrase in ("that", "it", "prior period", "group", "only", "open selected")
+    ):
+        return None
+    if active_dataset_version_id is None:
+        return "Start with a current-dataset result, then ask the follow-up again."
+    candidates = [item for item in contexts if item.dataset_version_id == active_dataset_version_id]
+    if not candidates:
+        return "I could not find a current-dataset result to use for that follow-up."
+    if len(candidates) == 1:
+        return None
+    choices = [item.label or item.tool_name.replace("_", " ") for item in candidates[-3:]]
+    return "Which result should I use? Choose one: " + "; ".join(choices) + "."
 
 
 def _activity_type_from_question(question: str) -> str | None:

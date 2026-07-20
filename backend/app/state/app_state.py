@@ -267,6 +267,15 @@ class AppStateRepository:
             )
         return conversation_id
 
+    def get_conversation(self, conversation_id: str) -> dict[str, object] | None:
+        """Return one local conversation without exposing unrelated history."""
+        self.migrate()
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM conversations WHERE id = ?", (conversation_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
     def list_conversations(self, search: str = "") -> list[dict[str, object]]:
         """List non-archived local conversation metadata."""
         self.migrate()

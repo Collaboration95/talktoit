@@ -13,11 +13,11 @@ from app.db.connection import connect
 from app.db.data_profile import get_data_profile
 from app.llm.cache_keys import build_cache_key
 from app.llm.client import get_model
-from app.llm.followups import FollowupContext, resolve_followup
+from app.llm.followups import FollowupContext, followup_disambiguation, resolve_followup
 from app.llm.local_planner import plan_local_question
 from app.llm.orchestrator import ChatOrchestrator
 from app.llm.provider_gateway import ProviderGateway, make_provider_gateway
-from app.models.chat import ChatRequest, ChatResponse
+from app.models.chat import ChatRequest, ChatResponse, ResponseMetadata
 from app.state.app_state import AppStateRepository
 
 router = APIRouter(prefix="/api")
@@ -77,28 +77,43 @@ async def chat(
         cache_key = build_cache_key("exact", request.question)
         local_plan = plan_local_question(request.question, get_data_profile(conn))
         followup_plan = None
-        if request.parent_turn_id and request.conversation_id and active is not None:
-            parent = repository.get_conversation_turn(
-                request.conversation_id, request.parent_turn_id
-            )
-            raw_plan = parent.get("canonical_plan_json") if parent else None
-            if isinstance(raw_plan, str):
-                try:
-                    plan = json.loads(raw_plan)
-                    if isinstance(plan, dict):
-                        followup_plan = resolve_followup(
-                            request.question,
-                            [
-                                FollowupContext(
-                                    active.id,
-                                    str(plan.get("tool_name", "")),
-                                    dict(plan.get("arguments", {})),
-                                )
-                            ],
-                            active.id,
+        disambiguation: str | None = None
+        if request.conversation_id and active is not None:
+            conversation = repository.get_conversation(request.conversation_id)
+            if conversation and conversation.get("dataset_version_id") == active.id:
+                turns = (
+                    [
+                        repository.get_conversation_turn(
+                            request.conversation_id, request.parent_turn_id
                         )
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    followup_plan = None
+                    ]
+                    if request.parent_turn_id
+                    else repository.get_turns(request.conversation_id)
+                )
+                contexts: list[FollowupContext] = []
+                for turn in turns:
+                    if turn is None:
+                        continue
+                    raw_plan = turn.get("canonical_plan_json")
+                    if not isinstance(raw_plan, str):
+                        continue
+                    try:
+                        plan = json.loads(raw_plan)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(plan, dict) and isinstance(plan.get("arguments"), dict):
+                        contexts.append(
+                            FollowupContext(
+                                active.id,
+                                str(plan.get("tool_name", "")),
+                                dict(plan["arguments"]),
+                                str(turn.get("id")),
+                                str(turn.get("question", "")),
+                            )
+                        )
+                followup_plan = resolve_followup(request.question, contexts, active.id)
+                if followup_plan is None:
+                    disambiguation = followup_disambiguation(request.question, contexts, active.id)
         canonical_plan = local_plan or followup_plan
         canonical_key = build_cache_key("canonical", canonical_plan) if canonical_plan else None
         cached = (
@@ -116,6 +131,13 @@ async def chat(
         if cached is not None:
             response = ChatResponse.model_validate_json(cached)
             response.metadata.provenance = "cached"
+        elif disambiguation is not None:
+            response = ChatResponse(
+                template_id="fallback",
+                data={"question": request.question, "table": None, "text": disambiguation},
+                narrative=disambiguation,
+                metadata=ResponseMetadata(provenance="deterministic_local"),
+            )
         else:
             response = await orchestrator.answer(request.question, plan_override=followup_plan)
         if active is not None:

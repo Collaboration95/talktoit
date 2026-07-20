@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.llm.followups import FollowupContext, resolve_followup
+from app.llm.followups import FollowupContext, followup_disambiguation, resolve_followup
 
 
 def test_compare_to_prior_period_resolves_from_one_active_context() -> None:
@@ -67,3 +67,17 @@ def test_regroup_trend_and_restrict_ranked_workouts_use_structured_arguments() -
     }
     assert ranked is not None
     assert ranked["arguments"]["activity_type"] == "Running"
+
+
+def test_ambiguous_references_return_concise_local_turn_choices() -> None:
+    contexts = [
+        FollowupContext("ds_one", "get_trend", {}, "tr_one", "Show steps"),
+        FollowupContext("ds_one", "get_trend", {}, "tr_two", "Show resting HR"),
+    ]
+
+    assert followup_disambiguation("Group that by week", contexts, "ds_one") == (
+        "Which result should I use? Choose one: Show steps; Show resting HR."
+    )
+    assert followup_disambiguation("Compare that", [], "ds_one") == (
+        "I could not find a current-dataset result to use for that follow-up."
+    )
