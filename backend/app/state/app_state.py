@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 CACHE_MAX_ENTRIES = 200
+CACHE_MAX_BYTES = 5 * 1024 * 1024
 
 
 def _default_state_path() -> Path:
@@ -412,15 +413,19 @@ class AppStateRepository:
                 "accessed_at = excluded.accessed_at",
                 (cache_key, dataset_version_id, response_json, now, now),
             )
-            expired = conn.execute(
-                """
-                SELECT cache_key FROM cache_entries
-                ORDER BY accessed_at ASC, created_at ASC, cache_key ASC
-                LIMIT 1
-                """,
-            ).fetchone()
-            count = conn.execute("SELECT COUNT(*) FROM cache_entries").fetchone()[0]
-            if expired is not None and count > CACHE_MAX_ENTRIES:
+            while True:
+                count, byte_count = conn.execute(
+                    "SELECT COUNT(*), COALESCE(SUM(length(CAST(response_json AS BLOB))), 0) "
+                    "FROM cache_entries"
+                ).fetchone()
+                if count <= CACHE_MAX_ENTRIES and byte_count <= CACHE_MAX_BYTES:
+                    break
+                expired = conn.execute(
+                    "SELECT cache_key FROM cache_entries "
+                    "ORDER BY accessed_at ASC, created_at ASC, cache_key ASC LIMIT 1"
+                ).fetchone()
+                if expired is None:
+                    break
                 conn.execute("DELETE FROM cache_entries WHERE cache_key = ?", (expired[0],))
 
     @staticmethod

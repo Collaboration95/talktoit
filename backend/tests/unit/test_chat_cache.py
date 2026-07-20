@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import app.state.app_state as app_state
 from app.state.app_state import CACHE_MAX_ENTRIES, AppStateRepository
 
 
@@ -30,3 +31,13 @@ def test_lru_cache_eviction_is_bounded_and_does_not_touch_turns(tmp_path) -> Non
     assert repo.get_cached_response("key-0", "ds_one") is None
     assert repo.get_cached_response(f"key-{CACHE_MAX_ENTRIES}", "ds_one") == "{}"
     assert repo.get_turns(conversation_id)[0]["id"] == turn_id
+
+
+def test_cache_byte_budget_evicts_oldest_entry(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(app_state, "CACHE_MAX_BYTES", 8)
+    repo = AppStateRepository(tmp_path / "state.sqlite")
+    repo.put_cached_response("old", "ds_one", "12345")
+    repo.put_cached_response("new", "ds_one", "67890")
+
+    assert repo.get_cached_response("old", "ds_one") is None
+    assert repo.get_cached_response("new", "ds_one") == "67890"
