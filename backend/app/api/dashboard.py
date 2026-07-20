@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from app.analytics.metric_catalog import METRIC_CATALOG
-from app.db import queries
+from app.analytics.registry import execute_metric_trend
 from app.db.aggregations import (
     DEFAULT_TZ,
     bucket_key,
@@ -655,13 +655,15 @@ def _build_trend(
     end_date: date,
     agg: str,
 ) -> TrendResponse:
-    chart = queries.get_trend(
+    chart = execute_metric_trend(
         conn,
-        metric_id,
-        granularity,  # type: ignore[arg-type]
-        start_date,
-        end_date,
-        aggregation=agg,  # type: ignore[arg-type]
+        {
+            "metric_id": metric_id,
+            "granularity": granularity,
+            "start": start_date,
+            "end": end_date,
+            "aggregation": agg,
+        },
     )
     return TrendResponse(
         metric_label=chart.metric_label,

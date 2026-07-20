@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from app.analytics.registry import QUERY_REGISTRY, get_query_definition, validate_query_catalogue
 
@@ -30,3 +31,9 @@ def test_unknown_registry_query_is_rejected() -> None:
 
 def test_registry_catalogue_rejects_no_undeclared_metrics() -> None:
     validate_query_catalogue()
+
+
+def test_every_registry_entry_has_a_validated_input_contract() -> None:
+    for definition in QUERY_REGISTRY.values():
+        with pytest.raises(ValidationError):
+            definition.input_model.model_validate([])

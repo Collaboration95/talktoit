@@ -11,6 +11,7 @@ import json
 from datetime import date
 from typing import TYPE_CHECKING, Any, Literal
 
+from app.analytics.registry import execute_metric_trend
 from app.db import queries
 from app.db.data_profile import display_activity_type, resolve_activity_type
 from app.models.templates import FallbackData
@@ -289,7 +290,10 @@ def _tool_get_trend(
     granularity: Literal["day", "week", "month"] = args["granularity"]
     start = date.fromisoformat(args["start_date"])
     end = date.fromisoformat(args["end_date"])
-    result = queries.get_trend(conn, metric_id, granularity, start, end)
+    result = execute_metric_trend(
+        conn,
+        {"metric_id": metric_id, "granularity": granularity, "start": start, "end": end},
+    )
     return ("trend_chart", result.model_dump(mode="json"))
 
 
