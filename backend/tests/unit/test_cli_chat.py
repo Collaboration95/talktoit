@@ -11,9 +11,10 @@ from app.models.chat import ChatResponse
 def test_cli_prints_json_output(monkeypatch, capsys) -> None:
     """The CLI should emit a machine-readable envelope when requested."""
 
-    async def _fake_ask_question(question: str, db_path=None) -> ChatResponse:
+    async def _fake_ask_question(question: str, db_path=None, conversation_id=None) -> ChatResponse:
         assert question == "Show my last run"
         assert db_path is None
+        assert conversation_id is None
         return ChatResponse(
             template_id="fallback",
             data={
@@ -38,9 +39,10 @@ def test_cli_prints_json_output(monkeypatch, capsys) -> None:
 def test_cli_prints_human_readable_output(monkeypatch, capsys) -> None:
     """The default CLI output should stay readable for interactive use."""
 
-    async def _fake_ask_question(question: str, db_path=None) -> ChatResponse:
+    async def _fake_ask_question(question: str, db_path=None, conversation_id=None) -> ChatResponse:
         assert question == "Show my last run"
         assert db_path is None
+        assert conversation_id is None
         return ChatResponse(
             template_id="workout_card",
             data={
@@ -65,3 +67,21 @@ def test_cli_prints_human_readable_output(monkeypatch, capsys) -> None:
     output = capsys.readouterr().out
     assert "Template: workout_card" in output
     assert "You ran 45.5 minutes on June 5." in output
+
+
+def test_cli_passes_local_conversation_id_to_headless_lifecycle(monkeypatch, capsys) -> None:
+    """The headless path can append a durable local conversation turn."""
+
+    async def _fake_ask_question(question: str, db_path=None, conversation_id=None) -> ChatResponse:
+        assert question == "Show my last run"
+        assert db_path is None
+        assert conversation_id == "cv_local"
+        return ChatResponse(
+            template_id="fallback",
+            data={"question": question, "table": None, "text": "No answer available."},
+            narrative="Try another question.",
+        )
+
+    monkeypatch.setattr(chat_cli, "_ask_question", _fake_ask_question)
+    assert chat_cli.main(["--question", "Show my last run", "--conversation-id", "cv_local"]) == 0
+    assert "Narrative: Try another question." in capsys.readouterr().out

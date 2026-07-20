@@ -14,6 +14,7 @@ from app.llm.client import get_model, make_client
 from app.llm.orchestrator import ChatOrchestrator
 from app.llm.provider_gateway import ProviderGateway
 from app.models.chat import ChatResponse
+from app.state.app_state import AppStateRepository
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -40,6 +41,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Print planner and connection failures to stderr.",
     )
+    parser.add_argument(
+        "--conversation-id",
+        help="Append the result to an existing local conversation without a web server.",
+    )
     return parser.parse_args(argv)
 
 
@@ -65,15 +70,36 @@ def _resolve_question(question: str | None) -> str:
             return resolved
 
 
-async def _ask_question(question: str, db_path: Path | None = None) -> ChatResponse:
+async def _ask_question(
+    question: str, db_path: Path | None = None, conversation_id: str | None = None
+) -> ChatResponse:
     """Run one question against the orchestrator and return the response."""
     conn = connect(db_path, read_only=True)
     gateway = ProviderGateway(make_client(), model=get_model())
+    repository = AppStateRepository()
+    turn_id = (
+        repository.create_pending_turn(conversation_id, question, "default")
+        if conversation_id
+        else None
+    )
     try:
         orchestrator = ChatOrchestrator(
             client=gateway.client, conn=conn, model=get_model(), gateway=gateway
         )
-        return await orchestrator.answer(question)
+        response = await orchestrator.answer(question)
+        if turn_id:
+            repository.finish_turn(
+                turn_id,
+                response_json=response.model_dump_json(),
+                cache_outcome=response.metadata.provenance,
+            )
+        return response
+    except Exception:
+        if turn_id:
+            repository.terminate_turn(
+                turn_id, state="failed", message="The answer could not be completed."
+            )
+        raise
     finally:
         await gateway.aclose()
         conn.close()
@@ -96,7 +122,9 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.CRITICAL)
     question = _resolve_question(args.question)
-    response = asyncio.run(_ask_question(question, db_path=args.db_path))
+    response = asyncio.run(
+        _ask_question(question, db_path=args.db_path, conversation_id=args.conversation_id)
+    )
     _print_response(response, args.json)
     return 0
 
