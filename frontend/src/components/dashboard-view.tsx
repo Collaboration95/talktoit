@@ -18,6 +18,9 @@ import {
 } from '@/api/dashboard'
 import type { DashboardScope } from '@/api/dashboard'
 import { decodeDashboardQuery, encodeDashboardQuery } from '@/lib/dashboard-query'
+import type { DashboardQuery } from '@/lib/dashboard-query'
+import { createSavedView, listSavedViews } from '@/api/saved-views'
+import type { SavedView } from '@/api/saved-views'
 import { formatDateOnly, formatNumber } from '@/lib/format'
 
 type DashboardViewMode = { view: 'list' } | { view: 'detail'; workoutId: number }
@@ -78,6 +81,31 @@ function SleepStagesPanel({ stages }: { stages: SleepStagesResponse | null }) {
           ))}
       </dl>
       <p className="text-xs text-gray-500">{stages.message}</p>
+    </div>
+  )
+}
+
+function SavedViewsPanel({
+  views,
+  onApply,
+}: {
+  views: SavedView[]
+  onApply: (query: DashboardQuery) => void
+}) {
+  if (!views.length) return null
+  return (
+    <div className="flex flex-wrap items-center gap-2" aria-label="Saved dashboard views">
+      <span className="text-sm text-gray-500">Saved views:</span>
+      {views.map((view) => (
+        <button
+          key={view.id}
+          type="button"
+          className="rounded border border-gray-300 px-2 py-1 text-sm text-blue-700"
+          onClick={() => onApply(view.query)}
+        >
+          {view.title}
+        </button>
+      ))}
     </div>
   )
 }
@@ -274,12 +302,20 @@ export function DashboardView() {
       ? { view: 'detail', workoutId: initialQuery.selectedWorkout }
       : { view: 'list' },
   )
-  const [scope] = useState<DashboardScope>(() => {
+  const [scope, setScope] = useState<DashboardScope>(() => {
     return initialQuery.start && initialQuery.end
       ? { start: initialQuery.start, end: initialQuery.end }
       : {}
   })
   const [backendDown, setBackendDown] = useState(false)
+  const [savedViews, setSavedViews] = useState<SavedView[]>([])
+  const [savedViewTitle, setSavedViewTitle] = useState('')
+
+  const reloadSavedViews = () => {
+    listSavedViews()
+      .then(setSavedViews)
+      .catch(() => setSavedViews([]))
+  }
 
   // Health check on mount (R1-12)
   useEffect(() => {
@@ -291,6 +327,10 @@ export function DashboardView() {
       })
       .catch(() => setBackendDown(true))
       .finally(() => clearTimeout(timer))
+  }, [])
+
+  useEffect(() => {
+    reloadSavedViews()
   }, [])
 
   useEffect(() => {
@@ -372,6 +412,23 @@ export function DashboardView() {
     setMode({ view: 'list' })
   }
 
+  const applySavedView = (query: DashboardQuery) => {
+    const nextScope = query.start && query.end ? { start: query.start, end: query.end } : {}
+    window.history.pushState({}, '', `?${encodeDashboardQuery({ ...query, tab: 'overview' })}`)
+    setMode({ view: 'list' })
+    setScope(nextScope)
+  }
+
+  const saveCurrentView = () => {
+    if (!scope.start || !scope.end) return
+    createSavedView(savedViewTitle, { tab: 'overview', ...scope })
+      .then(() => {
+        setSavedViewTitle('')
+        reloadSavedViews()
+      })
+      .catch(() => undefined)
+  }
+
   if (state.loading) {
     return (
       <div
@@ -399,6 +456,25 @@ export function DashboardView() {
         <p className="text-sm text-gray-500" aria-label="Active dashboard scope">
           Showing {scope.start} to {scope.end}
         </p>
+      ) : null}
+      <SavedViewsPanel views={savedViews} onApply={applySavedView} />
+      {scope.start && scope.end ? (
+        <div className="flex gap-2" aria-label="Save current dashboard view">
+          <input
+            value={savedViewTitle}
+            onChange={(event) => setSavedViewTitle(event.target.value)}
+            placeholder="View name"
+            aria-label="Saved view name"
+            className="rounded border border-gray-300 px-2 py-1 text-sm"
+          />
+          <button
+            type="button"
+            className="rounded border px-2 py-1 text-sm"
+            onClick={saveCurrentView}
+          >
+            Save view
+          </button>
+        </div>
       ) : null}
 
       <Section title="Activity Rings (Latest available day)">

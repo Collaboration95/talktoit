@@ -99,6 +99,7 @@ function setupHandlers() {
         ],
       }),
     ),
+    http.get('/api/saved-views', () => HttpResponse.json([])),
   )
 }
 
@@ -181,6 +182,23 @@ describe('DashboardView', () => {
       expect(screen.getByText('Showing 2024-01-01 to 2024-01-31')).toBeInTheDocument()
     })
     window.history.replaceState({}, '', '/')
+  })
+
+  it('lists locally saved dashboard scopes', async () => {
+    setupHandlers()
+    server.use(
+      http.get('/api/saved-views', () =>
+        HttpResponse.json([
+          {
+            id: 'sv_january',
+            title: 'January',
+            query: { tab: 'overview', start: '2024-01-01', end: '2024-01-31' },
+          },
+        ]),
+      ),
+    )
+    render(<DashboardView />)
+    expect(await screen.findByRole('button', { name: 'January' })).toBeInTheDocument()
   })
 
   it('renders measured sleep stages separately from the sleep trend', async () => {
