@@ -73,9 +73,10 @@ describe('fetchWorkouts', () => {
       http.get('/api/dashboard/workouts', () => HttpResponse.json({ workouts: [SAMPLE_WORKOUT] })),
     )
     const result = await fetchWorkouts()
-    expect(result).toHaveLength(1)
-    expect(result[0].activity_type).toBe('Running')
-    expect(result[0].avg_heart_rate).toBe(148)
+    expect(result.workouts).toHaveLength(1)
+    expect(result.workouts[0].activity_type).toBe('Running')
+    expect(result.workouts[0].avg_heart_rate).toBe(148)
+    expect(result.next_cursor).toBeUndefined()
   })
 })
 
