@@ -31,6 +31,24 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+def resolve_worker_count(
+    file_size_bytes: int,
+    requested: int | None = None,
+    cpu_count: int | None = None,
+) -> int:
+    """Resolve the reproducible local worker policy without inspecting export content."""
+    if requested is None:
+        configured = os.environ.get("TTI_INGEST_WORKERS", "auto").strip().lower()
+        requested = None if configured == "auto" else int(configured)
+    if requested is not None:
+        return max(1, min(requested, 8))
+    available = cpu_count if cpu_count is not None else (os.cpu_count() or 1)
+    if file_size_bytes < 16 * 1024 * 1024:
+        return 1
+    return max(1, min(8, max(1, available - 1)))
+
+
 # Regex to find top-level element start tags for boundary snapping
 _TOP_LEVEL_START_RE = re.compile(rb"<(Record|Workout|ActivitySummary)\b")
 
@@ -116,10 +134,9 @@ def ingest(
     if not xml_path.exists():
         raise FileNotFoundError(f"XML file not found: {xml_path}")
 
-    # Determine worker count
-    if n_workers is None:
-        n_workers = int(os.environ.get("TTI_INGEST_WORKERS", "1"))
-    n_workers = max(1, min(n_workers, 8))
+    # Resolve a visible, bounded local worker policy. Small exports avoid
+    # process overhead; explicit CLI/environment overrides remain authoritative.
+    n_workers = resolve_worker_count(xml_path.stat().st_size, n_workers)
 
     # Determine shard directory - use temporary directory by default to avoid conflicts
     if shard_dir is None:
