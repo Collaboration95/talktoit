@@ -33,26 +33,46 @@ def resolve_followup(
         return None
     context = candidates[0]
     lower = question.casefold()
-    if "compare" not in lower or "prior period" not in lower:
-        return None
-    if context.tool_name != "get_period_summary":
-        return None
-    try:
-        start = date.fromisoformat(str(context.arguments["start_date"]))
-        end = date.fromisoformat(str(context.arguments["end_date"]))
-    except (KeyError, TypeError, ValueError):
-        return None
-    duration = end - start
-    previous_end = start - timedelta(days=1)
-    previous_start = previous_end - duration
-    return {
-        "tool_name": "get_comparison",
-        "arguments": {
-            "this_start": start.isoformat(),
-            "this_end": end.isoformat(),
-            "last_start": previous_start.isoformat(),
-            "last_end": previous_end.isoformat(),
-            "this_label": f"{start.isoformat()} to {end.isoformat()}",
-            "last_label": f"{previous_start.isoformat()} to {previous_end.isoformat()}",
-        },
-    }
+    if "compare" in lower and "prior period" in lower and context.tool_name == "get_period_summary":
+        try:
+            start = date.fromisoformat(str(context.arguments["start_date"]))
+            end = date.fromisoformat(str(context.arguments["end_date"]))
+        except (KeyError, TypeError, ValueError):
+            return None
+        duration = end - start
+        previous_end = start - timedelta(days=1)
+        previous_start = previous_end - duration
+        return {
+            "tool_name": "get_comparison",
+            "arguments": {
+                "this_start": start.isoformat(),
+                "this_end": end.isoformat(),
+                "last_start": previous_start.isoformat(),
+                "last_end": previous_end.isoformat(),
+                "this_label": f"{start.isoformat()} to {end.isoformat()}",
+                "last_label": f"{previous_start.isoformat()} to {previous_end.isoformat()}",
+            },
+        }
+    if context.tool_name == "get_trend" and ("group" in lower or "by week" in lower):
+        arguments = dict(context.arguments)
+        arguments["granularity"] = "month" if "month" in lower else "week"
+        return {"tool_name": "get_trend", "arguments": arguments}
+    if context.tool_name == "get_top_workouts" and "only" in lower:
+        activity_type = _activity_type_from_question(lower)
+        if activity_type is None:
+            return None
+        arguments = dict(context.arguments)
+        arguments["activity_type"] = activity_type
+        return {"tool_name": "get_top_workouts", "arguments": arguments}
+    return None
+
+
+def _activity_type_from_question(question: str) -> str | None:
+    """Map a deliberately small safe activity vocabulary to tool arguments."""
+    if "run" in question or "jog" in question:
+        return "Running"
+    if "cycl" in question or "bike" in question:
+        return "Cycling"
+    if any(word in question for word in ("gym", "strength", "weight")):
+        return "TraditionalStrengthTraining"
+    return None

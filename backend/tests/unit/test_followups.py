@@ -28,3 +28,42 @@ def test_ambiguous_or_stale_context_never_resolves() -> None:
     )
     assert resolve_followup("Compare that to prior period", [context], "ds_new") is None
     assert resolve_followup("Compare that to prior period", [context, context], "ds_old") is None
+
+
+def test_regroup_trend_and_restrict_ranked_workouts_use_structured_arguments() -> None:
+    trend = resolve_followup(
+        "Group that by week",
+        [
+            FollowupContext(
+                "ds_one",
+                "get_trend",
+                {
+                    "metric_id": "HKQuantityTypeIdentifierStepCount",
+                    "granularity": "day",
+                    "start_date": "2024-02-01",
+                    "end_date": "2024-02-07",
+                },
+            )
+        ],
+        "ds_one",
+    )
+    ranked = resolve_followup(
+        "Show only running",
+        [
+            FollowupContext(
+                "ds_one", "get_top_workouts", {"activity_type": "Cycling", "metric": "distance"}
+            )
+        ],
+        "ds_one",
+    )
+    assert trend == {
+        "tool_name": "get_trend",
+        "arguments": {
+            "metric_id": "HKQuantityTypeIdentifierStepCount",
+            "granularity": "week",
+            "start_date": "2024-02-01",
+            "end_date": "2024-02-07",
+        },
+    }
+    assert ranked is not None
+    assert ranked["arguments"]["activity_type"] == "Running"
