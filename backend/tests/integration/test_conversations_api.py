@@ -34,3 +34,21 @@ def test_conversation_lifecycle_through_api(monkeypatch, tmp_path) -> None:
         ).json() == {"ok": True}
         assert client.delete(f"/api/conversations/{conversation_id}").json() == {"ok": True}
         assert client.get("/api/conversations").json() == []
+
+
+def test_scoped_turn_get_and_cancel_through_api(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
+    with TestClient(create_app()) as client:
+        first = client.post("/api/conversations", json={"title": "First"}).json()["id"]
+        second = client.post("/api/conversations", json={"title": "Second"}).json()["id"]
+        turn_id = AppStateRepository().create_pending_turn(first, "Slow question", "default")
+
+        turn = client.get(f"/api/conversations/{first}/turns/{turn_id}")
+        assert turn.status_code == 200
+        assert turn.json()["state"] == "pending"
+        assert client.post(f"/api/conversations/{second}/turns/{turn_id}/cancel").status_code == 404
+        cancelled = client.post(f"/api/conversations/{first}/turns/{turn_id}/cancel")
+        assert cancelled.json() == {"ok": True}
+        fetched = client.get(f"/api/conversations/{first}/turns/{turn_id}")
+        assert fetched.json()["state"] == "cancelled"
+        assert client.post(f"/api/conversations/{first}/turns/{turn_id}/cancel").status_code == 409

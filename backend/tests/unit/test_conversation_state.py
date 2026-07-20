@@ -91,3 +91,13 @@ def test_pending_turn_becomes_completed_or_visible_terminal_state(tmp_path) -> N
     assert turns[0]["response_json"] == '{"template_id":"fallback"}'
     assert turns[1]["error_message"] == "Could not answer"
     assert turns[2]["cache_mode"] == "default"
+
+
+def test_scoped_turn_lookup_never_returns_another_conversation_turn(tmp_path) -> None:
+    repo = AppStateRepository(tmp_path / "state.sqlite")
+    first = repo.create_conversation("First", "ds_fixture")
+    second = repo.create_conversation("Second", "ds_fixture")
+    turn_id = repo.create_pending_turn(first, "first question", "default")
+
+    assert repo.get_conversation_turn(first, turn_id) is not None
+    assert repo.get_conversation_turn(second, turn_id) is None

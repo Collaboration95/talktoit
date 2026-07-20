@@ -400,6 +400,16 @@ class AppStateRepository:
             row = conn.execute("SELECT * FROM turns WHERE id = ?", (turn_id,)).fetchone()
         return dict(row) if row else None
 
+    def get_conversation_turn(self, conversation_id: str, turn_id: str) -> dict[str, object] | None:
+        """Return a turn only when it belongs to the requested local conversation."""
+        self.migrate()
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM turns WHERE id = ? AND conversation_id = ?",
+                (turn_id, conversation_id),
+            ).fetchone()
+        return dict(row) if row else None
+
     def rename_conversation(self, conversation_id: str, title: str) -> bool:
         """Rename only the selected local conversation."""
         self.migrate()

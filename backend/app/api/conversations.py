@@ -40,6 +40,28 @@ async def get_turns(conversation_id: str) -> list[dict[str, object]]:
     return AppStateRepository().get_turns(conversation_id)
 
 
+@router.get("/{conversation_id}/turns/{turn_id}")
+async def get_turn(conversation_id: str, turn_id: str) -> dict[str, object]:
+    """Read one scoped local turn, including a pending or terminal state."""
+    turn = AppStateRepository().get_conversation_turn(conversation_id, turn_id)
+    if turn is None:
+        raise HTTPException(status_code=404, detail="Turn not found")
+    return turn
+
+
+@router.post("/{conversation_id}/turns/{turn_id}/cancel")
+async def cancel_turn(conversation_id: str, turn_id: str) -> dict[str, bool]:
+    """Mark only a scoped pending turn as cancelled and retryable."""
+    repository = AppStateRepository()
+    if repository.get_conversation_turn(conversation_id, turn_id) is None:
+        raise HTTPException(status_code=404, detail="Turn not found")
+    if not repository.terminate_turn(
+        turn_id, state="cancelled", message="Request cancelled by the client."
+    ):
+        raise HTTPException(status_code=409, detail="Turn is no longer pending")
+    return {"ok": True}
+
+
 @router.patch("/{conversation_id}")
 async def rename_conversation(conversation_id: str, body: ConversationRename) -> dict[str, bool]:
     """Rename one conversation without affecting health data."""
