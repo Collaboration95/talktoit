@@ -47,6 +47,10 @@ class ResponseMetadata(BaseModel):
 
     api_version: Literal["v1"] = "v1"
     provenance: Literal["unknown", "deterministic_local", "remote_planned", "fallback"] = "unknown"
+    dataset_version_id: str | None = None
+    coverage_start: str | None = None
+    coverage_end: str | None = None
+    generated_at: str | None = None
 
 
 class ChatResponse(BaseModel):

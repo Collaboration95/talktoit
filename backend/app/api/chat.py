@@ -12,6 +12,7 @@ from app.llm.client import get_model
 from app.llm.orchestrator import ChatOrchestrator
 from app.llm.provider_gateway import ProviderGateway, make_provider_gateway
 from app.models.chat import ChatRequest, ChatResponse
+from app.state.app_state import AppStateRepository
 
 router = APIRouter(prefix="/api")
 
@@ -59,6 +60,13 @@ async def chat(
         client=gateway.client, conn=conn, model=get_model(), gateway=gateway
     )
     try:
-        return await orchestrator.answer(request.question)
+        response = await orchestrator.answer(request.question)
+        active = AppStateRepository().get_active()
+        if active is not None:
+            response.metadata.dataset_version_id = active.id
+            response.metadata.coverage_start = active.coverage_start
+            response.metadata.coverage_end = active.coverage_end
+            response.metadata.generated_at = active.activated_at
+        return response
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Internal server error") from exc

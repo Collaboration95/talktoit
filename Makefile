@@ -4,7 +4,7 @@
 # `uv run --directory backend`; frontend targets use
 # `npm --prefix frontend run <script>`.
 
-.PHONY: install dev dev-backend dev-frontend \
+.PHONY: install dev dev-backend dev-frontend status \
         test test-bk test-fe test-all test-backend test-frontend test-watch \
         typecheck typecheck-backend typecheck-frontend \
         lint lint-backend lint-frontend format format-backend format-frontend \
@@ -114,6 +114,9 @@ run-cli:
 	  $(if $(QUESTION),--question "$(QUESTION)",) \
 	  $(if $(JSON),--json,) \
 	  $(if $(DB_PATH),--db-path "$(DB_PATH)",)
+
+status:
+	uv run --directory backend python -m app.cli.status --json
 
 # ── Build ────────────────────────────────────────────────────────────────────
 build:

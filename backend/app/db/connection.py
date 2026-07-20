@@ -12,6 +12,16 @@ from pathlib import Path
 import duckdb
 
 
+def resolve_db_path(db_path: str | Path | None = None) -> Path:
+    """Resolve the configured health-database location without opening it."""
+    if db_path is None:
+        db_path = os.environ.get("TTI_DB_PATH")
+    if db_path is None:
+        this_dir = Path(__file__).resolve().parent
+        db_path = this_dir.parent.parent / "data" / "health.duckdb"
+    return Path(db_path)
+
+
 def connect(
     db_path: str | Path | None = None, *, read_only: bool = False
 ) -> duckdb.DuckDBPyConnection:
@@ -27,15 +37,7 @@ def connect(
     Returns:
         An open DuckDB connection (read/write, auto-commit).
     """
-    if db_path is None:
-        db_path = os.environ.get("TTI_DB_PATH")
-    if db_path is None:
-        # Default: backend/data/health.duckdb
-        this_dir = Path(__file__).resolve().parent  # app/db/
-        repo_root = this_dir.parent.parent  # backend/
-        db_path = repo_root / "data" / "health.duckdb"
-
-    path = Path(db_path)
+    path = resolve_db_path(db_path)
     if not read_only:
         path.parent.mkdir(parents=True, exist_ok=True)
     conn = duckdb.connect(str(path), read_only=read_only)
