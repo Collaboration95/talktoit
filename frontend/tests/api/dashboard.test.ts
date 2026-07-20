@@ -53,6 +53,17 @@ describe('fetchSummary', () => {
     expect(result[0].date).toBe('2026-06-05')
     expect(result[0].energy_kj).toBe(3200)
   })
+
+  it('propagates a shared explicit date scope', async () => {
+    server.use(
+      http.get('/api/dashboard/summary', ({ request }) => {
+        expect(new URL(request.url).searchParams.get('start')).toBe('2024-01-01')
+        expect(new URL(request.url).searchParams.get('end')).toBe('2024-01-31')
+        return HttpResponse.json({ days: [] })
+      }),
+    )
+    await fetchSummary({ start: '2024-01-01', end: '2024-01-31' })
+  })
 })
 
 describe('fetchWorkouts', () => {

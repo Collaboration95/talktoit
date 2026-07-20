@@ -35,6 +35,11 @@ export interface CapabilityFlag {
   present: boolean
 }
 
+export interface DashboardScope {
+  start?: string
+  end?: string
+}
+
 // R1-01: Workout detail types
 export interface GpsRoute {
   type: 'LineString'
@@ -62,20 +67,28 @@ export interface WorkoutDetail {
   metadata: KeyValuePair[]
 }
 
+function withScope(path: string, scope: DashboardScope = {}): string {
+  const params = new URLSearchParams()
+  if (scope.start) params.set('start', scope.start)
+  if (scope.end) params.set('end', scope.end)
+  const query = params.toString()
+  return query ? `${path}?${query}` : path
+}
+
 async function checkedFetch(url: string): Promise<Response> {
   const r = await fetch(url)
   if (!r.ok) throw new Error(`Dashboard request failed: ${r.status} ${r.statusText}`)
   return r
 }
 
-export async function fetchSummary(): Promise<ActivityRingDay[]> {
-  const r = await checkedFetch('/api/dashboard/summary')
+export async function fetchSummary(scope?: DashboardScope): Promise<ActivityRingDay[]> {
+  const r = await checkedFetch(withScope('/api/dashboard/summary', scope))
   const d = (await r.json()) as { days: ActivityRingDay[] }
   return d.days
 }
 
-export async function fetchWorkouts(): Promise<WorkoutSummary[]> {
-  const r = await checkedFetch('/api/dashboard/workouts')
+export async function fetchWorkouts(scope?: DashboardScope): Promise<WorkoutSummary[]> {
+  const r = await checkedFetch(withScope('/api/dashboard/workouts', scope))
   const d = (await r.json()) as { workouts: WorkoutSummary[] }
   return d.workouts
 }
@@ -83,8 +96,11 @@ export async function fetchWorkouts(): Promise<WorkoutSummary[]> {
 export async function fetchTrend(
   endpoint: 'steps' | 'heart' | 'sleep',
   granularity = 'day',
+  scope?: DashboardScope,
 ): Promise<TrendResponse> {
-  const r = await checkedFetch(`/api/dashboard/${endpoint}?granularity=${granularity}`)
+  const scoped = withScope(`/api/dashboard/${endpoint}`, scope)
+  const separator = scoped.includes('?') ? '&' : '?'
+  const r = await checkedFetch(`${scoped}${separator}granularity=${granularity}`)
   return r.json() as Promise<TrendResponse>
 }
 
