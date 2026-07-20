@@ -49,6 +49,9 @@ class WorkoutsResponse(DashboardResponse):
     """Response for GET /api/dashboard/workouts."""
 
     workouts: list[WorkoutSummary]
+    next_cursor: str | None = None
+    effective_start: str | None = None
+    effective_end: str | None = None
 
 
 class TrendPoint(BaseModel):
