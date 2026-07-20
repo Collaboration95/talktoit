@@ -19,6 +19,8 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+CACHE_MAX_ENTRIES = 200
+
 
 def _default_state_path() -> Path:
     configured = os.environ.get("TTI_APP_STATE_PATH")
@@ -400,6 +402,16 @@ class AppStateRepository:
                 "accessed_at = excluded.accessed_at",
                 (cache_key, dataset_version_id, response_json, now, now),
             )
+            expired = conn.execute(
+                """
+                SELECT cache_key FROM cache_entries
+                ORDER BY accessed_at ASC, created_at ASC, cache_key ASC
+                LIMIT 1
+                """,
+            ).fetchone()
+            count = conn.execute("SELECT COUNT(*) FROM cache_entries").fetchone()[0]
+            if expired is not None and count > CACHE_MAX_ENTRIES:
+                conn.execute("DELETE FROM cache_entries WHERE cache_key = ?", (expired[0],))
 
     @staticmethod
     def _dataset_from_row(row: sqlite3.Row) -> DatasetVersion:
