@@ -301,16 +301,23 @@ function CapabilitiesPanel({ caps }: { caps: CapabilityFlag[] }) {
   if (caps.length === 0) return <NoData />
   return (
     <div className="flex flex-wrap gap-2">
-      {caps.map((c) => (
-        <span
-          key={c.name}
-          className={`px-2 py-1 rounded text-xs font-medium ${
-            c.present ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'
-          }`}
-        >
-          {c.name.replace('_', ' ')} {c.present ? '✓' : '✗'}
-        </span>
-      ))}
+      {caps.map((c) => {
+        const state = c.state ?? (c.present ? 'available' : 'unavailable')
+        return (
+          <span
+            key={c.name}
+            className={`px-2 py-1 rounded text-xs font-medium ${
+              state === 'available'
+                ? 'bg-green-100 text-green-800'
+                : state === 'out_of_range'
+                  ? 'bg-amber-100 text-amber-800'
+                  : 'bg-gray-100 text-gray-500'
+            }`}
+          >
+            {c.name.replaceAll('_', ' ')} {state === 'available' ? '✓' : state.replaceAll('_', ' ')}
+          </span>
+        )
+      })}
     </div>
   )
 }
@@ -402,7 +409,7 @@ export function DashboardView() {
       fetchTrend('heart', 'week', scope, signal),
       fetchTrend('sleep', 'day', scope, signal),
       fetchSleepStages(scope, signal),
-      fetchCapabilities(signal),
+      fetchCapabilities(scope, signal),
       fetchDatasetStatus(signal),
     ]).then((results) => {
       const [

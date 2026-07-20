@@ -42,6 +42,7 @@ export interface SleepStagesResponse {
 export interface CapabilityFlag {
   name: string
   present: boolean
+  state: 'available' | 'unavailable' | 'out_of_range'
 }
 
 export interface DatasetStatus {
@@ -147,8 +148,11 @@ export async function fetchSleepStages(
   return r.json() as Promise<SleepStagesResponse>
 }
 
-export async function fetchCapabilities(signal?: AbortSignal): Promise<CapabilityFlag[]> {
-  const r = await checkedFetch('/api/dashboard/capabilities', signal)
+export async function fetchCapabilities(
+  scope?: DashboardScope,
+  signal?: AbortSignal,
+): Promise<CapabilityFlag[]> {
+  const r = await checkedFetch(withScope('/api/dashboard/capabilities', scope), signal)
   const d = (await r.json()) as { capabilities: CapabilityFlag[] }
   return d.capabilities
 }

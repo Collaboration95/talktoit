@@ -86,6 +86,7 @@ class CapabilityFlag(BaseModel):
 
     name: str
     present: bool
+    state: Literal["available", "unavailable", "out_of_range"]
 
 
 class CapabilitiesResponse(DashboardResponse):

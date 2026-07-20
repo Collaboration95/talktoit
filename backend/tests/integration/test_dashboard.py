@@ -348,3 +348,12 @@ async def test_http_capabilities(client: AsyncClient) -> None:
     assert caps["hrv"] is True
     assert caps["workouts"] is True
     assert caps["activity_rings"] is True
+
+
+@pytest.mark.asyncio
+async def test_http_capabilities_marks_present_data_out_of_range(client: AsyncClient) -> None:
+    """A scoped capability distinguishes absent-range data from absent imports."""
+    r = await client.get("/api/dashboard/capabilities?start=2000-01-01&end=2000-01-02")
+    assert r.status_code == 200
+    caps = {c["name"]: c for c in r.json()["capabilities"]}
+    assert caps["steps"] == {"name": "steps", "present": False, "state": "out_of_range"}

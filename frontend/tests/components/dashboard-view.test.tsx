@@ -95,11 +95,11 @@ function setupHandlers() {
     http.get('/api/dashboard/capabilities', () =>
       HttpResponse.json({
         capabilities: [
-          { name: 'resting_hr', present: true },
-          { name: 'steps', present: true },
-          { name: 'sleep', present: true },
-          { name: 'hrv', present: true },
-          { name: 'workouts', present: true },
+          { name: 'resting_hr', present: true, state: 'available' },
+          { name: 'steps', present: true, state: 'available' },
+          { name: 'sleep', present: true, state: 'available' },
+          { name: 'hrv', present: true, state: 'available' },
+          { name: 'workouts', present: true, state: 'available' },
         ],
       }),
     ),
@@ -189,6 +189,19 @@ describe('DashboardView', () => {
     await waitFor(() => {
       expect(screen.getByText(/resting hr/i)).toBeInTheDocument()
     })
+  })
+
+  it('labels imported data outside the selected range distinctly', async () => {
+    setupHandlers()
+    server.use(
+      http.get('/api/dashboard/capabilities', () =>
+        HttpResponse.json({
+          capabilities: [{ name: 'steps', present: false, state: 'out_of_range' }],
+        }),
+      ),
+    )
+    render(<DashboardView />)
+    expect(await screen.findByText(/steps out of range/i)).toBeInTheDocument()
   })
 
   it('shows local import coverage with the dashboard facts', async () => {

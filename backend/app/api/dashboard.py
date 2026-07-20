@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Generator
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
@@ -124,12 +124,27 @@ ORDER BY start_date
 
 _SQL_CAPABILITIES_RECORDS = "SELECT DISTINCT type FROM records"
 
+_SQL_CAPABILITIES_RECORDS_IN_WINDOW = """
+SELECT DISTINCT type FROM records
+WHERE start_date >= ? AND start_date < ?
+"""
+
 _SQL_CAPABILITIES_WORKOUTS = """
 SELECT COUNT(*) FROM workouts
 """
 
 _SQL_CAPABILITIES_ACTIVITY_SUMMARIES = """
 SELECT COUNT(*) FROM activity_summaries
+"""
+
+_SQL_CAPABILITIES_WORKOUTS_IN_WINDOW = """
+SELECT COUNT(*) FROM workouts
+WHERE start_date >= ? AND start_date < ?
+"""
+
+_SQL_CAPABILITIES_ACTIVITY_SUMMARIES_IN_WINDOW = """
+SELECT COUNT(*) FROM activity_summaries
+WHERE date_components >= ? AND date_components <= ?
 """
 
 _SQL_WORKOUT_DETAIL = (
@@ -469,9 +484,11 @@ def get_sleep_stages(
 
 @router.get("/capabilities", response_model=CapabilitiesResponse)
 def get_capabilities(
+    start: date | None = None,
+    end: date | None = None,
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
 ) -> CapabilitiesResponse:
-    """Return which data sources are present in the export."""
+    """Return catalog availability, including the requested dashboard range."""
     rows = conn.execute(_SQL_CAPABILITIES_RECORDS).fetchall()
     present_types = {row[0] for row in rows}
 
@@ -482,15 +499,52 @@ def get_capabilities(
         )[0],
     }
 
-    def is_present(metric_id: str) -> bool:
+    if start is not None or end is not None:
+        start_date, end_date = _resolve_window(conn, start, end, days=30)
+        utc_start, utc_end = utc_bounds(start_date, end_date, DEFAULT_TZ)
+        scoped_record_types = {
+            row[0]
+            for row in conn.execute(
+                _SQL_CAPABILITIES_RECORDS_IN_WINDOW, [utc_start, utc_end]
+            ).fetchall()
+        }
+        scoped_counts = {
+            "workouts": (
+                conn.execute(_SQL_CAPABILITIES_WORKOUTS_IN_WINDOW, [utc_start, utc_end]).fetchone()
+                or [0]
+            )[0],
+            "activity_summaries": (
+                conn.execute(
+                    _SQL_CAPABILITIES_ACTIVITY_SUMMARIES_IN_WINDOW,
+                    [start_date.isoformat(), end_date.isoformat()],
+                ).fetchone()
+                or [0]
+            )[0],
+        }
+    else:
+        scoped_record_types = present_types
+        scoped_counts = counts
+
+    def availability(
+        metric_id: str,
+    ) -> tuple[bool, Literal["available", "unavailable", "out_of_range"]]:
         metric = METRIC_CATALOG[metric_id]
         if metric.availability_source == "records":
-            return bool(set(metric.apple_types).intersection(present_types))
-        return counts[metric.availability_source] > 0
+            globally_present = bool(set(metric.apple_types).intersection(present_types))
+            scoped_present = bool(set(metric.apple_types).intersection(scoped_record_types))
+        else:
+            globally_present = counts[metric.availability_source] > 0
+            scoped_present = scoped_counts[metric.availability_source] > 0
+        if not globally_present:
+            return False, "unavailable"
+        if not scoped_present:
+            return False, "out_of_range"
+        return True, "available"
 
     capabilities = [
-        CapabilityFlag(name=metric.id, present=is_present(metric.id))
+        CapabilityFlag(name=metric.id, present=present, state=state)
         for metric in METRIC_CATALOG.values()
+        for present, state in [availability(metric.id)]
     ]
     return CapabilitiesResponse(capabilities=capabilities)
 
