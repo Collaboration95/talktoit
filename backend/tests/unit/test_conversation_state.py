@@ -40,3 +40,14 @@ def test_rename_and_delete_touch_only_selected_conversation(tmp_path) -> None:
     assert repo.delete_conversation(selected)
     assert repo.get_turns(selected) == []
     assert repo.list_conversations()[0]["id"] == other
+
+
+def test_archive_hides_only_selected_conversation_and_preserves_turns(tmp_path) -> None:
+    repo = AppStateRepository(tmp_path / "state.sqlite3")
+    archived = repo.create_conversation("Archive me", "ds_fixture")
+    visible = repo.create_conversation("Keep me", "ds_fixture")
+    repo.add_completed_turn(archived, "question", "{}", "default", "fallback")
+
+    assert repo.archive_conversation(archived)
+    assert [conversation["id"] for conversation in repo.list_conversations()] == [visible]
+    assert len(repo.get_turns(archived)) == 1

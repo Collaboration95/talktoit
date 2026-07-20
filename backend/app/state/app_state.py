@@ -335,6 +335,16 @@ class AppStateRepository:
             ).rowcount
         return changed == 1
 
+    def archive_conversation(self, conversation_id: str) -> bool:
+        """Hide one local conversation while retaining its immutable turns."""
+        self.migrate()
+        with self._connection() as conn:
+            changed = conn.execute(
+                "UPDATE conversations SET archived = 1, updated_at = ? WHERE id = ?",
+                (_now(), conversation_id),
+            ).rowcount
+        return changed == 1
+
     def delete_conversation(self, conversation_id: str) -> bool:
         """Delete local history only; never delete cache entries or health data."""
         self.migrate()

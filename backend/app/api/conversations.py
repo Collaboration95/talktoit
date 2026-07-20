@@ -48,6 +48,14 @@ async def rename_conversation(conversation_id: str, body: ConversationRename) ->
     return {"ok": True}
 
 
+@router.post("/{conversation_id}/archive")
+async def archive_conversation(conversation_id: str) -> dict[str, bool]:
+    """Archive one local transcript without deleting its turns."""
+    if not AppStateRepository().archive_conversation(conversation_id):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"ok": True}
+
+
 @router.delete("/{conversation_id}")
 async def delete_conversation(conversation_id: str) -> dict[str, bool]:
     """Delete only a selected local conversation after client confirmation."""
