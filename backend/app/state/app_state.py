@@ -101,6 +101,26 @@ class AppStateRepository:
                     PRAGMA user_version = 1;
                     """
                 )
+                version = 1
+            if version < 2:
+                conn.executescript(
+                    """
+                    CREATE TABLE conversations (
+                        id TEXT PRIMARY KEY, dataset_version_id TEXT, title TEXT NOT NULL,
+                        archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                    CREATE TABLE turns (
+                        id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL
+                        REFERENCES conversations(id),
+                        ordinal INTEGER NOT NULL, question TEXT NOT NULL, state TEXT NOT NULL,
+                        response_json TEXT, cache_mode TEXT NOT NULL, cache_outcome TEXT NOT NULL,
+                        created_at TEXT NOT NULL, completed_at TEXT,
+                        UNIQUE(conversation_id, ordinal)
+                    );
+                    PRAGMA user_version = 2;
+                    """
+                )
 
     def backup_before_destructive_migration(self) -> Path | None:
         """Create a recoverable snapshot when a future migration needs it."""
@@ -187,6 +207,77 @@ class AppStateRepository:
                 """
             ).fetchone()
         return self._dataset_from_row(row) if row else None
+
+    def create_conversation(self, title: str, dataset_version_id: str | None) -> str:
+        """Create a local conversation scoped to its dataset version."""
+        self.migrate()
+        conversation_id, now = f"cv_{uuid.uuid4().hex}", _now()
+        with self._connection() as conn:
+            conn.execute(
+                "INSERT INTO conversations VALUES (?, ?, ?, 0, ?, ?)",
+                (
+                    conversation_id,
+                    dataset_version_id,
+                    title.strip() or "New conversation",
+                    now,
+                    now,
+                ),
+            )
+        return conversation_id
+
+    def list_conversations(self, search: str = "") -> list[dict[str, object]]:
+        """List non-archived local conversation metadata."""
+        self.migrate()
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM conversations WHERE archived = 0 AND title LIKE ? "
+                "ORDER BY updated_at DESC",
+                (f"%{search.strip()}%",),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def add_completed_turn(
+        self,
+        conversation_id: str,
+        question: str,
+        response_json: str,
+        cache_mode: str,
+        cache_outcome: str,
+    ) -> str:
+        """Append one immutable completed result and update its conversation timestamp."""
+        turn_id, now = f"tr_{uuid.uuid4().hex}", _now()
+        with self._connection() as conn:
+            ordinal = conn.execute(
+                "SELECT COALESCE(MAX(ordinal), 0) + 1 FROM turns WHERE conversation_id = ?",
+                (conversation_id,),
+            ).fetchone()[0]
+            conn.execute(
+                "INSERT INTO turns VALUES (?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?)",
+                (
+                    turn_id,
+                    conversation_id,
+                    ordinal,
+                    question,
+                    response_json,
+                    cache_mode,
+                    cache_outcome,
+                    now,
+                    now,
+                ),
+            )
+            conn.execute(
+                "UPDATE conversations SET updated_at = ? WHERE id = ?", (now, conversation_id)
+            )
+        return turn_id
+
+    def get_turns(self, conversation_id: str) -> list[dict[str, object]]:
+        """Return a local transcript in append-only ordinal order."""
+        self.migrate()
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM turns WHERE conversation_id = ? ORDER BY ordinal", (conversation_id,)
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     @staticmethod
     def _dataset_from_row(row: sqlite3.Row) -> DatasetVersion:

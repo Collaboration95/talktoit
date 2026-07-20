@@ -61,12 +61,21 @@ async def chat(
     )
     try:
         response = await orchestrator.answer(request.question)
-        active = AppStateRepository().get_active()
+        repository = AppStateRepository()
+        active = repository.get_active()
         if active is not None:
             response.metadata.dataset_version_id = active.id
             response.metadata.coverage_start = active.coverage_start
             response.metadata.coverage_end = active.coverage_end
             response.metadata.generated_at = active.activated_at
+        if request.conversation_id:
+            repository.add_completed_turn(
+                request.conversation_id,
+                request.question,
+                response.model_dump_json(),
+                request.cache_mode,
+                response.metadata.provenance,
+            )
         return response
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Internal server error") from exc
