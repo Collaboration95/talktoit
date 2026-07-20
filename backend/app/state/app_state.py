@@ -133,6 +133,17 @@ class AppStateRepository:
                     PRAGMA user_version = 3;
                     """
                 )
+                version = 3
+            if version < 4:
+                conn.executescript(
+                    """
+                    CREATE TABLE saved_views (
+                        id TEXT PRIMARY KEY, dataset_version_id TEXT, title TEXT NOT NULL,
+                        query_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                    );
+                    PRAGMA user_version = 4;
+                    """
+                )
 
     def backup_before_destructive_migration(self) -> Path | None:
         """Create a recoverable snapshot when a future migration needs it."""
@@ -310,6 +321,32 @@ class AppStateRepository:
                 "DELETE FROM conversations WHERE id = ?", (conversation_id,)
             ).rowcount
         return changed == 1
+
+    def create_saved_view(self, title: str, query: Mapping[str, object]) -> str:
+        """Persist a validated dashboard scope locally for the active dataset."""
+        self.migrate()
+        active = self.get_active()
+        view_id, now = f"sv_{uuid.uuid4().hex}", _now()
+        with self._connection() as conn:
+            conn.execute(
+                "INSERT INTO saved_views VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    view_id,
+                    active.id if active else None,
+                    title.strip() or "Saved view",
+                    json.dumps(query, sort_keys=True),
+                    now,
+                    now,
+                ),
+            )
+        return view_id
+
+    def list_saved_views(self) -> list[dict[str, object]]:
+        """List safe local saved-dashboard scopes by newest update."""
+        self.migrate()
+        with self._connection() as conn:
+            rows = conn.execute("SELECT * FROM saved_views ORDER BY updated_at DESC").fetchall()
+        return [{**dict(row), "query": json.loads(str(row["query_json"]))} for row in rows]
 
     def get_cached_response(self, cache_key: str, dataset_version_id: str) -> str | None:
         """Read an exact dataset-scoped cached envelope and record its local hit."""

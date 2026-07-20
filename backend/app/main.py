@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.chat import router as chat_router
 from app.api.conversations import router as conversations_router
 from app.api.dashboard import router as dashboard_router
+from app.api.saved_views import router as saved_views_router
 from app.api.status import router as status_router
 from app.llm.provider_gateway import make_provider_gateway
 
@@ -49,6 +50,7 @@ def create_app() -> FastAPI:
     app.include_router(conversations_router)
     app.include_router(dashboard_router)
     app.include_router(status_router)
+    app.include_router(saved_views_router)
 
     # Serve built frontend if dist/ exists (production: make run).
     # API routes above take precedence; this catch-all handles SPA navigation.
