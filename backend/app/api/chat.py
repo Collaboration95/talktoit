@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Generator
 
 import duckdb
@@ -60,14 +61,26 @@ async def chat(
         client=gateway.client, conn=conn, model=get_model(), gateway=gateway
     )
     try:
-        response = await orchestrator.answer(request.question)
         repository = AppStateRepository()
         active = repository.get_active()
+        cache_key = hashlib.sha256(request.question.strip().casefold().encode()).hexdigest()
+        cached = (
+            repository.get_cached_response(cache_key, active.id)
+            if active is not None and request.cache_mode != "fresh"
+            else None
+        )
+        if cached is not None:
+            response = ChatResponse.model_validate_json(cached)
+            response.metadata.provenance = "cached"
+        else:
+            response = await orchestrator.answer(request.question)
         if active is not None:
             response.metadata.dataset_version_id = active.id
             response.metadata.coverage_start = active.coverage_start
             response.metadata.coverage_end = active.coverage_end
             response.metadata.generated_at = active.activated_at
+            if request.cache_mode != "fresh":
+                repository.put_cached_response(cache_key, active.id, response.model_dump_json())
         if request.conversation_id:
             repository.add_completed_turn(
                 request.conversation_id,

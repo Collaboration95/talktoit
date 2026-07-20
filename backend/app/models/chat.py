@@ -46,7 +46,9 @@ class ResponseMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     api_version: Literal["v1"] = "v1"
-    provenance: Literal["unknown", "deterministic_local", "remote_planned", "fallback"] = "unknown"
+    provenance: Literal[
+        "unknown", "deterministic_local", "remote_planned", "fallback", "cached"
+    ] = "unknown"
     dataset_version_id: str | None = None
     coverage_start: str | None = None
     coverage_end: str | None = None

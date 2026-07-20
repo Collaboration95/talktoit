@@ -121,6 +121,18 @@ class AppStateRepository:
                     PRAGMA user_version = 2;
                     """
                 )
+                version = 2
+            if version < 3:
+                conn.executescript(
+                    """
+                    CREATE TABLE cache_entries (
+                        cache_key TEXT PRIMARY KEY, dataset_version_id TEXT NOT NULL,
+                        response_json TEXT NOT NULL, created_at TEXT NOT NULL,
+                        accessed_at TEXT NOT NULL, hit_count INTEGER NOT NULL DEFAULT 0
+                    );
+                    PRAGMA user_version = 3;
+                    """
+                )
 
     def backup_before_destructive_migration(self) -> Path | None:
         """Create a recoverable snapshot when a future migration needs it."""
@@ -278,6 +290,38 @@ class AppStateRepository:
                 "SELECT * FROM turns WHERE conversation_id = ? ORDER BY ordinal", (conversation_id,)
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def get_cached_response(self, cache_key: str, dataset_version_id: str) -> str | None:
+        """Read an exact dataset-scoped cached envelope and record its local hit."""
+        self.migrate()
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT response_json FROM cache_entries WHERE cache_key = ? "
+                "AND dataset_version_id = ?",
+                (cache_key, dataset_version_id),
+            ).fetchone()
+            if row is None:
+                return None
+            conn.execute(
+                "UPDATE cache_entries SET accessed_at = ?, hit_count = hit_count + 1 "
+                "WHERE cache_key = ?",
+                (_now(), cache_key),
+            )
+        return str(row["response_json"])
+
+    def put_cached_response(
+        self, cache_key: str, dataset_version_id: str, response_json: str
+    ) -> None:
+        """Store a validated local envelope, replacing only the matching exact key."""
+        self.migrate()
+        now = _now()
+        with self._connection() as conn:
+            conn.execute(
+                "INSERT INTO cache_entries VALUES (?, ?, ?, ?, ?, 0) "
+                "ON CONFLICT(cache_key) DO UPDATE SET response_json = excluded.response_json, "
+                "accessed_at = excluded.accessed_at",
+                (cache_key, dataset_version_id, response_json, now, now),
+            )
 
     @staticmethod
     def _dataset_from_row(row: sqlite3.Row) -> DatasetVersion:
