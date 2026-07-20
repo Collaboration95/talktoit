@@ -24,7 +24,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from app.ingest.bytescan import WorkerResult, parse_byte_range
-from app.ingest.compatibility import require_v2_compatibility
+from app.ingest.compatibility import (
+    V2CompatibilityError,
+    require_v2_compatibility,
+    require_well_formed_export,
+)
 from app.ingest.reconcile import load_shards_into_duckdb
 
 if TYPE_CHECKING:
@@ -282,6 +286,11 @@ def ingest_v2(
     xml_path = Path(xml_path)
     overall_start = time.time()
 
+    # The fast byte scanner cannot itself prove a document was not truncated.
+    # Keep a bounded streaming syntax pass ahead of staging so malformed
+    # exports never look like an empty, activatable dataset.
+    require_well_formed_export(xml_path)
+
     logger.info(f"Starting V2 ingestion of {xml_path}")
 
     # Phase 1: Parse XML to Parquet shards
@@ -317,6 +326,10 @@ def ingest_v2(
                 shutil.rmtree(shard_dir, ignore_errors=True)
     except Exception as e:
         logger.error(f"Failed to load shards into DuckDB: {e}")
+        if isinstance(e, FileNotFoundError) and "No parquet files found" in str(e):
+            raise V2CompatibilityError(
+                "V2 compatibility gate failed: scanner produced no canonical rows"
+            ) from e
         raise
 
     total_time = time.time() - overall_start

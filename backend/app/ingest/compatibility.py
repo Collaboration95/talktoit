@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
+
+from lxml import etree  # type: ignore[import-untyped]
 
 if TYPE_CHECKING:
     import duckdb
@@ -77,6 +80,28 @@ class CompatibilityReport:
 
 class V2CompatibilityError(RuntimeError):
     """Raised before activation if reconciled V2 output is incompatible."""
+
+
+def require_well_formed_export(xml_path: str | Path) -> None:
+    """Reject malformed or non-HealthData exports before the fast scan runs.
+
+    The byte scanner intentionally does not construct an XML tree, so it cannot
+    establish that a truncated document is structurally complete.  A streaming
+    syntax pass supplies that activation invariant without retaining health
+    observations in memory.
+    """
+    try:
+        root_tag: str | None = None
+        for _event, element in etree.iterparse(str(xml_path), events=("end",)):
+            if root_tag is None:
+                root_tag = element.getroottree().getroot().tag
+            element.clear()
+    except (OSError, etree.XMLSyntaxError) as exc:
+        raise V2CompatibilityError(
+            f"V2 compatibility gate failed: malformed XML export ({exc})"
+        ) from exc
+    if root_tag != "HealthData":
+        raise V2CompatibilityError("V2 compatibility gate failed: XML root must be HealthData")
 
 
 def check_v2_compatibility(

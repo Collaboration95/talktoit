@@ -10,6 +10,7 @@ import pytest
 
 from app.db.schema import SQL_CREATE_TABLES
 from app.ingest.compatibility import V2CompatibilityError, require_v2_compatibility
+from app.ingest.coordinator import ingest_v2
 
 pytestmark = pytest.mark.ingest_contract
 
@@ -74,3 +75,27 @@ def test_compatibility_rejects_category_text_loss() -> None:
     }
     with pytest.raises(V2CompatibilityError, match="lost their text value"):
         require_v2_compatibility(conn, counts)
+
+
+def test_v2_rejects_partial_xml_before_staging(tmp_path) -> None:
+    """A truncated export must never be interpreted as an empty valid import."""
+    export = tmp_path / "partial-export.xml"
+    export.write_text(
+        '<HealthData><Record type="HKQuantityTypeIdentifierStepCount" '
+        'sourceName="Watch" startDate="2024-01-01 00:00:00 +0000"'
+    )
+    with pytest.raises(V2CompatibilityError, match="malformed XML export"):
+        ingest_v2(export, duckdb.connect(":memory:"), n_workers=1)
+
+
+def test_v2_rejects_records_missing_required_fields(tmp_path) -> None:
+    """Required record fields cannot disappear between scan and canonical rows."""
+    export = tmp_path / "missing-field.xml"
+    export.write_text(
+        "<HealthData>"
+        '<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Watch" '
+        'startDate="2024-01-01 00:00:00 +0000" value="42"/>'
+        "</HealthData>"
+    )
+    with pytest.raises(V2CompatibilityError, match="scanner produced no canonical rows"):
+        ingest_v2(export, duckdb.connect(":memory:"), n_workers=1)
