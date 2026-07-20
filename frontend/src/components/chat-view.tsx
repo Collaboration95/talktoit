@@ -261,6 +261,9 @@ export function ChatView() {
                   {turn.envelope.metadata?.coverage_start && turn.envelope.metadata?.coverage_end
                     ? ` · data coverage ${turn.envelope.metadata.coverage_start} to ${turn.envelope.metadata.coverage_end}`
                     : ''}
+                  {turn.envelope.metadata?.dataset_version_id
+                    ? ` · dataset ${turn.envelope.metadata.dataset_version_id}`
+                    : ''}
                 </p>
                 <button
                   type="button"
