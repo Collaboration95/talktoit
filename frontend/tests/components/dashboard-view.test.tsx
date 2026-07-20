@@ -215,6 +215,15 @@ describe('DashboardView', () => {
     })
   })
 
+  it('keeps successful panels visible and offers a retry for a failed panel', async () => {
+    setupHandlers()
+    server.use(http.get('/api/dashboard/sleep', () => HttpResponse.json({}, { status: 500 })))
+    render(<DashboardView />)
+    expect((await screen.findAllByText('Running')).length).toBeGreaterThan(0)
+    expect(screen.getByText(/Could not load: sleep/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry unavailable panels' })).toBeInTheDocument()
+  })
+
   it('keeps healthy panels visible when one panel fails', async () => {
     setupHandlers()
     server.use(http.get('/api/dashboard/sleep', () => HttpResponse.json({}, { status: 500 })))

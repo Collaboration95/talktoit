@@ -39,6 +39,7 @@ interface DashboardState {
   nextWorkoutCursor: string | null
   loading: boolean
   error: string | null
+  failedPanels: string[]
 }
 
 function NoData() {
@@ -347,6 +348,7 @@ export function DashboardView() {
     nextWorkoutCursor: null,
     loading: true,
     error: null,
+    failedPanels: [],
   })
   const [mode, setMode] = useState<DashboardViewMode>(() =>
     initialQuery.selectedWorkout
@@ -365,6 +367,7 @@ export function DashboardView() {
   const [backendDown, setBackendDown] = useState(false)
   const [savedViews, setSavedViews] = useState<SavedView[]>([])
   const [savedViewTitle, setSavedViewTitle] = useState('')
+  const [reloadToken, setReloadToken] = useState(0)
 
   const reloadSavedViews = () => {
     listSavedViews()
@@ -438,13 +441,23 @@ export function DashboardView() {
         datasetStatus: statusResult.status === 'fulfilled' ? statusResult.value : null,
         loading: false,
         error: null,
+        failedPanels: [
+          ...(summaryResult.status === 'rejected' ? ['activity rings'] : []),
+          ...(workoutsResult.status === 'rejected' ? ['workouts'] : []),
+          ...(stepsResult.status === 'rejected' ? ['steps'] : []),
+          ...(heartResult.status === 'rejected' ? ['heart rate'] : []),
+          ...(sleepResult.status === 'rejected' ? ['sleep'] : []),
+          ...(stagesResult.status === 'rejected' ? ['sleep stages'] : []),
+          ...(capsResult.status === 'rejected' ? ['data sources'] : []),
+          ...(statusResult.status === 'rejected' ? ['import status'] : []),
+        ],
       })
     })
     return () => {
       active = false
       controller.abort()
     }
-  }, [scope])
+  }, [scope, reloadToken])
 
   const loadMoreWorkouts = () => {
     if (!state.nextWorkoutCursor) return
@@ -552,6 +565,18 @@ export function DashboardView() {
           Imported coverage: {state.datasetStatus.dataset.coverage_start ?? 'unknown'} to{' '}
           {state.datasetStatus.dataset.coverage_end ?? 'unknown'}
         </p>
+      ) : null}
+      {state.failedPanels.length > 0 ? (
+        <div className="flex items-center gap-3 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <span>Could not load: {state.failedPanels.join(', ')}.</span>
+          <button
+            type="button"
+            className="font-medium text-blue-700 underline"
+            onClick={() => setReloadToken((value) => value + 1)}
+          >
+            Retry unavailable panels
+          </button>
+        </div>
       ) : null}
       <SavedViewsPanel views={savedViews} onApply={applySavedView} />
       {scope.start && scope.end ? (
