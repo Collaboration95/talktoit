@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from app.ingest.bytescan import WorkerResult, parse_byte_range
+from app.ingest.compatibility import require_v2_compatibility
 from app.ingest.reconcile import load_shards_into_duckdb
 
 if TYPE_CHECKING:
@@ -321,8 +322,10 @@ def ingest_v2(
     total_time = time.time() - overall_start
     logger.info(f"Total ingestion time: {total_time:.2f}s")
 
-    # Return statistics in a format compatible with legacy parser
-    return {
+    # The active database is replaced only after this canonical compatibility
+    # gate succeeds. It catches reconciliation and typed-value regressions that
+    # raw byte-scan counters cannot observe.
+    stats = {
         "records": result["records"],
         "record_metadata": result["record_metadata"],
         "hrv_beats": result["hrv_beats"],
@@ -336,3 +339,20 @@ def ingest_v2(
         "load_time_seconds": load_time,
         "total_time_seconds": total_time,
     }
+    expected_counts = {
+        key: int(stats[key])
+        for key in (
+            "records",
+            "record_metadata",
+            "hrv_beats",
+            "workouts",
+            "workout_events",
+            "workout_statistics",
+            "workout_routes",
+            "workout_metadata",
+            "activity_summaries",
+        )
+    }
+    report = require_v2_compatibility(db, expected_counts)
+    stats["compatibility_version"] = report.version
+    return stats
