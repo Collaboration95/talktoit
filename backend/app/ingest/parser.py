@@ -179,7 +179,19 @@ def ingest(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> IngestResult:
     FLUSH_EVERY = 10_000
 
     record_batch: list[
-        tuple[int, str, str, str | None, str | None, str | None, str | None, str, str, float | None]
+        tuple[
+            int,
+            str,
+            str,
+            str | None,
+            str | None,
+            str | None,
+            str | None,
+            str,
+            str,
+            float | None,
+            str | None,
+        ]
     ] = []
     meta_batch: list[tuple[int, str, str]] = []
     hrv_batch: list[tuple[int, int, float]] = []
@@ -211,7 +223,7 @@ def ingest(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> IngestResult:
         nonlocal record_batch, meta_batch, hrv_batch
         if record_batch:
             db.executemany(
-                "INSERT INTO records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 record_batch,
             )
             record_batch.clear()
@@ -294,7 +306,9 @@ def ingest(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> IngestResult:
             creation_date = _parse_timestamp(elem.get("creationDate"))
             start_date = _parse_timestamp(elem.get("startDate"))
             end_date = _parse_timestamp(elem.get("endDate"))
-            value = _parse_float(elem.get("value"))
+            raw_value = elem.get("value")
+            value = _parse_float(raw_value)
+            text_value = raw_value if raw_value is not None and value is None else None
 
             record_batch.append(
                 (
@@ -308,6 +322,7 @@ def ingest(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> IngestResult:
                     start_date or "",
                     end_date or "",
                     value,
+                    text_value,
                 )
             )
             result.records += 1

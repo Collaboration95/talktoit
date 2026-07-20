@@ -27,7 +27,8 @@ CREATE TABLE records (
     creation_date TIMESTAMP,
     start_date    TIMESTAMP NOT NULL,
     end_date      TIMESTAMP NOT NULL,
-    value         DOUBLE
+    value         DOUBLE,
+    text_value    VARCHAR
 );
 
 -- Metadata attached to records (e.g. AutoSleep fields, HR motion context).

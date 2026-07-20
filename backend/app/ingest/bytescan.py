@@ -304,6 +304,7 @@ RECORDS_SCHEMA = pa.schema(
         ("start_date", pa.timestamp("us")),
         ("end_date", pa.timestamp("us")),
         ("value", pa.float64()),
+        ("text_value", pa.string()),
     ]
 )
 
@@ -686,6 +687,13 @@ def parse_byte_range(
                         "value": (
                             _parse_float(_decode_bytes_to_str(attr_match.group("value")))
                             if attr_match.group("value")
+                            else None
+                        ),
+                        "text_value": (
+                            _decode_bytes_to_str(attr_match.group("value"))
+                            if attr_match.group("value")
+                            and _parse_float(_decode_bytes_to_str(attr_match.group("value")))
+                            is None
                             else None
                         ),
                     }

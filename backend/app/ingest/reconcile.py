@@ -79,7 +79,8 @@ SELECT
     r.creation_date,
     r.start_date,
     r.end_date,
-    r.value
+    r.value,
+    r.text_value
 FROM read_parquet('{shard_dir}/records-*.parquet') r
 JOIN record_id_mapping m ON r.worker_idx = m.worker_idx AND r.local_id = m.local_id
 """)
