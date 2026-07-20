@@ -1,10 +1,10 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { ChatView } from '@/components/chat-view'
 
-const server = setupServer()
+const server = setupServer(http.get('/health', () => HttpResponse.json({ status: 'ok' })))
 beforeAll(() => server.listen())
 afterEach(() => server.resetHandlers())
 afterAll(() => server.close())
@@ -30,9 +30,10 @@ const WORKOUT_ENVELOPE = {
 }
 
 describe('ChatView', () => {
-  it('renders idle state initially', () => {
+  it('renders idle state initially', async () => {
     render(<ChatView />)
     expect(screen.getByText(/ask a question/i)).toBeInTheDocument()
+    await act(async () => {})
   })
 
   it('shows loading state while request is in flight', async () => {

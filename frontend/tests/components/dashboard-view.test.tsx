@@ -1,11 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { DashboardView } from '@/components/dashboard-view'
 import type { TrendResponse } from '@/api/dashboard'
 
-const server = setupServer()
+const server = setupServer(http.get('/health', () => HttpResponse.json({ status: 'ok' })))
 beforeAll(() => server.listen())
 afterEach(() => server.resetHandlers())
 afterAll(() => server.close())
@@ -94,7 +94,7 @@ function setupHandlers() {
 }
 
 describe('DashboardView', () => {
-  it('shows loading state initially', () => {
+  it('shows loading state initially', async () => {
     // Block requests so loading persists
     server.use(
       http.get('/api/dashboard/summary', () => new Promise(() => {})),
@@ -107,6 +107,7 @@ describe('DashboardView', () => {
     render(<DashboardView />)
     expect(screen.getByTestId('loading')).toBeInTheDocument()
     expect(screen.getByText(/loading dashboard/i)).toBeInTheDocument()
+    await act(async () => {})
   })
 
   it('renders workout list after load', async () => {

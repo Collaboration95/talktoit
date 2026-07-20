@@ -3,6 +3,10 @@ export interface ChatEnvelope {
   template_id: string
   data: unknown
   narrative: string
+  metadata?: {
+    api_version: 'v1'
+    provenance: 'unknown'
+  }
 }
 
 // workout_card (SPEC §2.1)

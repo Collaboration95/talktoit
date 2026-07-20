@@ -2,6 +2,10 @@ import type { ChatEnvelope } from '@/types/templates'
 
 export interface ChatRequest {
   question: string
+  request_id?: string
+  conversation_id?: string
+  parent_turn_id?: string
+  cache_mode?: 'default' | 'fresh'
 }
 
 export class ChatApiError extends Error {

@@ -8,7 +8,7 @@
         test test-bk test-fe test-all test-backend test-frontend test-watch \
         typecheck typecheck-backend typecheck-frontend \
         lint lint-backend lint-frontend format format-backend format-frontend \
-        coverage ingest clean build run run-cli check check-full groq-smoke
+        coverage ingest clean build run run-cli check check-full groq-smoke verify-headless
 
 # ── Bootstrap ────────────────────────────────────────────────────────────────
 install:
@@ -60,6 +60,11 @@ test-frontend:
 
 test-watch:
 	npm --prefix frontend run test
+
+# Contract-focused verification; does not start a server or need personal data.
+verify-headless:
+	uv run --directory backend pytest tests/integration/test_dashboard_contracts.py tests/unit/test_api_contracts.py -q --no-cov
+	npm --prefix frontend run test -- --run tests/api tests/components/template-dispatch.test.tsx
 
 # ── Typechecking ─────────────────────────────────────────────────────────────
 typecheck: typecheck-backend typecheck-frontend

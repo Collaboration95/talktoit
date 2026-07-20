@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 from app.models.templates import GpsRoute
 
@@ -19,7 +21,13 @@ class ActivityRingDay(BaseModel):
     stand_goal_hours: int | None
 
 
-class ActivitySummaryResponse(BaseModel):
+class DashboardResponse(BaseModel):
+    """Version marker shared by dashboard response envelopes."""
+
+    api_version: Literal["v1"] = "v1"
+
+
+class ActivitySummaryResponse(DashboardResponse):
     """Response for GET /api/dashboard/summary."""
 
     days: list[ActivityRingDay]
@@ -37,7 +45,7 @@ class WorkoutSummary(BaseModel):
     energy_burned_kj: float | None
 
 
-class WorkoutsResponse(BaseModel):
+class WorkoutsResponse(DashboardResponse):
     """Response for GET /api/dashboard/workouts."""
 
     workouts: list[WorkoutSummary]
@@ -50,7 +58,7 @@ class TrendPoint(BaseModel):
     value: float | None
 
 
-class TrendResponse(BaseModel):
+class TrendResponse(DashboardResponse):
     """Response for trend endpoints (steps, heart, sleep)."""
 
     metric_label: str
@@ -66,7 +74,7 @@ class CapabilityFlag(BaseModel):
     present: bool
 
 
-class CapabilitiesResponse(BaseModel):
+class CapabilitiesResponse(DashboardResponse):
     """Response for GET /api/dashboard/capabilities."""
 
     capabilities: list[CapabilityFlag]
@@ -84,7 +92,14 @@ class KeyValuePair(BaseModel):
     value: str
 
 
-class WorkoutDetail(BaseModel):
+class WorkoutRouteState(BaseModel):
+    """Safe route availability state; never includes an on-disk path."""
+
+    state: Literal["available", "missing", "invalid"]
+    message: str
+
+
+class WorkoutDetail(DashboardResponse):
     """Full detail for a single workout (R1-01)."""
 
     id: int
@@ -99,4 +114,5 @@ class WorkoutDetail(BaseModel):
     elevation_ascent_meters: float | None
     source_name: str
     gps_route: GpsRoute | None = None
-    metadata: list[KeyValuePair] = []
+    metadata: list[KeyValuePair] = Field(default_factory=list)
+    route: WorkoutRouteState

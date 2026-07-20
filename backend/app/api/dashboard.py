@@ -6,7 +6,7 @@ from collections.abc import Generator
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from app.db.aggregations import (
     DEFAULT_TZ,
@@ -28,6 +28,7 @@ from app.models.dashboard import (
     TrendPoint,
     TrendResponse,
     WorkoutDetail,
+    WorkoutRouteState,
     WorkoutsResponse,
     WorkoutSummary,
 )
@@ -50,7 +51,22 @@ WHERE date_components >= ? AND date_components <= ?
 ORDER BY date_components DESC
 """
 
-_SQL_WORKOUTS_LIST = """
+_SQL_DISTANCE_STATS = """
+SELECT workout_id,
+    SUM(CASE
+        WHEN LOWER(unit) = 'km' THEN sum * 1000.0
+        WHEN LOWER(unit) IN ('mi', 'mile', 'miles') THEN sum * 1609.344
+        ELSE sum
+    END) AS distance_m
+FROM workout_statistics
+WHERE type IN ('HKQuantityTypeIdentifierDistanceWalkingRunning',
+               'HKQuantityTypeIdentifierDistanceCycling',
+               'HKQuantityTypeIdentifierDistanceSwimming')
+GROUP BY workout_id
+"""
+
+_SQL_WORKOUTS_LIST = (
+    """
 SELECT w.id, w.activity_type, w.start_date, w.duration, w.duration_unit,
     hr.average AS avg_hr,
     dist.distance_m AS distance_m,
@@ -60,17 +76,9 @@ LEFT JOIN workout_statistics hr
     ON hr.workout_id = w.id
     AND hr.type = 'HKQuantityTypeIdentifierHeartRate'
 LEFT JOIN (
-    SELECT workout_id,
-        SUM(CASE
-            WHEN LOWER(unit) = 'km' THEN sum * 1000.0
-            WHEN LOWER(unit) IN ('mi', 'mile', 'miles') THEN sum * 1609.344
-            ELSE sum
-        END) AS distance_m
-    FROM workout_statistics
-    WHERE type IN ('HKQuantityTypeIdentifierDistanceWalkingRunning',
-                   'HKQuantityTypeIdentifierDistanceCycling',
-                   'HKQuantityTypeIdentifierDistanceSwimming')
-    GROUP BY workout_id
+"""
+    + _SQL_DISTANCE_STATS
+    + """
 ) dist ON dist.workout_id = w.id
 LEFT JOIN workout_statistics energy
     ON energy.workout_id = w.id
@@ -79,6 +87,7 @@ WHERE w.start_date >= ? AND w.start_date < ?
 ORDER BY w.start_date DESC
 LIMIT 100
 """
+)
 
 _SQL_TREND_RECORDS = """
 SELECT start_date, value
@@ -112,7 +121,8 @@ _SQL_CAPABILITIES_WORKOUTS = """
 SELECT COUNT(*) FROM workouts
 """
 
-_SQL_WORKOUT_DETAIL = """
+_SQL_WORKOUT_DETAIL = (
+    """
 SELECT
     w.id,
     w.activity_type,
@@ -130,20 +140,9 @@ LEFT JOIN workout_statistics hr
     ON hr.workout_id = w.id
     AND hr.type = 'HKQuantityTypeIdentifierHeartRate'
 LEFT JOIN (
-    SELECT workout_id,
-        SUM(CASE
-            WHEN LOWER(unit) = 'km' THEN sum * 1000.0
-            WHEN LOWER(unit) IN ('mi', 'mile', 'miles') THEN sum * 1609.344
-            ELSE sum
-        END) AS distance_m
-    FROM workout_statistics
-    FROM workout_statistics
-    WHERE type IN (
-        'HKQuantityTypeIdentifierDistanceWalkingRunning',
-        'HKQuantityTypeIdentifierDistanceCycling',
-        'HKQuantityTypeIdentifierDistanceSwimming'
-    )
-    GROUP BY workout_id
+"""
+    + _SQL_DISTANCE_STATS
+    + """
 ) dist ON dist.workout_id = w.id
 LEFT JOIN workout_statistics energy
     ON energy.workout_id = w.id
@@ -153,6 +152,7 @@ LEFT JOIN workout_metadata elev
     AND elev.key = 'HKElevationAscended'
 WHERE w.id = ?
 """
+)
 
 _SQL_WORKOUT_METADATA = """
 SELECT key, value
@@ -188,8 +188,8 @@ def _get_conn() -> Generator[duckdb.DuckDBPyConnection, None, None]:
 
 def _resolve_window(
     conn: duckdb.DuckDBPyConnection,
-    start: str | None,
-    end: str | None,
+    start: date | None,
+    end: date | None,
     days: int,
 ) -> tuple[date, date]:
     """Resolve a date range against the last day present in local data.
@@ -198,9 +198,11 @@ def _resolve_window(
     empty future buckets after an export becomes stale. Explicit dates still
     take precedence for API consumers and tests.
     """
-    end_date = date.fromisoformat(end) if end else get_data_profile(conn).latest_date
+    end_date = end or get_data_profile(conn).latest_date
     end_date = end_date or date.today()
-    start_date = date.fromisoformat(start) if start else end_date - timedelta(days=days - 1)
+    start_date = start or end_date - timedelta(days=days - 1)
+    if start_date > end_date:
+        raise HTTPException(status_code=422, detail="start must not be after end")
     return start_date, end_date
 
 
@@ -219,8 +221,8 @@ def _duration_minutes(duration: float | None, unit: str | None) -> float | None:
 
 @router.get("/summary", response_model=ActivitySummaryResponse)
 def get_summary(
-    start: str | None = None,
-    end: str | None = None,
+    start: date | None = None,
+    end: date | None = None,
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
 ) -> ActivitySummaryResponse:
     """Return activity ring data for a date range (default: last 7 days)."""
@@ -247,8 +249,8 @@ def get_summary(
 
 @router.get("/workouts", response_model=WorkoutsResponse)
 def get_workouts(
-    start: str | None = None,
-    end: str | None = None,
+    start: date | None = None,
+    end: date | None = None,
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
 ) -> WorkoutsResponse:
     """Return workouts for a date range (default: latest 30 local-data days)."""
@@ -287,9 +289,9 @@ def get_workouts(
 
 @router.get("/steps", response_model=TrendResponse)
 def get_steps(
-    granularity: str = "day",
-    start: str | None = None,
-    end: str | None = None,
+    granularity: str = Query(default="day", pattern="^(day|week|month)$"),
+    start: date | None = None,
+    end: date | None = None,
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
 ) -> TrendResponse:
     """Return daily step count trend (default: latest 30 local-data days)."""
@@ -301,9 +303,9 @@ def get_steps(
 
 @router.get("/heart", response_model=TrendResponse)
 def get_heart(
-    granularity: str = "week",
-    start: str | None = None,
-    end: str | None = None,
+    granularity: str = Query(default="week", pattern="^(day|week|month)$"),
+    start: date | None = None,
+    end: date | None = None,
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
 ) -> TrendResponse:
     """Return weekly resting HR trend (default: latest 90 local-data days)."""
@@ -315,9 +317,9 @@ def get_heart(
 
 @router.get("/sleep", response_model=TrendResponse)
 def get_sleep(
-    granularity: str = "day",
-    start: str | None = None,
-    end: str | None = None,
+    granularity: str = Query(default="day", pattern="^(day|week|month)$"),
+    start: date | None = None,
+    end: date | None = None,
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
 ) -> TrendResponse:
     """Return daily sleep duration trend (default: latest 30 local-data days)."""
@@ -435,7 +437,7 @@ def _build_trend(
 
 @router.get("/workouts/{workout_id}", response_model=WorkoutDetail)
 def get_workout_detail(
-    workout_id: int,
+    workout_id: int = Path(ge=1),
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
 ) -> WorkoutDetail:
     """Return full detail for a single workout, including GPS and metadata."""
@@ -468,9 +470,14 @@ def get_workout_detail(
 
     # Fetch GPS route if it exists
     gps_route = None
+    route = WorkoutRouteState(state="missing", message="No route is available for this workout.")
     route_path_row = conn.execute(_SQL_WORKOUT_ROUTE_PATH, [workout_id]).fetchone()
     if route_path_row is not None and route_path_row[0] is not None:
         gps_route = parse_gpx_route(route_path_row[0])
+        if gps_route is None:
+            route = WorkoutRouteState(state="invalid", message="The saved route could not be read.")
+        else:
+            route = WorkoutRouteState(state="available", message="Route data is available.")
 
     return WorkoutDetail(
         id=wid,
@@ -486,4 +493,5 @@ def get_workout_detail(
         source_name=source_name,
         gps_route=gps_route,
         metadata=metadata,
+        route=route,
     )

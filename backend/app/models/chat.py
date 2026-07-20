@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app.models.templates import (
     ComparisonData,
@@ -31,7 +31,22 @@ _TEMPLATE_MODELS: dict[str, type[BaseModel]] = {
 class ChatRequest(BaseModel):
     """Incoming chat request."""
 
-    question: str
+    question: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2_000)
+    ]
+    request_id: str | None = Field(default=None, min_length=1, max_length=128)
+    conversation_id: str | None = Field(default=None, min_length=1, max_length=128)
+    parent_turn_id: str | None = Field(default=None, min_length=1, max_length=128)
+    cache_mode: Literal["default", "fresh"] = "default"
+
+
+class ResponseMetadata(BaseModel):
+    """Compatibility-safe provenance placeholder for future persisted state."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    api_version: Literal["v1"] = "v1"
+    provenance: Literal["unknown"] = "unknown"
 
 
 class ChatResponse(BaseModel):
@@ -44,6 +59,7 @@ class ChatResponse(BaseModel):
     template_id: str
     data: dict[str, Any]
     narrative: str
+    metadata: ResponseMetadata = Field(default_factory=ResponseMetadata)
 
     @model_validator(mode="after")
     def _validate_data_against_template(self) -> ChatResponse:
