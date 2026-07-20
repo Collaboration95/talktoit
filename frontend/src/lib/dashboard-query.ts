@@ -2,6 +2,8 @@ export interface DashboardQuery {
   tab: 'overview' | 'workouts'
   start?: string
   end?: string
+  activityType?: string
+  source?: string
   selectedWorkout?: number
 }
 
@@ -18,9 +20,13 @@ export function decodeDashboardQuery(search: string): DashboardQuery {
   const start = params.get('start')
   const end = params.get('end')
   const selected = Number(params.get('workout'))
+  const activityType = params.get('activity_type')
+  const source = params.get('source')
   return {
     tab,
     ...(validDate(start) && validDate(end) && start <= end ? { start, end } : {}),
+    ...(activityType && activityType.length <= 160 ? { activityType } : {}),
+    ...(source && source.length <= 160 ? { source } : {}),
     ...(Number.isInteger(selected) && selected > 0 ? { selectedWorkout: selected } : {}),
   }
 }
@@ -32,6 +38,8 @@ export function encodeDashboardQuery(query: DashboardQuery): string {
     params.set('start', query.start)
     params.set('end', query.end)
   }
+  if (query.activityType) params.set('activity_type', query.activityType)
+  if (query.source) params.set('source', query.source)
   if (query.selectedWorkout) params.set('workout', String(query.selectedWorkout))
   return params.toString()
 }

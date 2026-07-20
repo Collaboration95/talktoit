@@ -36,3 +36,19 @@ def test_workout_cursor_rejects_invalid_value(db) -> None:
         assert exc.status_code == 422
     else:
         raise AssertionError("invalid cursor was accepted")
+
+
+def test_workout_collection_applies_addressable_type_and_source_filters(db) -> None:
+    unfiltered = get_workouts(conn=db, start=None, end=None, cursor=None, limit=50)
+    activity_type = unfiltered.workouts[0].activity_type
+    filtered = get_workouts(
+        conn=db,
+        start=None,
+        end=None,
+        activity_type_filter=activity_type,
+        source=None,
+        cursor=None,
+        limit=50,
+    )
+    assert filtered.workouts
+    assert {workout.activity_type for workout in filtered.workouts} == {activity_type}

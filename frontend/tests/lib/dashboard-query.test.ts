@@ -2,7 +2,14 @@ import { decodeDashboardQuery, encodeDashboardQuery } from '@/lib/dashboard-quer
 
 describe('dashboard URL query', () => {
   it('round-trips a scoped workout detail state', () => {
-    const query = { tab: 'workouts' as const, start: '2024-01-01', end: '2024-01-31', selectedWorkout: 42 }
+    const query = {
+      tab: 'workouts' as const,
+      start: '2024-01-01',
+      end: '2024-01-31',
+      activityType: 'HKWorkoutActivityTypeRunning',
+      source: 'Apple Watch',
+      selectedWorkout: 42,
+    }
     expect(decodeDashboardQuery(encodeDashboardQuery(query))).toEqual(query)
   })
 

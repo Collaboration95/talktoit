@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Generator
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
@@ -87,6 +87,8 @@ LEFT JOIN workout_statistics energy
     ON energy.workout_id = w.id
     AND energy.type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
 WHERE w.start_date >= ? AND w.start_date < ?
+  AND (? IS NULL OR w.activity_type = ?)
+  AND (? IS NULL OR w.source_name = ?)
   AND (? IS NULL OR (w.start_date, w.id) < (?, ?))
 ORDER BY w.start_date DESC, w.id DESC
 LIMIT ?
@@ -268,6 +270,10 @@ def get_summary(
 def get_workouts(
     start: date | None = None,
     end: date | None = None,
+    activity_type_filter: Annotated[
+        str | None, Query(alias="activity_type", min_length=1, max_length=160)
+    ] = None,
+    source: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
     cursor: str | None = Query(default=None, max_length=80),
     limit: int = Query(default=50, ge=1, le=100),
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
@@ -287,7 +293,18 @@ def get_workouts(
             raise HTTPException(status_code=422, detail="Invalid workout cursor") from exc
     rows = conn.execute(
         _SQL_WORKOUTS_LIST,
-        [utc_start, utc_end, cursor_date, cursor_date, cursor_id, limit + 1],
+        [
+            utc_start,
+            utc_end,
+            activity_type_filter,
+            activity_type_filter,
+            source,
+            source,
+            cursor_date,
+            cursor_date,
+            cursor_id,
+            limit + 1,
+        ],
     ).fetchall()
 
     workouts = []

@@ -51,6 +51,8 @@ export interface DatasetStatus {
 export interface DashboardScope {
   start?: string
   end?: string
+  activityType?: string
+  source?: string
 }
 
 export interface WorkoutsPage {
@@ -89,6 +91,8 @@ function withScope(path: string, scope: DashboardScope = {}): string {
   const params = new URLSearchParams()
   if (scope.start) params.set('start', scope.start)
   if (scope.end) params.set('end', scope.end)
+  if (scope.activityType) params.set('activity_type', scope.activityType)
+  if (scope.source) params.set('source', scope.source)
   const query = params.toString()
   return query ? `${path}?${query}` : path
 }

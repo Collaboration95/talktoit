@@ -315,9 +315,13 @@ export function DashboardView() {
       : { view: 'list' },
   )
   const [scope, setScope] = useState<DashboardScope>(() => {
-    return initialQuery.start && initialQuery.end
-      ? { start: initialQuery.start, end: initialQuery.end }
-      : {}
+    return {
+      ...(initialQuery.start && initialQuery.end
+        ? { start: initialQuery.start, end: initialQuery.end }
+        : {}),
+      ...(initialQuery.activityType ? { activityType: initialQuery.activityType } : {}),
+      ...(initialQuery.source ? { source: initialQuery.source } : {}),
+    }
   })
   const [backendDown, setBackendDown] = useState(false)
   const [savedViews, setSavedViews] = useState<SavedView[]>([])
@@ -437,7 +441,11 @@ export function DashboardView() {
   }
 
   const applySavedView = (query: DashboardQuery) => {
-    const nextScope = query.start && query.end ? { start: query.start, end: query.end } : {}
+    const nextScope: DashboardScope = {
+      ...(query.start && query.end ? { start: query.start, end: query.end } : {}),
+      ...(query.activityType ? { activityType: query.activityType } : {}),
+      ...(query.source ? { source: query.source } : {}),
+    }
     window.history.pushState({}, '', `?${encodeDashboardQuery({ ...query, tab: 'overview' })}`)
     setMode({ view: 'list' })
     setScope(nextScope)
