@@ -5,10 +5,17 @@ import { WorkoutDetail } from '@/components/workout-detail'
 import type {
   ActivityRingDay,
   CapabilityFlag,
+  SleepStagesResponse,
   TrendResponse,
   WorkoutSummary,
 } from '@/api/dashboard'
-import { fetchCapabilities, fetchSummary, fetchTrend, fetchWorkouts } from '@/api/dashboard'
+import {
+  fetchCapabilities,
+  fetchSleepStages,
+  fetchSummary,
+  fetchTrend,
+  fetchWorkouts,
+} from '@/api/dashboard'
 import type { DashboardScope } from '@/api/dashboard'
 import { decodeDashboardQuery, encodeDashboardQuery } from '@/lib/dashboard-query'
 import { formatDateOnly, formatNumber } from '@/lib/format'
@@ -21,6 +28,7 @@ interface DashboardState {
   steps: TrendResponse | null
   heart: TrendResponse | null
   sleep: TrendResponse | null
+  sleepStages: SleepStagesResponse | null
   capabilities: CapabilityFlag[]
   nextWorkoutCursor: string | null
   loading: boolean
@@ -48,6 +56,29 @@ function ActivityRingsPanel({ days }: { days: ActivityRingDay[] }) {
       exercise={{ current: latest.exercise_min, goal: latest.exercise_goal_min }}
       stand={{ current: latest.stand_hours, goal: latest.stand_goal_hours }}
     />
+  )
+}
+
+function SleepStagesPanel({ stages }: { stages: SleepStagesResponse | null }) {
+  if (!stages) return <NoData />
+  if (!stages.stage_data_available) return <p className="text-sm text-gray-500">{stages.message}</p>
+  return (
+    <div className="space-y-2 text-sm">
+      <p className="text-gray-600">
+        Measured asleep time: {formatNumber(stages.total_asleep_hours, 1)} h
+      </p>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1" aria-label="Measured sleep stage durations">
+        {Object.entries(stages.stages_hours)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([stage, hours]) => (
+            <div key={stage} className="flex justify-between gap-3">
+              <dt className="text-gray-500">{stage}</dt>
+              <dd className="tabular-nums text-gray-800">{formatNumber(hours, 1)} h</dd>
+            </div>
+          ))}
+      </dl>
+      <p className="text-xs text-gray-500">{stages.message}</p>
+    </div>
   )
 }
 
@@ -232,6 +263,7 @@ export function DashboardView() {
     steps: null,
     heart: null,
     sleep: null,
+    sleepStages: null,
     capabilities: [],
     nextWorkoutCursor: null,
     loading: true,
@@ -268,16 +300,25 @@ export function DashboardView() {
       fetchTrend('steps', 'day', scope),
       fetchTrend('heart', 'week', scope),
       fetchTrend('sleep', 'day', scope),
+      fetchSleepStages(scope),
       fetchCapabilities(),
     ]).then((results) => {
-      const [summaryResult, workoutsResult, stepsResult, heartResult, sleepResult, capsResult] =
-        results
+      const [
+        summaryResult,
+        workoutsResult,
+        stepsResult,
+        heartResult,
+        sleepResult,
+        stagesResult,
+        capsResult,
+      ] = results
       if (
         !summaryResult ||
         !workoutsResult ||
         !stepsResult ||
         !heartResult ||
         !sleepResult ||
+        !stagesResult ||
         !capsResult
       ) {
         return
@@ -290,6 +331,7 @@ export function DashboardView() {
         steps: stepsResult.status === 'fulfilled' ? stepsResult.value : null,
         heart: heartResult.status === 'fulfilled' ? heartResult.value : null,
         sleep: sleepResult.status === 'fulfilled' ? sleepResult.value : null,
+        sleepStages: stagesResult.status === 'fulfilled' ? stagesResult.value : null,
         capabilities: capsResult.status === 'fulfilled' ? capsResult.value : [],
         loading: false,
         error: null,
@@ -382,6 +424,10 @@ export function DashboardView() {
 
       <Section title="Sleep Duration (Latest 30 data days)">
         <TrendPanel trend={state.sleep} title="Sleep" />
+      </Section>
+
+      <Section title="Measured Sleep Stages">
+        <SleepStagesPanel stages={state.sleepStages} />
       </Section>
 
       <Section title="Data Sources">

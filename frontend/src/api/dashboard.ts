@@ -31,6 +31,13 @@ export interface TrendResponse {
   series: TrendPoint[]
 }
 
+export interface SleepStagesResponse {
+  total_asleep_hours: number
+  stages_hours: Record<string, number>
+  stage_data_available: boolean
+  message: string
+}
+
 export interface CapabilityFlag {
   name: string
   present: boolean
@@ -115,6 +122,11 @@ export async function fetchTrend(
   const separator = scoped.includes('?') ? '&' : '?'
   const r = await checkedFetch(`${scoped}${separator}granularity=${granularity}`)
   return r.json() as Promise<TrendResponse>
+}
+
+export async function fetchSleepStages(scope?: DashboardScope): Promise<SleepStagesResponse> {
+  const r = await checkedFetch(withScope('/api/dashboard/sleep/stages', scope))
+  return r.json() as Promise<SleepStagesResponse>
 }
 
 export async function fetchCapabilities(): Promise<CapabilityFlag[]> {

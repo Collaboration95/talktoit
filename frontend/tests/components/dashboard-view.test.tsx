@@ -79,6 +79,14 @@ function setupHandlers() {
     ),
     http.get('/api/dashboard/steps', () => HttpResponse.json(STEPS_TREND)),
     http.get('/api/dashboard/heart', () => HttpResponse.json(HEART_TREND)),
+    http.get('/api/dashboard/sleep/stages', () =>
+      HttpResponse.json({
+        total_asleep_hours: 7.5,
+        stages_hours: { Core: 3.5, REM: 2 },
+        stage_data_available: true,
+        message: 'Stages are measured from the selected sleep source.',
+      }),
+    ),
     http.get('/api/dashboard/sleep', () => HttpResponse.json(SLEEP_TREND)),
     http.get('/api/dashboard/capabilities', () =>
       HttpResponse.json({
@@ -173,6 +181,13 @@ describe('DashboardView', () => {
       expect(screen.getByText('Showing 2024-01-01 to 2024-01-31')).toBeInTheDocument()
     })
     window.history.replaceState({}, '', '/')
+  })
+
+  it('renders measured sleep stages separately from the sleep trend', async () => {
+    setupHandlers()
+    render(<DashboardView />)
+    expect(await screen.findByText('Measured asleep time: 7.5 h')).toBeInTheDocument()
+    expect(screen.getByLabelText('Measured sleep stage durations')).toBeInTheDocument()
   })
 
   it('loads the next cursor page without discarding the first page', async () => {
