@@ -124,15 +124,18 @@ function SavedViewsPanel({
 function WorkoutsPanel({
   workouts,
   nextWorkoutCursor,
+  scope,
+  onScopeChange,
   onLoadMore,
   onSelect,
 }: {
   workouts: WorkoutSummary[]
   nextWorkoutCursor: string | null
+  scope: DashboardScope
+  onScopeChange: (scope: DashboardScope) => void
   onSelect: (id: number) => void
   onLoadMore: () => void
 }) {
-  const [selectedType, setSelectedType] = useState<string | null>(null)
   const workoutTypes = useMemo(
     () =>
       [...new Set(workouts.map((workout) => workout.activity_type))].sort((a, b) =>
@@ -140,20 +143,24 @@ function WorkoutsPanel({
       ),
     [workouts],
   )
+  const sources = useMemo(
+    () => [...new Set(workouts.map((workout) => workout.source_name))].sort(),
+    [workouts],
+  )
   if (workouts.length === 0) return <NoData />
-  const filteredWorkouts = selectedType
-    ? workouts.filter((workout) => workout.activity_type === selectedType)
-    : workouts
 
   return (
     <div>
       <div className="mb-4 flex flex-wrap gap-2" aria-label="Filter workouts by type">
         <button
           type="button"
-          aria-pressed={selectedType === null}
-          onClick={() => setSelectedType(null)}
+          aria-pressed={!scope.activityType}
+          onClick={() => {
+            const { activityType: _activityType, ...withoutType } = scope
+            onScopeChange(withoutType)
+          }}
           className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-            selectedType === null
+            !scope.activityType
               ? 'border-blue-600 bg-blue-600 text-white'
               : 'border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-700'
           }`}
@@ -162,13 +169,20 @@ function WorkoutsPanel({
         </button>
         {workoutTypes.map((type) => {
           const count = workouts.filter((workout) => workout.activity_type === type).length
-          const selected = selectedType === type
+          const selected = scope.activityType === type
           return (
             <button
               key={type}
               type="button"
               aria-pressed={selected}
-              onClick={() => setSelectedType(selected ? null : type)}
+              onClick={() => {
+                if (selected) {
+                  const { activityType: _activityType, ...withoutType } = scope
+                  onScopeChange(withoutType)
+                  return
+                }
+                onScopeChange({ ...scope, activityType: type })
+              }}
               className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                 selected
                   ? 'border-blue-600 bg-blue-600 text-white'
@@ -179,6 +193,29 @@ function WorkoutsPanel({
             </button>
           )
         })}
+        <label className="ml-auto flex items-center gap-2 text-xs text-gray-600">
+          Source
+          <select
+            value={scope.source ?? ''}
+            aria-label="Filter workouts by source"
+            onChange={(event) => {
+              if (!event.target.value) {
+                const { source: _source, ...withoutSource } = scope
+                onScopeChange(withoutSource)
+                return
+              }
+              onScopeChange({ ...scope, source: event.target.value })
+            }}
+            className="rounded border border-gray-300 bg-white px-2 py-1 text-xs"
+          >
+            <option value="">All sources</option>
+            {sources.map((source) => (
+              <option key={source} value={source}>
+                {source}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
       <div className="overflow-x-auto rounded-lg border border-gray-100">
         <table className="w-full min-w-[680px] text-sm">
@@ -194,7 +231,7 @@ function WorkoutsPanel({
             </tr>
           </thead>
           <tbody>
-            {filteredWorkouts.map((w) => (
+            {workouts.map((w) => (
               <tr
                 key={w.id}
                 onClick={() => onSelect(w.id)}
@@ -424,6 +461,22 @@ export function DashboardView() {
       })
   }
 
+  const updateWorkoutScope = (nextScope: DashboardScope) => {
+    const normalized: DashboardScope = {
+      ...(nextScope.start ? { start: nextScope.start } : {}),
+      ...(nextScope.end ? { end: nextScope.end } : {}),
+      ...(nextScope.activityType ? { activityType: nextScope.activityType } : {}),
+      ...(nextScope.source ? { source: nextScope.source } : {}),
+    }
+    const query = decodeDashboardQuery(window.location.search)
+    window.history.pushState(
+      {},
+      '',
+      `?${encodeDashboardQuery({ ...query, tab: 'workouts', ...normalized })}`,
+    )
+    setScope(normalized)
+  }
+
   const selectWorkout = (workoutId: number) => {
     const query = decodeDashboardQuery(window.location.search)
     window.history.pushState(
@@ -528,6 +581,8 @@ export function DashboardView() {
         <WorkoutsPanel
           workouts={state.workouts}
           nextWorkoutCursor={state.nextWorkoutCursor}
+          scope={scope}
+          onScopeChange={updateWorkoutScope}
           onSelect={selectWorkout}
           onLoadMore={loadMoreWorkouts}
         />

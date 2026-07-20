@@ -7,7 +7,10 @@ import type { TrendResponse } from '@/api/dashboard'
 
 const server = setupServer(http.get('/health', () => HttpResponse.json({ status: 'ok' })))
 beforeAll(() => server.listen())
-afterEach(() => server.resetHandlers())
+afterEach(() => {
+  server.resetHandlers()
+  window.history.replaceState({}, '', '/')
+})
 afterAll(() => server.close())
 
 // Mock ECharts in jsdom — it can't render canvas
@@ -135,6 +138,39 @@ describe('DashboardView', () => {
     })
     // Check workout row details
     expect(screen.getByText('46 min')).toBeInTheDocument()
+  })
+
+  it('moves an activity filter into the shared URL and workout request scope', async () => {
+    let sawFilteredRequest = false
+    setupHandlers()
+    server.use(
+      http.get('/api/dashboard/workouts', ({ request }) => {
+        if (new URL(request.url).searchParams.get('activity_type') === 'Running') {
+          sawFilteredRequest = true
+        }
+        return HttpResponse.json({
+          workouts: [
+            {
+              id: 1,
+              activity_type: 'Running',
+              date: '2026-06-05T07:00:00+08:00',
+              duration_minutes: 45.5,
+              avg_heart_rate: 148,
+              distance_meters: 8500,
+              energy_burned_kj: 2500,
+              source_name: 'Apple Watch',
+              fingerprint: 'fixture-fingerprint',
+            },
+          ],
+          next_cursor: null,
+        })
+      }),
+    )
+    const user = userEvent.setup()
+    render(<DashboardView />)
+    await user.click(await screen.findByRole('button', { name: /Running 1/ }))
+    await waitFor(() => expect(sawFilteredRequest).toBe(true))
+    expect(window.location.search).toContain('activity_type=Running')
   })
 
   it('renders trend charts after load', async () => {
