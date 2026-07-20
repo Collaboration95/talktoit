@@ -10,9 +10,9 @@ from typing import TYPE_CHECKING, Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from app.analytics.metric_catalog import METRIC_CATALOG
+from app.db import queries
 from app.db.aggregations import (
     DEFAULT_TZ,
-    METRIC_META,
     bucket_key,
     generate_buckets,
     to_local_dt,
@@ -94,16 +94,6 @@ ORDER BY w.start_date DESC, w.id DESC
 LIMIT ?
 """
 )
-
-_SQL_TREND_RECORDS = """
-SELECT start_date, value
-FROM records
-WHERE type = ?
-  AND start_date >= ?
-  AND start_date < ?
-  AND value IS NOT NULL
-ORDER BY start_date
-"""
 
 _SQL_SLEEP_RECORDS = """
 SELECT start_date, end_date
@@ -562,31 +552,19 @@ def _build_trend(
     end_date: date,
     agg: str,
 ) -> TrendResponse:
-    utc_start, utc_end = utc_bounds(start_date, end_date, DEFAULT_TZ)
-    rows = conn.execute(_SQL_TREND_RECORDS, [metric_id, utc_start, utc_end]).fetchall()
-
-    bucket_values: dict[str, list[float]] = {}
-    for start_date_utc, value in rows:
-        local_dt = to_local_dt(start_date_utc, DEFAULT_TZ)
-        key = bucket_key(local_dt.date(), granularity)  # type: ignore[arg-type]
-        bucket_values.setdefault(key, []).append(float(value))
-
-    aggregated: dict[str, float] = {}
-    for key, vals in bucket_values.items():
-        if agg == "sum":
-            aggregated[key] = sum(vals)
-        else:
-            aggregated[key] = sum(vals) / len(vals)
-
-    all_buckets = generate_buckets(start_date, end_date, granularity)  # type: ignore[arg-type]
-    series = [TrendPoint(bucket=b, value=aggregated.get(b)) for b in all_buckets]
-
-    label, unit = METRIC_META.get(metric_id, (metric_id, ""))
+    chart = queries.get_trend(
+        conn,
+        metric_id,
+        granularity,  # type: ignore[arg-type]
+        start_date,
+        end_date,
+        aggregation=agg,  # type: ignore[arg-type]
+    )
     return TrendResponse(
-        metric_label=label,
-        metric_unit=unit,
-        granularity=granularity,
-        series=series,
+        metric_label=chart.metric_label,
+        metric_unit=chart.metric_unit,
+        granularity=chart.granularity,
+        series=[TrendPoint(bucket=point.bucket, value=point.value) for point in chart.series],
     )
 
 

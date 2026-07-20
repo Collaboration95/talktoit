@@ -7,6 +7,7 @@ fixture, making the public dashboard boundary verifiable without a server.
 from __future__ import annotations
 
 from collections.abc import Generator
+from datetime import date
 from pathlib import Path
 
 import duckdb
@@ -14,6 +15,7 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+from app.db import queries
 from app.ingest.parser import ingest
 from app.main import app
 
@@ -69,6 +71,24 @@ async def test_workout_detail_contract_includes_normalized_distance_and_route_st
     body = response.json()
     assert body["distance_meters"] == pytest.approx(8_500)
     assert body["route"] == {"state": "invalid", "message": "The saved route could not be read."}
+
+
+@pytest.mark.asyncio
+async def test_dashboard_steps_adapts_the_same_fact_snapshot_as_chat_query(
+    client: AsyncClient, db: duckdb.DuckDBPyConnection
+) -> None:
+    """Chat and dashboard trends share the normalized local analytics path."""
+    response = await client.get("/api/dashboard/steps?start=2026-06-01&end=2026-06-10")
+    expected = queries.get_trend(
+        db,
+        "HKQuantityTypeIdentifierStepCount",
+        "day",
+        date(2026, 6, 1),
+        date(2026, 6, 10),
+        aggregation="sum",
+    )
+    assert response.status_code == 200
+    assert response.json()["series"] == [point.model_dump() for point in expected.series]
 
 
 @pytest.mark.asyncio
