@@ -99,3 +99,27 @@ def test_v2_rejects_records_missing_required_fields(tmp_path) -> None:
     )
     with pytest.raises(V2CompatibilityError, match="scanner produced no canonical rows"):
         ingest_v2(export, duckdb.connect(":memory:"), n_workers=1)
+
+
+def test_v2_keeps_long_child_relations_across_worker_boundaries(tmp_path) -> None:
+    """A generated long child remains attached to its record after range splitting."""
+    export = tmp_path / "worker-boundary.xml"
+    long_value = "x" * 24_000
+    export.write_text(
+        "<HealthData>"
+        '<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Watch" '
+        'startDate="2024-01-01 00:00:00 +0000" endDate="2024-01-01 00:01:00 +0000" '
+        'value="42"><MetadataEntry key="long-child" value="' + long_value + '"/></Record>'
+        '<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Watch" '
+        'startDate="2024-01-02 00:00:00 +0000" endDate="2024-01-02 00:01:00 +0000" '
+        'value="7"/>'
+        "</HealthData>"
+    )
+    conn = duckdb.connect(":memory:")
+    stats = ingest_v2(export, conn, n_workers=2)
+
+    assert stats["records"] == 2
+    assert conn.execute("SELECT COUNT(*) FROM record_metadata").fetchone() == (1,)
+    assert conn.execute(
+        "SELECT value FROM record_metadata WHERE record_id IN (SELECT id FROM records)"
+    ).fetchone() == (long_value,)
