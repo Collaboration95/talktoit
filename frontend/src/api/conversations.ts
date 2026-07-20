@@ -6,6 +6,7 @@ export interface Conversation {
 }
 
 export interface StoredTurn {
+  id: string
   question: string
   state: 'completed' | 'failed' | 'cancelled'
   response_json: string | null

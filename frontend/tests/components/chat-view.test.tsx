@@ -127,6 +127,7 @@ describe('ChatView', () => {
       http.get('/api/conversations/cv_failed/turns', () =>
         HttpResponse.json([
           {
+            id: 'tr_failed',
             question: 'Last run?',
             state: 'failed',
             response_json: null,

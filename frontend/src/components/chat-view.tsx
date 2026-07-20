@@ -118,7 +118,7 @@ export function ChatView() {
     setConversationId(id)
     setTurns(
       stored.map((turn, index) => {
-        const id = `stored-turn-${index}`
+        const id = turn.id
         if (turn.state === 'completed' && turn.response_json) {
           return {
             id,

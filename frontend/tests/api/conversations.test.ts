@@ -29,7 +29,12 @@ describe('local conversation API', () => {
       }),
       http.get('/api/conversations/cv_1/turns', () =>
         HttpResponse.json([
-          { question: 'Last run?', state: 'completed', response_json: '{"template_id":"fallback"}' },
+          {
+            id: 'tr_1',
+            question: 'Last run?',
+            state: 'completed',
+            response_json: '{"template_id":"fallback"}',
+          },
         ]),
       ),
       http.patch('/api/conversations/cv_1', async ({ request }) => {
@@ -42,7 +47,14 @@ describe('local conversation API', () => {
 
     expect(await createConversation('Runs')).toBe('cv_1')
     expect(await listConversations('morning run')).toHaveLength(1)
-    expect(await getConversationTurns('cv_1')).toHaveLength(1)
+    expect(await getConversationTurns('cv_1')).toEqual([
+      {
+        id: 'tr_1',
+        question: 'Last run?',
+        state: 'completed',
+        response_json: '{"template_id":"fallback"}',
+      },
+    ])
     await renameConversation('cv_1', 'Morning runs')
     await archiveConversation('cv_1')
     await deleteConversation('cv_1')
