@@ -1,0 +1,22 @@
+"""Every shared analytics query needs complete contract declarations."""
+
+from __future__ import annotations
+
+import pytest
+
+from app.analytics.registry import QUERY_REGISTRY, get_query_definition
+
+
+def test_registry_entries_declare_version_timezone_units_and_dependencies() -> None:
+    assert QUERY_REGISTRY
+    for definition in QUERY_REGISTRY.values():
+        assert definition.version.startswith("v")
+        assert definition.timezone == "Asia/Singapore"
+        assert definition.unit
+        assert definition.dependencies
+        assert definition.empty_state
+
+
+def test_unknown_registry_query_is_rejected() -> None:
+    with pytest.raises(ValueError, match="Unsupported analytics query"):
+        get_query_definition("arbitrary_sql")
