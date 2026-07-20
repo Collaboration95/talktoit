@@ -196,6 +196,9 @@ export function ChatView() {
                   : turn.envelope.metadata?.provenance === 'deterministic_local'
                     ? 'Deterministic local answer'
                     : 'Generated answer'}
+                {turn.envelope.metadata?.coverage_start && turn.envelope.metadata?.coverage_end
+                  ? ` · data coverage ${turn.envelope.metadata.coverage_start} to ${turn.envelope.metadata.coverage_end}`
+                  : ''}
               </p>
             ) : null}
             {turn.status === 'error' ? (
