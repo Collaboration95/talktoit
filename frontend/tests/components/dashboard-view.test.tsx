@@ -220,6 +220,22 @@ describe('DashboardView', () => {
     expect((await screen.findAllByText('Walking')).length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('Running').length).toBeGreaterThanOrEqual(1)
   })
+
+  it('restores a workout detail deep link and returns to its scoped list', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '?tab=workouts&start=2024-01-01&end=2024-01-31&workout=1',
+    )
+    setupHandlers()
+    server.use(http.get('/api/dashboard/workouts/1', () => HttpResponse.json({}, { status: 404 })))
+    const user = userEvent.setup()
+    render(<DashboardView />)
+    await user.click(await screen.findByRole('button', { name: /back to list/i }))
+    expect(await screen.findByText('Showing 2024-01-01 to 2024-01-31')).toBeInTheDocument()
+    expect(window.location.search).not.toContain('workout=1')
+    window.history.replaceState({}, '', '/')
+  })
 })
 
 describe('App tab navigation', () => {

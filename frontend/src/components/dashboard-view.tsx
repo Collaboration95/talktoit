@@ -10,7 +10,7 @@ import type {
 } from '@/api/dashboard'
 import { fetchCapabilities, fetchSummary, fetchTrend, fetchWorkouts } from '@/api/dashboard'
 import type { DashboardScope } from '@/api/dashboard'
-import { decodeDashboardQuery } from '@/lib/dashboard-query'
+import { decodeDashboardQuery, encodeDashboardQuery } from '@/lib/dashboard-query'
 import { formatDateOnly, formatNumber } from '@/lib/format'
 
 type DashboardViewMode = { view: 'list' } | { view: 'detail'; workoutId: number }
@@ -225,6 +225,7 @@ function BackendDownBanner() {
 }
 
 export function DashboardView() {
+  const initialQuery = decodeDashboardQuery(window.location.search)
   const [state, setState] = useState<DashboardState>({
     summary: [],
     workouts: [],
@@ -236,10 +237,15 @@ export function DashboardView() {
     loading: true,
     error: null,
   })
-  const [mode, setMode] = useState<DashboardViewMode>({ view: 'list' })
+  const [mode, setMode] = useState<DashboardViewMode>(() =>
+    initialQuery.selectedWorkout
+      ? { view: 'detail', workoutId: initialQuery.selectedWorkout }
+      : { view: 'list' },
+  )
   const [scope] = useState<DashboardScope>(() => {
-    const query = decodeDashboardQuery(window.location.search)
-    return query.start && query.end ? { start: query.start, end: query.end } : {}
+    return initialQuery.start && initialQuery.end
+      ? { start: initialQuery.start, end: initialQuery.end }
+      : {}
   })
   const [backendDown, setBackendDown] = useState(false)
 
@@ -306,6 +312,24 @@ export function DashboardView() {
       })
   }
 
+  const selectWorkout = (workoutId: number) => {
+    const query = decodeDashboardQuery(window.location.search)
+    window.history.pushState(
+      {},
+      '',
+      `?${encodeDashboardQuery({ ...query, tab: 'workouts', selectedWorkout: workoutId })}`,
+    )
+    setMode({ view: 'detail', workoutId })
+  }
+
+  const returnToWorkoutList = () => {
+    const { selectedWorkout: _selectedWorkout, ...query } = decodeDashboardQuery(
+      window.location.search,
+    )
+    window.history.pushState({}, '', `?${encodeDashboardQuery(query)}`)
+    setMode({ view: 'list' })
+  }
+
   if (state.loading) {
     return (
       <div
@@ -321,7 +345,7 @@ export function DashboardView() {
   if (mode.view === 'detail') {
     return (
       <div className="mx-auto max-w-3xl px-4 py-6">
-        <WorkoutDetail workoutId={mode.workoutId} onBack={() => setMode({ view: 'list' })} />
+        <WorkoutDetail workoutId={mode.workoutId} onBack={returnToWorkoutList} />
       </div>
     )
   }
@@ -343,7 +367,7 @@ export function DashboardView() {
         <WorkoutsPanel
           workouts={state.workouts}
           nextWorkoutCursor={state.nextWorkoutCursor}
-          onSelect={(id) => setMode({ view: 'detail', workoutId: id })}
+          onSelect={selectWorkout}
           onLoadMore={loadMoreWorkouts}
         />
       </Section>
