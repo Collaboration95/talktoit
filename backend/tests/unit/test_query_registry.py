@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from app.analytics.registry import (
     QUERY_REGISTRY,
     execute_activity_summary,
+    execute_comparison,
     execute_period_summary,
     get_query_definition,
     validate_query_catalogue,
@@ -72,3 +73,22 @@ def test_period_summary_executor_validates_and_returns_template_facts() -> None:
     assert result.title == "Week"
     with pytest.raises(ValidationError):
         execute_period_summary(conn, {"start": "not-a-date", "end": "2024-01-07"})
+
+
+def test_comparison_executor_validates_two_periods_and_returns_template_facts() -> None:
+    conn = duckdb.connect(":memory:")
+    conn.execute(SQL_CREATE_TABLES)
+    result = execute_comparison(
+        conn,
+        {
+            "this_start": "2024-01-08",
+            "this_end": "2024-01-14",
+            "last_start": "2024-01-01",
+            "last_end": "2024-01-07",
+            "this_label": "This week",
+            "last_label": "Last week",
+        },
+    )
+    assert result.this_period_label == "This week"
+    with pytest.raises(ValidationError):
+        execute_comparison(conn, {"this_start": "2024-01-08"})

@@ -11,7 +11,7 @@ import json
 from datetime import date
 from typing import TYPE_CHECKING, Any, Literal
 
-from app.analytics.registry import execute_metric_trend, execute_period_summary
+from app.analytics.registry import execute_comparison, execute_metric_trend, execute_period_summary
 from app.db import queries
 from app.db.data_profile import display_activity_type, resolve_activity_type
 from app.models.templates import FallbackData
@@ -340,15 +340,17 @@ def _tool_get_comparison(
     activity_type = (
         resolve_activity_type(conn, requested_type) if requested_type is not None else None
     )
-    result = queries.get_comparison(
+    result = execute_comparison(
         conn,
-        this_start,
-        this_end,
-        last_start,
-        last_end,
-        this_label,
-        last_label,
-        activity_type=activity_type,
+        {
+            "this_start": this_start,
+            "this_end": this_end,
+            "last_start": last_start,
+            "last_end": last_end,
+            "this_label": this_label,
+            "last_label": last_label,
+            "activity_type": activity_type,
+        },
     )
     data = result.model_dump(mode="json")
     if activity_type is not None:

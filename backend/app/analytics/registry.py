@@ -9,7 +9,7 @@ from typing import Literal, cast
 from pydantic import BaseModel, Field
 
 from app.analytics.metric_catalog import METRIC_CATALOG
-from app.models.templates import PeriodSummaryData, TrendChartData
+from app.models.templates import ComparisonData, PeriodSummaryData, TrendChartData
 
 _SQL_ACTIVITY_SUMMARY = """
 SELECT date_components, active_energy_burned, active_energy_burned_goal,
@@ -67,6 +67,18 @@ class PeriodSummaryInput(BaseModel):
     start: date
     end: date
     title: str | None = Field(default=None, max_length=160)
+
+
+class ComparisonInput(BaseModel):
+    """Validated pair of local periods and their user-visible labels."""
+
+    this_start: date
+    this_end: date
+    last_start: date
+    last_end: date
+    this_label: str = Field(min_length=1, max_length=160)
+    last_label: str = Field(min_length=1, max_length=160)
+    activity_type: str | None = Field(default=None, min_length=1, max_length=160)
 
 
 class MetricTrendInput(BaseModel):
@@ -155,6 +167,30 @@ QUERY_REGISTRY: dict[str, QueryDefinition] = {
         "compact_facts",
         PeriodSummaryInput,
     ),
+    "comparison": QueryDefinition(
+        "comparison",
+        "v1",
+        "Asia/Singapore",
+        "mixed",
+        ("workouts", "workout_statistics"),
+        "zero_comparison",
+        "success",
+        "unavailable",
+        (
+            "this_start",
+            "this_end",
+            "last_start",
+            "last_end",
+            "this_label",
+            "last_label",
+            "activity_type",
+        ),
+        ("workouts",),
+        "Both periods are calculated from the same selected local workout scope.",
+        "Each workout contributes once to each requested period.",
+        "compact_facts",
+        ComparisonInput,
+    ),
     "metric_trend": QueryDefinition(
         "metric_trend",
         "v1",
@@ -233,6 +269,23 @@ def execute_period_summary(conn: object, values: dict[str, object]) -> PeriodSum
 
     args = PeriodSummaryInput.model_validate(values)
     return queries.get_period_summary(conn, args.start, args.end, title=args.title)  # type: ignore[arg-type]
+
+
+def execute_comparison(conn: object, values: dict[str, object]) -> ComparisonData:
+    """Validate and execute one registry-owned local period comparison."""
+    from app.db import queries
+
+    args = ComparisonInput.model_validate(values)
+    return queries.get_comparison(
+        conn,  # type: ignore[arg-type]
+        args.this_start,
+        args.this_end,
+        args.last_start,
+        args.last_end,
+        args.this_label,
+        args.last_label,
+        activity_type=args.activity_type,
+    )
 
 
 def execute_activity_summary(conn: object, values: dict[str, object]) -> list[ActivitySummaryRow]:
