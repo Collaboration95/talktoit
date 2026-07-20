@@ -126,6 +126,10 @@ _SQL_CAPABILITIES_WORKOUTS = """
 SELECT COUNT(*) FROM workouts
 """
 
+_SQL_CAPABILITIES_ACTIVITY_SUMMARIES = """
+SELECT COUNT(*) FROM activity_summaries
+"""
+
 _SQL_WORKOUT_DETAIL = (
     """
 SELECT
@@ -453,18 +457,22 @@ def get_capabilities(
     rows = conn.execute(_SQL_CAPABILITIES_RECORDS).fetchall()
     present_types = {row[0] for row in rows}
 
-    workout_count_row = conn.execute(_SQL_CAPABILITIES_WORKOUTS).fetchone()
-    has_workouts = (workout_count_row[0] > 0) if workout_count_row else False
+    counts = {
+        "workouts": (conn.execute(_SQL_CAPABILITIES_WORKOUTS).fetchone() or [0])[0],
+        "activity_summaries": (
+            conn.execute(_SQL_CAPABILITIES_ACTIVITY_SUMMARIES).fetchone() or [0]
+        )[0],
+    }
+
+    def is_present(metric_id: str) -> bool:
+        metric = METRIC_CATALOG[metric_id]
+        if metric.availability_source == "records":
+            return bool(set(metric.apple_types).intersection(present_types))
+        return counts[metric.availability_source] > 0
 
     capabilities = [
-        CapabilityFlag(
-            name=metric.id,
-            present=bool(set(metric.apple_types).intersection(present_types)),
-        )
+        CapabilityFlag(name=metric.id, present=is_present(metric.id))
         for metric in METRIC_CATALOG.values()
-        if metric.apple_types
-    ] + [
-        CapabilityFlag(name="workouts", present=has_workouts),
     ]
     return CapabilitiesResponse(capabilities=capabilities)
 

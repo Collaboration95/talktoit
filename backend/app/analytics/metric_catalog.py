@@ -18,6 +18,7 @@ class MetricDefinition:
     source_policy: str
     privacy_class: Literal["compact_fact", "local_only"]
     medical_language: Literal["measured_only", "not_medical"]
+    availability_source: Literal["records", "activity_summaries", "workouts"] = "records"
     value_kind: Literal["numeric", "category", "summary"] = "numeric"
     date_semantics: Literal["record_start", "interval_union", "summary_day"] = "record_start"
     overlap_policy: str = "source_declared"
@@ -99,9 +100,24 @@ METRIC_CATALOG: dict[str, MetricDefinition] = {
         "Daily summaries remain source-aware.",
         "local_only",
         "not_medical",
+        availability_source="activity_summaries",
         value_kind="summary",
         date_semantics="summary_day",
         overlap_policy="one source summary per local day",
+    ),
+    "workouts": MetricDefinition(
+        "workouts",
+        (),
+        "Workouts",
+        "mixed",
+        "none",
+        "Workout availability is based on imported workout summaries.",
+        "local_only",
+        "not_medical",
+        availability_source="workouts",
+        value_kind="summary",
+        date_semantics="record_start",
+        overlap_policy="each imported workout is a separate local activity event",
     ),
 }
 

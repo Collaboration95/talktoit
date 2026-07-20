@@ -347,3 +347,4 @@ async def test_http_capabilities(client: AsyncClient) -> None:
     assert caps["sleep"] is True
     assert caps["hrv"] is True
     assert caps["workouts"] is True
+    assert caps["activity_rings"] is True
