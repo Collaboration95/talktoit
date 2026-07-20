@@ -10,3 +10,12 @@ def test_exact_cache_is_scoped_to_dataset_and_refreshable(tmp_path) -> None:
     repo.put_cached_response("normalised-question", "ds_one", '{"answer":"one"}')
     assert repo.get_cached_response("normalised-question", "ds_one") == '{"answer":"one"}'
     assert repo.get_cached_response("normalised-question", "ds_two") is None
+
+
+def test_canonical_cache_key_can_share_equivalent_local_intent(tmp_path) -> None:
+    repo = AppStateRepository(tmp_path / "state.sqlite")
+    repo.put_cached_response("canonical-last-running", "ds_one", '{"template_id":"workout_card"}')
+    assert (
+        repo.get_cached_response("canonical-last-running", "ds_one")
+        == '{"template_id":"workout_card"}'
+    )

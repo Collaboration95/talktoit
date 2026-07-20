@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Generator
 
 import duckdb
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.db.connection import connect
+from app.db.data_profile import get_data_profile
 from app.llm.client import get_model
+from app.llm.local_planner import plan_local_question
 from app.llm.orchestrator import ChatOrchestrator
 from app.llm.provider_gateway import ProviderGateway, make_provider_gateway
 from app.models.chat import ChatRequest, ChatResponse
@@ -64,11 +67,24 @@ async def chat(
         repository = AppStateRepository()
         active = repository.get_active()
         cache_key = hashlib.sha256(request.question.strip().casefold().encode()).hexdigest()
+        local_plan = plan_local_question(request.question, get_data_profile(conn))
+        canonical_key = (
+            hashlib.sha256(json.dumps(local_plan, sort_keys=True).encode()).hexdigest()
+            if local_plan is not None
+            else None
+        )
         cached = (
             repository.get_cached_response(cache_key, active.id)
             if active is not None and request.cache_mode != "fresh"
             else None
         )
+        if (
+            cached is None
+            and active is not None
+            and canonical_key
+            and request.cache_mode != "fresh"
+        ):
+            cached = repository.get_cached_response(canonical_key, active.id)
         if cached is not None:
             response = ChatResponse.model_validate_json(cached)
             response.metadata.provenance = "cached"
@@ -81,6 +97,10 @@ async def chat(
             response.metadata.generated_at = active.activated_at
             if request.cache_mode != "fresh":
                 repository.put_cached_response(cache_key, active.id, response.model_dump_json())
+                if canonical_key:
+                    repository.put_cached_response(
+                        canonical_key, active.id, response.model_dump_json()
+                    )
         if request.conversation_id:
             repository.add_completed_turn(
                 request.conversation_id,
