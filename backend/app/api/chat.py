@@ -77,8 +77,10 @@ async def chat(
         cache_key = build_cache_key("exact", request.question)
         local_plan = plan_local_question(request.question, get_data_profile(conn))
         followup_plan = None
-        if request.parent_turn_id and active is not None:
-            parent = repository.get_turn(request.parent_turn_id)
+        if request.parent_turn_id and request.conversation_id and active is not None:
+            parent = repository.get_conversation_turn(
+                request.conversation_id, request.parent_turn_id
+            )
             raw_plan = parent.get("canonical_plan_json") if parent else None
             if isinstance(raw_plan, str):
                 try:
@@ -97,7 +99,8 @@ async def chat(
                         )
                 except (TypeError, ValueError, json.JSONDecodeError):
                     followup_plan = None
-        canonical_key = build_cache_key("canonical", local_plan) if local_plan is not None else None
+        canonical_plan = local_plan or followup_plan
+        canonical_key = build_cache_key("canonical", canonical_plan) if canonical_plan else None
         cached = (
             repository.get_cached_response(cache_key, active.id)
             if active is not None and request.cache_mode != "fresh"
@@ -131,7 +134,7 @@ async def chat(
                 pending_turn_id or "",
                 response_json=response.model_dump_json(),
                 cache_outcome=response.metadata.provenance,
-                canonical_plan=local_plan,
+                canonical_plan=canonical_plan,
             )
         return response
     except asyncio.CancelledError:

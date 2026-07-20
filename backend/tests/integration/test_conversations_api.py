@@ -52,3 +52,24 @@ def test_scoped_turn_get_and_cancel_through_api(monkeypatch, tmp_path) -> None:
         fetched = client.get(f"/api/conversations/{first}/turns/{turn_id}")
         assert fetched.json()["state"] == "cancelled"
         assert client.post(f"/api/conversations/{first}/turns/{turn_id}/cancel").status_code == 409
+
+
+def test_followup_parent_cannot_cross_conversation_scope(monkeypatch, tmp_path) -> None:
+    """Follow-up resolution must not read a parent turn from another conversation."""
+    monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
+    repo = AppStateRepository()
+    first = repo.create_conversation("First", "ds_fixture")
+    second = repo.create_conversation("Second", "ds_fixture")
+    parent_id = repo.add_completed_turn(
+        first,
+        "Show my training summary",
+        '{"template_id":"period_summary"}',
+        "default",
+        "deterministic_local",
+        canonical_plan={
+            "tool_name": "get_period_summary",
+            "arguments": {"start_date": "2024-01-01", "end_date": "2024-01-07"},
+        },
+    )
+
+    assert repo.get_conversation_turn(second, parent_id) is None
