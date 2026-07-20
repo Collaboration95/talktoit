@@ -94,20 +94,31 @@ export function WorkoutDetail({ workoutId, onBack }: WorkoutDetailProps) {
         )}
       </div>
 
-      {/* GPS route map (R1-01) — ECharts scatter map of [lon, lat] pairs */}
+      {/* Ordered route line plus explicit start/end evidence markers. */}
       {data.gps_route !== null && data.gps_route.coordinates.length > 0 ? (
         <div className="mt-4">
           <p className="mb-2 text-xs font-medium text-gray-500">GPS Route</p>
           <ReactECharts
             option={{
-              tooltip: { trigger: 'item', formatter: '({c})' },
+              tooltip: { trigger: 'item' },
               xAxis: { type: 'value', name: 'Longitude', axisLabel: { fontSize: 10 } },
               yAxis: { type: 'value', name: 'Latitude', axisLabel: { fontSize: 10 } },
               series: [
                 {
-                  type: 'scatter',
+                  type: 'line',
                   data: data.gps_route.coordinates,
-                  symbolSize: 4,
+                  showSymbol: false,
+                  lineStyle: { width: 3, color: '#2563eb' },
+                  markPoint: {
+                    data: [
+                      { name: 'Start', coord: data.gps_route.coordinates[0], symbol: 'circle' },
+                      {
+                        name: 'End',
+                        coord: data.gps_route.coordinates[data.gps_route.coordinates.length - 1],
+                        symbol: 'pin',
+                      },
+                    ],
+                  },
                 },
               ],
             }}
