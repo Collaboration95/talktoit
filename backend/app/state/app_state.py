@@ -144,6 +144,14 @@ class AppStateRepository:
                     PRAGMA user_version = 4;
                     """
                 )
+                version = 4
+            if version < 5:
+                conn.executescript(
+                    """
+                    ALTER TABLE turns ADD COLUMN canonical_plan_json TEXT;
+                    PRAGMA user_version = 5;
+                    """
+                )
 
     def backup_before_destructive_migration(self) -> Path | None:
         """Create a recoverable snapshot when a future migration needs it."""
@@ -266,6 +274,7 @@ class AppStateRepository:
         response_json: str,
         cache_mode: str,
         cache_outcome: str,
+        canonical_plan: Mapping[str, object] | None = None,
     ) -> str:
         """Append one immutable completed result and update its conversation timestamp."""
         turn_id, now = f"tr_{uuid.uuid4().hex}", _now()
@@ -275,7 +284,11 @@ class AppStateRepository:
                 (conversation_id,),
             ).fetchone()[0]
             conn.execute(
-                "INSERT INTO turns VALUES (?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?)",
+                """
+                INSERT INTO turns (id, conversation_id, ordinal, question, state, response_json,
+                    cache_mode, cache_outcome, created_at, completed_at, canonical_plan_json)
+                VALUES (?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?)
+                """,
                 (
                     turn_id,
                     conversation_id,
@@ -286,6 +299,7 @@ class AppStateRepository:
                     cache_outcome,
                     now,
                     now,
+                    json.dumps(canonical_plan, sort_keys=True) if canonical_plan else None,
                 ),
             )
             conn.execute(

@@ -108,6 +108,7 @@ async def chat(
                 response.model_dump_json(),
                 request.cache_mode,
                 response.metadata.provenance,
+                local_plan,
             )
         return response
     except Exception as exc:
