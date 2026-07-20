@@ -172,52 +172,15 @@ _TOP_RE = re.compile(
 # Attribute extraction regex (per-element kind)
 # ============================================================================
 
-# Record attributes (rolled-up single regex for performance)
-# Captures: type, sourceName, sourceVersion, unit, creationDate, startDate, endDate, value
-_RECORD_ATTR_RE = re.compile(
-    rb'type="(?P<type>[^"]*)"'
-    rb'.*?sourceName="(?P<sourceName>[^"]*)"'
-    rb'(?:.*?sourceVersion="(?P<sourceVersion>[^"]*)")?'
-    rb'(?:.*?unit="(?P<unit>[^"]*)")?'
-    rb'(?:.*?creationDate="(?P<creationDate>[^"]*)")?'
-    rb'.*?startDate="(?P<startDate>[^"]*)"'
-    rb'.*?endDate="(?P<endDate>[^"]*)"'
-    rb'(?:.*?value="(?P<value>[^"]*)")?',
-    re.DOTALL,
-)
+# Top-level attributes are intentionally parsed independently of their input
+# order. Apple exports normally use a stable order, but a V2 byte scan must not
+# silently drop valid observations when a producer reorders attributes.
+_ATTRIBUTE_RE = re.compile(rb'(?P<name>[A-Za-z][A-Za-z0-9:_-]*)="(?P<value>[^"]*)"')
 
 # Record device attribute (separate because it's optional and may contain escaped chars)
 _RECORD_DEVICE_RE = re.compile(rb'device="(?P<device>[^"]*)"')
 
-# Workout attributes
-_WORKOUT_ATTR_RE = re.compile(
-    rb'workoutActivityType="(?P<type>[^"]*)"'
-    rb'(?:.*?duration="(?P<duration>[^"]*)")?'
-    rb'(?:.*?durationUnit="(?P<durationUnit>[^"]*)")?'
-    rb'.*?sourceName="(?P<sourceName>[^"]*)"'
-    rb'(?:.*?sourceVersion="(?P<sourceVersion>[^"]*)")?'
-    rb'(?:.*?creationDate="(?P<creationDate>[^"]*)")?'
-    rb'.*?startDate="(?P<startDate>[^"]*)"'
-    rb'.*?endDate="(?P<endDate>[^"]*)"',
-    re.DOTALL,
-)
-
 _WORKOUT_DEVICE_RE = re.compile(rb'device="(?P<device>[^"]*)"')
-
-# ActivitySummary attributes
-_SUMMARY_ATTR_RE = re.compile(
-    rb'dateComponents="(?P<dateComponents>[^"]*)"'
-    rb'.*?activeEnergyBurned="(?P<activeEnergyBurned>[^"]*)"'
-    rb'.*?activeEnergyBurnedGoal="(?P<activeEnergyBurnedGoal>[^"]*)"'
-    rb'.*?activeEnergyBurnedUnit="(?P<activeEnergyBurnedUnit>[^"]*)"'
-    rb'.*?appleMoveTime="(?P<appleMoveTime>[^"]*)"'
-    rb'.*?appleMoveTimeGoal="(?P<appleMoveTimeGoal>[^"]*)"'
-    rb'.*?appleExerciseTime="(?P<appleExerciseTime>[^"]*)"'
-    rb'.*?appleExerciseTimeGoal="(?P<appleExerciseTimeGoal>[^"]*)"'
-    rb'.*?appleStandHours="(?P<appleStandHours>[^"]*)"'
-    rb'.*?appleStandHoursGoal="(?P<appleStandHoursGoal>[^"]*)"',
-    re.DOTALL,
-)
 
 # ============================================================================
 # Child element extraction regex
@@ -284,6 +247,24 @@ def _decode_xml_entities(text: str) -> str:
 def _decode_bytes_to_str(b: bytes) -> str:
     """Decode bytes to string and unescape XML entities."""
     return _decode_xml_entities(b.decode("utf-8"))
+
+
+class _AttributeMatch(dict[str, bytes]):
+    """Small ``re.Match``-compatible view over order-independent attributes."""
+
+    def group(self, name: str) -> bytes:
+        """Return one raw attribute value, or empty bytes when it was omitted."""
+        return self.get(name, b"")
+
+
+def _parse_attributes(raw: bytes) -> _AttributeMatch:
+    """Extract quoted XML attributes without imposing an export-specific order."""
+    return _AttributeMatch(
+        {
+            match.group("name").decode("ascii"): match.group("value")
+            for match in _ATTRIBUTE_RE.finditer(raw)
+        }
+    )
 
 
 # ============================================================================
@@ -646,8 +627,11 @@ def parse_byte_range(
                     records_count += 1
 
                     # Extract attributes
-                    attr_match = _RECORD_ATTR_RE.search(attrs_bytes)
-                    if not attr_match:
+                    attr_match = _parse_attributes(attrs_bytes)
+                    if not all(
+                        attr_match.group(name)
+                        for name in ("type", "sourceName", "startDate", "endDate")
+                    ):
                         continue
 
                     # Extract device separately
@@ -741,8 +725,11 @@ def parse_byte_range(
                     workouts_count += 1
 
                     # Extract attributes
-                    attr_match = _WORKOUT_ATTR_RE.search(attrs_bytes)
-                    if not attr_match:
+                    attr_match = _parse_attributes(attrs_bytes)
+                    if not all(
+                        attr_match.group(name)
+                        for name in ("workoutActivityType", "sourceName", "startDate", "endDate")
+                    ):
                         continue
 
                     # Extract device separately
@@ -932,8 +919,22 @@ def parse_byte_range(
                     activity_summaries_count += 1
 
                     # Extract attributes
-                    attr_match = _SUMMARY_ATTR_RE.search(attrs_bytes)
-                    if not attr_match:
+                    attr_match = _parse_attributes(attrs_bytes)
+                    if not all(
+                        attr_match.group(name)
+                        for name in (
+                            "dateComponents",
+                            "activeEnergyBurned",
+                            "activeEnergyBurnedGoal",
+                            "activeEnergyBurnedUnit",
+                            "appleMoveTime",
+                            "appleMoveTimeGoal",
+                            "appleExerciseTime",
+                            "appleExerciseTimeGoal",
+                            "appleStandHours",
+                            "appleStandHoursGoal",
+                        )
+                    ):
                         continue
 
                     # Build summary dict
