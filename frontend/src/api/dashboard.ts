@@ -41,6 +41,11 @@ export interface DashboardScope {
   end?: string
 }
 
+export interface WorkoutsPage {
+  workouts: WorkoutSummary[]
+  next_cursor: string | null
+}
+
 // R1-01: Workout detail types
 export interface GpsRoute {
   type: 'LineString'
@@ -88,10 +93,17 @@ export async function fetchSummary(scope?: DashboardScope): Promise<ActivityRing
   return d.days
 }
 
-export async function fetchWorkouts(scope?: DashboardScope): Promise<WorkoutSummary[]> {
-  const r = await checkedFetch(withScope('/api/dashboard/workouts', scope))
-  const d = (await r.json()) as { workouts: WorkoutSummary[] }
-  return d.workouts
+export async function fetchWorkouts(
+  scope?: DashboardScope,
+  cursor?: string,
+): Promise<WorkoutsPage> {
+  const params = new URLSearchParams()
+  if (cursor) params.set('cursor', cursor)
+  const suffix = params.toString()
+  const path = withScope('/api/dashboard/workouts', scope)
+  const url = suffix ? `${path}${path.includes('?') ? '&' : '?'}${suffix}` : path
+  const r = await checkedFetch(url)
+  return r.json() as Promise<WorkoutsPage>
 }
 
 export async function fetchTrend(

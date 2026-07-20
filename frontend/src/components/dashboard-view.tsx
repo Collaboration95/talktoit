@@ -22,6 +22,7 @@ interface DashboardState {
   heart: TrendResponse | null
   sleep: TrendResponse | null
   capabilities: CapabilityFlag[]
+  nextWorkoutCursor: string | null
   loading: boolean
   error: string | null
 }
@@ -52,10 +53,14 @@ function ActivityRingsPanel({ days }: { days: ActivityRingDay[] }) {
 
 function WorkoutsPanel({
   workouts,
+  nextWorkoutCursor,
+  onLoadMore,
   onSelect,
 }: {
   workouts: WorkoutSummary[]
+  nextWorkoutCursor: string | null
   onSelect: (id: number) => void
+  onLoadMore: () => void
 }) {
   const [selectedType, setSelectedType] = useState<string | null>(null)
   const workoutTypes = useMemo(
@@ -155,6 +160,15 @@ function WorkoutsPanel({
           </tbody>
         </table>
       </div>
+      {nextWorkoutCursor ? (
+        <button
+          type="button"
+          className="mt-3 rounded border border-blue-600 px-3 py-1.5 text-sm font-medium text-blue-700"
+          onClick={onLoadMore}
+        >
+          Load more workouts
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -218,6 +232,7 @@ export function DashboardView() {
     heart: null,
     sleep: null,
     capabilities: [],
+    nextWorkoutCursor: null,
     loading: true,
     error: null,
   })
@@ -263,7 +278,9 @@ export function DashboardView() {
       }
       setState({
         summary: summaryResult.status === 'fulfilled' ? summaryResult.value : [],
-        workouts: workoutsResult.status === 'fulfilled' ? workoutsResult.value : [],
+        workouts: workoutsResult.status === 'fulfilled' ? workoutsResult.value.workouts : [],
+        nextWorkoutCursor:
+          workoutsResult.status === 'fulfilled' ? workoutsResult.value.next_cursor : null,
         steps: stepsResult.status === 'fulfilled' ? stepsResult.value : null,
         heart: heartResult.status === 'fulfilled' ? heartResult.value : null,
         sleep: sleepResult.status === 'fulfilled' ? sleepResult.value : null,
@@ -273,6 +290,21 @@ export function DashboardView() {
       })
     })
   }, [scope])
+
+  const loadMoreWorkouts = () => {
+    if (!state.nextWorkoutCursor) return
+    fetchWorkouts(scope, state.nextWorkoutCursor)
+      .then((page) => {
+        setState((current) => ({
+          ...current,
+          workouts: [...current.workouts, ...page.workouts],
+          nextWorkoutCursor: page.next_cursor,
+        }))
+      })
+      .catch(() => {
+        // The currently loaded page remains usable when an additional page fails.
+      })
+  }
 
   if (state.loading) {
     return (
@@ -310,7 +342,9 @@ export function DashboardView() {
       <Section title="Recent Workouts (Latest 30 data days)">
         <WorkoutsPanel
           workouts={state.workouts}
+          nextWorkoutCursor={state.nextWorkoutCursor}
           onSelect={(id) => setMode({ view: 'detail', workoutId: id })}
+          onLoadMore={loadMoreWorkouts}
         />
       </Section>
 

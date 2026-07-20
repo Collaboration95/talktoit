@@ -174,6 +174,52 @@ describe('DashboardView', () => {
     })
     window.history.replaceState({}, '', '/')
   })
+
+  it('loads the next cursor page without discarding the first page', async () => {
+    setupHandlers()
+    server.use(
+      http.get('/api/dashboard/workouts', ({ request }) => {
+        const cursor = new URL(request.url).searchParams.get('cursor')
+        if (cursor === 'next-page') {
+          return HttpResponse.json({
+            workouts: [
+              {
+                id: 2,
+                activity_type: 'Walking',
+                date: '2026-06-04T07:00:00+08:00',
+                duration_minutes: 30,
+                avg_heart_rate: 100,
+                distance_meters: 2000,
+                energy_burned_kj: 500,
+                fingerprint: 'second-fixture',
+              },
+            ],
+            next_cursor: null,
+          })
+        }
+        return HttpResponse.json({
+          workouts: [
+            {
+              id: 1,
+              activity_type: 'Running',
+              date: '2026-06-05T07:00:00+08:00',
+              duration_minutes: 45.5,
+              avg_heart_rate: 148,
+              distance_meters: 8500,
+              energy_burned_kj: 2500,
+              fingerprint: 'first-fixture',
+            },
+          ],
+          next_cursor: 'next-page',
+        })
+      }),
+    )
+    const user = userEvent.setup()
+    render(<DashboardView />)
+    await user.click(await screen.findByRole('button', { name: 'Load more workouts' }))
+    expect((await screen.findAllByText('Walking')).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('Running').length).toBeGreaterThanOrEqual(1)
+  })
 })
 
 describe('App tab navigation', () => {
