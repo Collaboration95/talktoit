@@ -73,11 +73,24 @@ export function ChatView() {
     const stored = await getConversationTurns(id)
     setConversationId(id)
     setTurns(
-      stored.map((turn) => ({
-        status: 'success' as const,
-        question: turn.question,
-        envelope: JSON.parse(turn.response_json) as ChatEnvelope,
-      })),
+      stored.map((turn) => {
+        if (turn.state === 'completed' && turn.response_json) {
+          return {
+            status: 'success' as const,
+            question: turn.question,
+            envelope: JSON.parse(turn.response_json) as ChatEnvelope,
+          }
+        }
+        return {
+          status: 'error' as const,
+          question: turn.question,
+          message:
+            turn.error_message ??
+            (turn.state === 'cancelled'
+              ? 'This request was cancelled.'
+              : 'This request could not be completed.'),
+        }
+      }),
     )
   }, [])
 

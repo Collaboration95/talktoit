@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from collections.abc import Generator
@@ -64,8 +65,14 @@ async def chat(
     orchestrator = ChatOrchestrator(
         client=gateway.client, conn=conn, model=get_model(), gateway=gateway
     )
+    repository: AppStateRepository | None = None
+    pending_turn_id: str | None = None
     try:
         repository = AppStateRepository()
+        if request.conversation_id:
+            pending_turn_id = repository.create_pending_turn(
+                request.conversation_id, request.question, request.cache_mode
+            )
         active = repository.get_active()
         cache_key = hashlib.sha256(request.question.strip().casefold().encode()).hexdigest()
         local_plan = plan_local_question(request.question, get_data_profile(conn))
@@ -124,14 +131,22 @@ async def chat(
                         canonical_key, active.id, response.model_dump_json()
                     )
         if request.conversation_id:
-            repository.add_completed_turn(
-                request.conversation_id,
-                request.question,
-                response.model_dump_json(),
-                request.cache_mode,
-                response.metadata.provenance,
-                local_plan,
+            repository.finish_turn(
+                pending_turn_id or "",
+                response_json=response.model_dump_json(),
+                cache_outcome=response.metadata.provenance,
+                canonical_plan=local_plan,
             )
         return response
+    except asyncio.CancelledError:
+        if pending_turn_id and repository:
+            repository.terminate_turn(
+                pending_turn_id, state="cancelled", message="Request cancelled by the client."
+            )
+        raise
     except Exception as exc:
+        if pending_turn_id and repository:
+            repository.terminate_turn(
+                pending_turn_id, state="failed", message="The answer could not be completed."
+            )
         raise HTTPException(status_code=500, detail="Internal server error") from exc

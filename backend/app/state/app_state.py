@@ -155,6 +155,14 @@ class AppStateRepository:
                     PRAGMA user_version = 5;
                     """
                 )
+                version = 5
+            if version < 6:
+                conn.executescript(
+                    """
+                    ALTER TABLE turns ADD COLUMN error_message TEXT;
+                    PRAGMA user_version = 6;
+                    """
+                )
 
     def backup_before_destructive_migration(self) -> Path | None:
         """Create a recoverable snapshot when a future migration needs it."""
@@ -313,6 +321,68 @@ class AppStateRepository:
                 "UPDATE conversations SET updated_at = ? WHERE id = ?", (now, conversation_id)
             )
         return turn_id
+
+    def create_pending_turn(self, conversation_id: str, question: str, cache_mode: str) -> str:
+        """Append a visible pending turn before executing its answer."""
+        self.migrate()
+        turn_id, now = f"tr_{uuid.uuid4().hex}", _now()
+        with self._connection() as conn:
+            ordinal = conn.execute(
+                "SELECT COALESCE(MAX(ordinal), 0) + 1 FROM turns WHERE conversation_id = ?",
+                (conversation_id,),
+            ).fetchone()[0]
+            conn.execute(
+                """
+                INSERT INTO turns (id, conversation_id, ordinal, question, state, cache_mode,
+                    cache_outcome, created_at)
+                VALUES (?, ?, ?, ?, 'pending', ?, 'pending', ?)
+                """,
+                (turn_id, conversation_id, ordinal, question, cache_mode, now),
+            )
+            conn.execute(
+                "UPDATE conversations SET updated_at = ? WHERE id = ?", (now, conversation_id)
+            )
+        return turn_id
+
+    def finish_turn(
+        self,
+        turn_id: str,
+        *,
+        response_json: str,
+        cache_outcome: str,
+        canonical_plan: Mapping[str, object] | None = None,
+    ) -> bool:
+        """Atomically promote one pending turn to an immutable completed result."""
+        with self._connection() as conn:
+            changed = conn.execute(
+                """
+                UPDATE turns SET state = 'completed', response_json = ?, cache_outcome = ?,
+                    completed_at = ?, canonical_plan_json = ?
+                WHERE id = ? AND state = 'pending'
+                """,
+                (
+                    response_json,
+                    cache_outcome,
+                    _now(),
+                    json.dumps(canonical_plan, sort_keys=True) if canonical_plan else None,
+                    turn_id,
+                ),
+            ).rowcount
+        return changed == 1
+
+    def terminate_turn(self, turn_id: str, *, state: str, message: str) -> bool:
+        """Persist a retryable terminal failure or cancellation; never leave a gap."""
+        if state not in {"failed", "cancelled"}:
+            raise ValueError("Terminal turn state must be failed or cancelled")
+        with self._connection() as conn:
+            changed = conn.execute(
+                """
+                UPDATE turns SET state = ?, cache_outcome = ?, error_message = ?, completed_at = ?
+                WHERE id = ? AND state = 'pending'
+                """,
+                (state, state, message, _now(), turn_id),
+            ).rowcount
+        return changed == 1
 
     def get_turns(self, conversation_id: str) -> list[dict[str, object]]:
         """Return a local transcript in append-only ordinal order."""

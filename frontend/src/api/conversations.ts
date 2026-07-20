@@ -5,10 +5,11 @@ export interface Conversation {
   updated_at: string
 }
 
-interface StoredTurn {
+export interface StoredTurn {
   question: string
-  state: 'completed'
-  response_json: string
+  state: 'completed' | 'failed' | 'cancelled'
+  response_json: string | null
+  error_message: string | null
 }
 
 export async function createConversation(title = 'New conversation'): Promise<string> {

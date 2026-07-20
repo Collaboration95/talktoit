@@ -68,3 +68,26 @@ def test_local_conversation_search_includes_question_and_result(tmp_path) -> Non
     assert repo.list_conversations("recent runs")[0]["id"] == conversation_id
     assert repo.list_conversations("useful local")[0]["id"] == conversation_id
     assert repo.list_conversations("ranked_workouts")[0]["id"] == conversation_id
+
+
+def test_pending_turn_becomes_completed_or_visible_terminal_state(tmp_path) -> None:
+    repo = AppStateRepository(tmp_path / "state.sqlite")
+    conversation_id = repo.create_conversation("Runs", "ds_fixture")
+    completed = repo.create_pending_turn(conversation_id, "first", "default")
+    failed = repo.create_pending_turn(conversation_id, "second", "fresh")
+    cancelled = repo.create_pending_turn(conversation_id, "third", "default")
+
+    assert repo.finish_turn(
+        completed,
+        response_json='{"template_id":"fallback"}',
+        cache_outcome="deterministic_local",
+        canonical_plan={"tool_name": "get_last_workout"},
+    )
+    assert repo.terminate_turn(failed, state="failed", message="Could not answer")
+    assert repo.terminate_turn(cancelled, state="cancelled", message="Client cancelled")
+
+    turns = repo.get_turns(conversation_id)
+    assert [turn["state"] for turn in turns] == ["completed", "failed", "cancelled"]
+    assert turns[0]["response_json"] == '{"template_id":"fallback"}'
+    assert turns[1]["error_message"] == "Could not answer"
+    assert turns[2]["cache_mode"] == "default"

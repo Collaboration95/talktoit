@@ -82,6 +82,31 @@ describe('ChatView', () => {
     })
   })
 
+  it('restores a persisted failed turn as a visible retryable transcript item', async () => {
+    server.use(
+      http.get('/api/conversations', () =>
+        HttpResponse.json([
+          { id: 'cv_failed', title: 'Retry me', created_at: 'now', updated_at: 'now' },
+        ]),
+      ),
+      http.get('/api/conversations/cv_failed/turns', () =>
+        HttpResponse.json([
+          {
+            question: 'Last run?',
+            state: 'failed',
+            response_json: null,
+            error_message: 'The answer could not be completed.',
+          },
+        ]),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<ChatView />)
+    await user.click(await screen.findByRole('button', { name: 'Retry me' }))
+    expect(await screen.findByText('The answer could not be completed.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
+
   it('renames a selected local conversation without touching health data', async () => {
     server.use(
       http.get('/api/conversations', () =>
