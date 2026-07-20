@@ -18,6 +18,9 @@ class MetricDefinition:
     source_policy: str
     privacy_class: Literal["compact_fact", "local_only"]
     medical_language: Literal["measured_only", "not_medical"]
+    value_kind: Literal["numeric", "category", "summary"] = "numeric"
+    date_semantics: Literal["record_start", "interval_union", "summary_day"] = "record_start"
+    overlap_policy: str = "source_declared"
 
 
 METRIC_CATALOG: dict[str, MetricDefinition] = {
@@ -83,6 +86,9 @@ METRIC_CATALOG: dict[str, MetricDefinition] = {
         "Overlapping intervals are unioned locally to avoid double counting.",
         "local_only",
         "measured_only",
+        value_kind="category",
+        date_semantics="interval_union",
+        overlap_policy="union compatible intervals; stage partitions never exceed asleep union",
     ),
     "activity_rings": MetricDefinition(
         "activity_rings",
@@ -93,6 +99,9 @@ METRIC_CATALOG: dict[str, MetricDefinition] = {
         "Daily summaries remain source-aware.",
         "local_only",
         "not_medical",
+        value_kind="summary",
+        date_semantics="summary_day",
+        overlap_policy="one source summary per local day",
     ),
 }
 

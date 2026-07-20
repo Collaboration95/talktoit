@@ -11,6 +11,9 @@ def test_all_catalog_entries_declare_unit_policy_and_safe_language() -> None:
         assert metric.label
         assert metric.unit
         assert metric.source_policy
+        assert metric.overlap_policy
+        assert metric.value_kind in {"numeric", "category", "summary"}
+        assert metric.date_semantics in {"record_start", "interval_union", "summary_day"}
         assert metric.medical_language in {"measured_only", "not_medical"}
 
 
