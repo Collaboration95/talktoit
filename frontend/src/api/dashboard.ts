@@ -93,14 +93,17 @@ function withScope(path: string, scope: DashboardScope = {}): string {
   return query ? `${path}?${query}` : path
 }
 
-async function checkedFetch(url: string): Promise<Response> {
-  const r = await fetch(url)
+async function checkedFetch(url: string, signal?: AbortSignal): Promise<Response> {
+  const r = await fetch(url, signal ? { signal } : undefined)
   if (!r.ok) throw new Error(`Dashboard request failed: ${r.status} ${r.statusText}`)
   return r
 }
 
-export async function fetchSummary(scope?: DashboardScope): Promise<ActivityRingDay[]> {
-  const r = await checkedFetch(withScope('/api/dashboard/summary', scope))
+export async function fetchSummary(
+  scope?: DashboardScope,
+  signal?: AbortSignal,
+): Promise<ActivityRingDay[]> {
+  const r = await checkedFetch(withScope('/api/dashboard/summary', scope), signal)
   const d = (await r.json()) as { days: ActivityRingDay[] }
   return d.days
 }
@@ -108,13 +111,14 @@ export async function fetchSummary(scope?: DashboardScope): Promise<ActivityRing
 export async function fetchWorkouts(
   scope?: DashboardScope,
   cursor?: string,
+  signal?: AbortSignal,
 ): Promise<WorkoutsPage> {
   const params = new URLSearchParams()
   if (cursor) params.set('cursor', cursor)
   const suffix = params.toString()
   const path = withScope('/api/dashboard/workouts', scope)
   const url = suffix ? `${path}${path.includes('?') ? '&' : '?'}${suffix}` : path
-  const r = await checkedFetch(url)
+  const r = await checkedFetch(url, signal)
   return r.json() as Promise<WorkoutsPage>
 }
 
@@ -122,26 +126,30 @@ export async function fetchTrend(
   endpoint: 'steps' | 'heart' | 'sleep',
   granularity = 'day',
   scope?: DashboardScope,
+  signal?: AbortSignal,
 ): Promise<TrendResponse> {
   const scoped = withScope(`/api/dashboard/${endpoint}`, scope)
   const separator = scoped.includes('?') ? '&' : '?'
-  const r = await checkedFetch(`${scoped}${separator}granularity=${granularity}`)
+  const r = await checkedFetch(`${scoped}${separator}granularity=${granularity}`, signal)
   return r.json() as Promise<TrendResponse>
 }
 
-export async function fetchSleepStages(scope?: DashboardScope): Promise<SleepStagesResponse> {
-  const r = await checkedFetch(withScope('/api/dashboard/sleep/stages', scope))
+export async function fetchSleepStages(
+  scope?: DashboardScope,
+  signal?: AbortSignal,
+): Promise<SleepStagesResponse> {
+  const r = await checkedFetch(withScope('/api/dashboard/sleep/stages', scope), signal)
   return r.json() as Promise<SleepStagesResponse>
 }
 
-export async function fetchCapabilities(): Promise<CapabilityFlag[]> {
-  const r = await checkedFetch('/api/dashboard/capabilities')
+export async function fetchCapabilities(signal?: AbortSignal): Promise<CapabilityFlag[]> {
+  const r = await checkedFetch('/api/dashboard/capabilities', signal)
   const d = (await r.json()) as { capabilities: CapabilityFlag[] }
   return d.capabilities
 }
 
-export async function fetchDatasetStatus(): Promise<DatasetStatus> {
-  const r = await checkedFetch('/api/status')
+export async function fetchDatasetStatus(signal?: AbortSignal): Promise<DatasetStatus> {
+  const r = await checkedFetch('/api/status', signal)
   return r.json() as Promise<DatasetStatus>
 }
 
