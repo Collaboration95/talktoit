@@ -331,6 +331,7 @@ def get_workouts(
                 avg_heart_rate=avg_hr_int,
                 distance_meters=distance_m,
                 energy_burned_kj=energy_kj,
+                source_name=source_name,
                 fingerprint=_workout_fingerprint(
                     activity_type, start_date_utc, duration, source_name
                 ),

@@ -186,6 +186,7 @@ function WorkoutsPanel({
             <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
               <th className="px-3 py-3">Date</th>
               <th className="px-3 py-3">Workout</th>
+              <th className="px-3 py-3">Source</th>
               <th className="px-3 py-3 text-right">Duration</th>
               <th className="px-3 py-3 text-right">Avg HR</th>
               <th className="px-3 py-3 text-right">Distance</th>
@@ -211,6 +212,7 @@ function WorkoutsPanel({
                 <td className="px-3 py-3 font-medium text-gray-900" title={w.activity_type}>
                   {displayActivityType(w.activity_type)}
                 </td>
+                <td className="px-3 py-3 text-gray-500">{w.source_name}</td>
                 <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
                   {w.duration_minutes !== null ? `${formatNumber(w.duration_minutes, 0)} min` : '—'}
                 </td>

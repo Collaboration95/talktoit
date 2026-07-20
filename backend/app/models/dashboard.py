@@ -43,6 +43,7 @@ class WorkoutSummary(BaseModel):
     avg_heart_rate: int | None
     distance_meters: float | None
     energy_burned_kj: float | None
+    source_name: str
     fingerprint: str
 
 

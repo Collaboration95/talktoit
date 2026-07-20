@@ -16,6 +16,7 @@ export interface WorkoutSummary {
   avg_heart_rate: number | null
   distance_meters: number | null
   energy_burned_kj: number | null
+  source_name: string
   fingerprint: string
 }
 
