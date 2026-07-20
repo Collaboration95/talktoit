@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ChatInput } from '@/components/chat-input'
 
@@ -33,11 +33,18 @@ describe('ChatInput', () => {
   it('disables input and button when loading', () => {
     render(<ChatInput onSubmit={vi.fn()} isLoading={true} />)
     expect(screen.getByRole('textbox')).toBeDisabled()
-    expect(screen.getByRole('button')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Thinking…' })).toBeDisabled()
   })
 
   it('shows Thinking… text on the button when loading', () => {
     render(<ChatInput onSubmit={vi.fn()} isLoading={true} />)
-    expect(screen.getByRole('button')).toHaveTextContent('Thinking…')
+    expect(screen.getByRole('button', { name: 'Thinking…' })).toHaveTextContent('Thinking…')
+  })
+
+  it('cancels a loading request with Escape', () => {
+    const onCancel = vi.fn()
+    render(<ChatInput onSubmit={vi.fn()} onCancel={onCancel} isLoading={true} />)
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' })
+    expect(onCancel).toHaveBeenCalledOnce()
   })
 })

@@ -56,6 +56,17 @@ describe('ChatView', () => {
     resolve!(new Response())
   })
 
+  it('cancels an in-flight request while keeping a retryable visible turn', async () => {
+    server.use(http.post('/api/chat', () => new Promise(() => {})))
+    const user = userEvent.setup()
+    render(<ChatView />)
+    await user.type(screen.getByRole('textbox'), 'last run')
+    await user.click(screen.getByRole('button', { name: /ask/i }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByText('This request was cancelled.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
+
   it('renders a workout card template on success with the query shown above', async () => {
     server.use(http.post('/api/chat', () => HttpResponse.json(WORKOUT_ENVELOPE)))
     const user = userEvent.setup()

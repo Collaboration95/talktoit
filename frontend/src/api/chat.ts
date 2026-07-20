@@ -20,7 +20,11 @@ export class ChatApiError extends Error {
 
 export async function askQuestion(
   question: string,
-  options: { conversationId?: string; cacheMode?: 'default' | 'fresh' } = {},
+  options: {
+    conversationId?: string
+    cacheMode?: 'default' | 'fresh'
+    signal?: AbortSignal
+  } = {},
 ): Promise<ChatEnvelope> {
   const response = await fetch('/api/chat', {
     method: 'POST',
@@ -30,6 +34,7 @@ export async function askQuestion(
       ...(options.conversationId ? { conversation_id: options.conversationId } : {}),
       ...(options.cacheMode ? { cache_mode: options.cacheMode } : {}),
     } satisfies ChatRequest),
+    ...(options.signal ? { signal: options.signal } : {}),
   })
   if (!response.ok) {
     throw new ChatApiError(response.status, `Chat request failed: ${response.status}`)

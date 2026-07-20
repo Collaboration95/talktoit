@@ -2,6 +2,7 @@ import { type FormEvent, useRef } from 'react'
 
 interface ChatInputProps {
   onSubmit: (question: string) => void
+  onCancel?: () => void
   isLoading: boolean
 }
 
@@ -9,7 +10,7 @@ interface ChatInputProps {
  * Question input box with submit button.
  * Submits on Enter (without Shift) or button click.
  */
-export function ChatInput({ onSubmit, isLoading }: ChatInputProps) {
+export function ChatInput({ onSubmit, onCancel, isLoading }: ChatInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   function handleSubmit(e: FormEvent) {
@@ -29,6 +30,11 @@ export function ChatInput({ onSubmit, isLoading }: ChatInputProps) {
         placeholder="Ask about your health data…"
         disabled={isLoading}
         onKeyDown={(e) => {
+          if (e.key === 'Escape' && isLoading) {
+            e.preventDefault()
+            onCancel?.()
+            return
+          }
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
             handleSubmit(e)
@@ -43,6 +49,15 @@ export function ChatInput({ onSubmit, isLoading }: ChatInputProps) {
       >
         {isLoading ? 'Thinking…' : 'Ask'}
       </button>
+      {isLoading ? (
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700"
+        >
+          Cancel
+        </button>
+      ) : null}
     </form>
   )
 }

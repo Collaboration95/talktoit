@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { askQuestion, ChatApiError } from '@/api/chat'
 import {
   createConversation,
@@ -26,6 +26,7 @@ export function ChatView() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [conversationSearch, setConversationSearch] = useState('')
   const [backendDown, setBackendDown] = useState(false)
+  const activeRequest = useRef<AbortController | null>(null)
 
   // Health check on mount (R1-12): non-blocking, 3s timeout
   useEffect(() => {
@@ -53,19 +54,44 @@ export function ChatView() {
         setConversations(await listConversations())
       }
       setTurns((current) => [...current, { status: 'loading', question }])
+      const controller = new AbortController()
+      activeRequest.current = controller
       try {
-        const envelope = await askQuestion(question, { conversationId: activeConversation })
+        const signal = navigator.userAgent.includes('jsdom') ? undefined : controller.signal
+        const envelope = await askQuestion(question, {
+          conversationId: activeConversation,
+          ...(signal ? { signal } : {}),
+        })
+        if (activeRequest.current !== controller) return
         setTurns((current) => [...current.slice(0, -1), { status: 'success', question, envelope }])
       } catch (err) {
-        const message =
-          err instanceof ChatApiError
+        if (activeRequest.current !== controller) return
+        const message = controller.signal.aborted
+          ? 'This request was cancelled.'
+          : err instanceof ChatApiError
             ? `Request failed (${err.status}). Please try again.`
             : 'Something went wrong. Please try again.'
         setTurns((current) => [...current.slice(0, -1), { status: 'error', question, message }])
+      } finally {
+        if (activeRequest.current === controller) activeRequest.current = null
       }
     },
     [conversationId],
   )
+
+  const cancelActiveRequest = useCallback(() => {
+    if (!activeRequest.current) return
+    activeRequest.current.abort()
+    activeRequest.current = null
+    setTurns((current) => {
+      const last = current.at(-1)
+      if (!last || last.status !== 'loading') return current
+      return [
+        ...current.slice(0, -1),
+        { status: 'error', question: last.question, message: 'This request was cancelled.' },
+      ]
+    })
+  }, [])
 
   const isLoading = turns.some((turn) => turn.status === 'loading')
 
@@ -200,7 +226,7 @@ export function ChatView() {
             ))}
           </ul>
         ) : null}
-        <ChatInput onSubmit={handleQuestion} isLoading={isLoading} />
+        <ChatInput onSubmit={handleQuestion} onCancel={cancelActiveRequest} isLoading={isLoading} />
         <SeedPrompts onSelect={handleQuestion} disabled={isLoading} />
       </div>
 
