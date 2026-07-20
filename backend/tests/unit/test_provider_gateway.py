@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.llm.provider_gateway import ProviderGateway, ProviderUnavailableError
+from app.llm.provider_gateway import (
+    ProviderGateway,
+    ProviderUnavailableError,
+    provider_mode_from_env,
+)
 
 
 def _client(content: str = "planned") -> MagicMock:
@@ -42,3 +46,8 @@ async def test_gateway_closes_its_owned_client() -> None:
     gateway = ProviderGateway(client)
     await gateway.aclose()
     client.close.assert_awaited_once()
+
+
+def test_invalid_provider_mode_falls_back_to_local_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TTI_PROVIDER_MODE", "unexpected")
+    assert provider_mode_from_env() == "local_only"

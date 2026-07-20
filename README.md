@@ -68,14 +68,21 @@ make run-cli QUESTION="Show my last run" JSON=1
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `EXPORT_PATH` | for ingest | — | Path to your `export.xml` |
-| `LLM_API_KEY` | yes | — | API key for your LLM provider |
+| `LLM_API_KEY` | only remote modes | — | API key for your LLM provider |
 | `LLM_BASE_URL` | no | Groq | OpenAI-compatible base URL |
 | `LLM_MODEL` | no | `llama-3.3-70b-versatile` | Model name |
+| `TTI_PROVIDER_MODE` | no | `local_only` | `local_only`, `remote_planning`, or `remote_planning_and_narration` |
 | `TTI_DB_PATH` | no | `backend/data/health.duckdb` | Path to the DuckDB file |
 
 ## Privacy
 
-Your health data never leaves your machine. The LLM only sees pre-aggregated summaries — never raw records. The database is a local file. No telemetry, no accounts.
+By default, `TTI_PROVIDER_MODE=local_only`: health data and questions stay on your
+machine, and supported questions use deterministic local answers. Remote modes are
+an explicit opt-in. `remote_planning` sends the question plus a compact local data
+profile to the configured provider to choose a tool; `remote_planning_and_narration`
+also sends a rounded, compact result to write a narrative. Neither mode sends raw
+health records or route geometry. The database is a local file; there is no telemetry
+or account system.
 
 ## License
 
