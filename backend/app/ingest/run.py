@@ -108,7 +108,10 @@ def main() -> None:
     )
     os.close(staging_fd)
     staging_path = Path(staging_name)
+    staging_path.unlink()
     db = connect(staging_path)
+    parser_version = "legacy-v1" if legacy_mode else "v2"
+    manifest_warnings: tuple[str, ...] = ()
     try:
         if legacy_mode:
             # Use the original lxml-based parser
@@ -133,16 +136,50 @@ def main() -> None:
             }
         else:
             # Use the new V2 parallel byte-scan parser
+            from app.ingest.compatibility import V2CompatibilityError
             from app.ingest.coordinator import ingest_v2
 
             logger.info("Starting V2 parallel ingestion...")
-            if workers_override:
-                stats = ingest_v2(xml_path=xml_path, db=db, n_workers=workers_override)
-            else:
-                stats = ingest_v2(xml_path=xml_path, db=db)
+            try:
+                if workers_override:
+                    stats = ingest_v2(xml_path=xml_path, db=db, n_workers=workers_override)
+                else:
+                    stats = ingest_v2(xml_path=xml_path, db=db)
+            except V2CompatibilityError as error:
+                if os.environ.get("TTI_INGEST_FALLBACK_LEGACY", "0") != "1":
+                    raise
+                logger.warning("V2 compatibility gate failed; retrying legacy in fresh staging")
+                db.close()
+                staging_path.unlink(missing_ok=True)
+                fallback_fd, fallback_name = tempfile.mkstemp(
+                    prefix="tti-import-", suffix=".duckdb", dir=target_path.parent
+                )
+                os.close(fallback_fd)
+                staging_path = Path(fallback_name)
+                staging_path.unlink()
+                db = connect(staging_path)
+                from app.ingest.parser import ingest
+
+                result = ingest(str(xml_path), db)
+                stats = {
+                    name: getattr(result, name)
+                    for name in (
+                        "records",
+                        "record_metadata",
+                        "hrv_beats",
+                        "workouts",
+                        "workout_events",
+                        "workout_statistics",
+                        "workout_routes",
+                        "workout_metadata",
+                        "activity_summaries",
+                    )
+                }
+                parser_version = "legacy-v1-fallback"
+                manifest_warnings = (f"v2 compatibility fallback: {error}",)
 
             # Print summary in a format similar to legacy parser
-            print("\nIngestion Summary (V2):")
+            print(f"\nIngestion Summary ({parser_version}):")
             print(f"  Records: {stats['records']:,}")
             print(f"  Record metadata: {stats['record_metadata']:,}")
             print(f"  HRV beats: {stats['hrv_beats']:,}")
@@ -152,10 +189,11 @@ def main() -> None:
             print(f"  Workout routes: {stats['workout_routes']:,}")
             print(f"  Workout metadata: {stats['workout_metadata']:,}")
             print(f"  Activity summaries: {stats['activity_summaries']:,}")
-            print("\nTiming:")
-            print(f"  Parse phase: {stats['parse_time_seconds']:.2f}s")
-            print(f"  Load phase: {stats['load_time_seconds']:.2f}s")
-            print(f"  Total: {stats['total_time_seconds']:.2f}s")
+            if parser_version == "v2":
+                print("\nTiming:")
+                print(f"  Parse phase: {stats['parse_time_seconds']:.2f}s")
+                print(f"  Load phase: {stats['load_time_seconds']:.2f}s")
+                print(f"  Total: {stats['total_time_seconds']:.2f}s")
     except Exception:
         staging_path.unlink(missing_ok=True)
         raise
@@ -172,12 +210,13 @@ def main() -> None:
         profile_conn.close()
     AppStateRepository().activate_file(
         xml_path,
-        parser_version="legacy-v1" if legacy_mode else "v2",
+        parser_version=parser_version,
         schema_version="1",
         worker_count=workers_override or (int(os.environ.get("TTI_INGEST_WORKERS", "0")) or 0),
         coverage_start=profile.first_date.isoformat() if profile.first_date else None,
         coverage_end=profile.latest_date.isoformat() if profile.latest_date else None,
         counts={key: int(value) for key, value in stats.items() if isinstance(value, int)},
+        warnings=manifest_warnings,
     )
 
 
