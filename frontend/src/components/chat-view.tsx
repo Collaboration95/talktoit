@@ -156,6 +156,10 @@ export function ChatView() {
     [conversationSearch],
   )
 
+  const copyAnswer = useCallback((narrative: string) => {
+    void navigator.clipboard?.writeText(narrative)
+  }, [])
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
       <header className="mb-8 text-center">
@@ -247,16 +251,25 @@ export function ChatView() {
             ) : null}
             {turn.status === 'success' ? <TemplateDispatch envelope={turn.envelope} /> : null}
             {turn.status === 'success' ? (
-              <p className="text-xs text-gray-500">
-                {turn.envelope.metadata?.provenance === 'cached'
-                  ? 'Cached local answer'
-                  : turn.envelope.metadata?.provenance === 'deterministic_local'
-                    ? 'Deterministic local answer'
-                    : 'Generated answer'}
-                {turn.envelope.metadata?.coverage_start && turn.envelope.metadata?.coverage_end
-                  ? ` · data coverage ${turn.envelope.metadata.coverage_start} to ${turn.envelope.metadata.coverage_end}`
-                  : ''}
-              </p>
+              <div className="flex items-center gap-3 text-xs text-gray-500">
+                <p>
+                  {turn.envelope.metadata?.provenance === 'cached'
+                    ? 'Cached local answer'
+                    : turn.envelope.metadata?.provenance === 'deterministic_local'
+                      ? 'Deterministic local answer'
+                      : 'Generated answer'}
+                  {turn.envelope.metadata?.coverage_start && turn.envelope.metadata?.coverage_end
+                    ? ` · data coverage ${turn.envelope.metadata.coverage_start} to ${turn.envelope.metadata.coverage_end}`
+                    : ''}
+                </p>
+                <button
+                  type="button"
+                  className="text-blue-600"
+                  onClick={() => copyAnswer(turn.envelope.narrative)}
+                >
+                  Copy answer
+                </button>
+              </div>
             ) : null}
             {turn.status === 'error' ? (
               <div className="flex items-center gap-3">
