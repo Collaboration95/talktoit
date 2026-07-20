@@ -10,7 +10,10 @@ import sys
 from pathlib import Path
 
 from app.db.connection import connect
+from app.db.data_profile import get_data_profile
+from app.llm.cache_keys import build_cache_key
 from app.llm.client import get_model, make_client
+from app.llm.local_planner import plan_local_question
 from app.llm.orchestrator import ChatOrchestrator
 from app.llm.provider_gateway import ProviderGateway
 from app.models.chat import ChatResponse
@@ -45,6 +48,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--conversation-id",
         help="Append the result to an existing local conversation without a web server.",
     )
+    parser.add_argument(
+        "--cache-mode",
+        choices=("default", "fresh"),
+        default="default",
+        help="Use fresh to bypass local cached answers while keeping conversation history.",
+    )
     return parser.parse_args(argv)
 
 
@@ -71,27 +80,56 @@ def _resolve_question(question: str | None) -> str:
 
 
 async def _ask_question(
-    question: str, db_path: Path | None = None, conversation_id: str | None = None
+    question: str,
+    db_path: Path | None = None,
+    conversation_id: str | None = None,
+    cache_mode: str = "default",
 ) -> ChatResponse:
-    """Run one question against the orchestrator and return the response."""
+    """Run one question through the same local cache and orchestration path as HTTP."""
     conn = connect(db_path, read_only=True)
     gateway = ProviderGateway(make_client(), model=get_model())
     repository = AppStateRepository()
     turn_id = (
-        repository.create_pending_turn(conversation_id, question, "default")
+        repository.create_pending_turn(conversation_id, question, cache_mode)
         if conversation_id
         else None
     )
     try:
-        orchestrator = ChatOrchestrator(
-            client=gateway.client, conn=conn, model=get_model(), gateway=gateway
+        active = repository.get_active()
+        exact_key = build_cache_key("exact", question)
+        local_plan = plan_local_question(question, get_data_profile(conn))
+        canonical_key = build_cache_key("canonical", local_plan) if local_plan else None
+        cached = (
+            repository.get_cached_response(exact_key, active.id)
+            if active is not None and cache_mode != "fresh"
+            else None
         )
-        response = await orchestrator.answer(question)
+        if cached is None and active is not None and canonical_key and cache_mode != "fresh":
+            cached = repository.get_cached_response(canonical_key, active.id)
+        if cached is not None:
+            response = ChatResponse.model_validate_json(cached)
+            response.metadata.provenance = "cached"
+        else:
+            orchestrator = ChatOrchestrator(
+                client=gateway.client, conn=conn, model=get_model(), gateway=gateway
+            )
+            response = await orchestrator.answer(question)
+        if active is not None:
+            response.metadata.dataset_version_id = active.id
+            response.metadata.coverage_start = active.coverage_start
+            response.metadata.coverage_end = active.coverage_end
+            response.metadata.generated_at = active.activated_at
+            if cache_mode != "fresh":
+                encoded = response.model_dump_json()
+                repository.put_cached_response(exact_key, active.id, encoded)
+                if canonical_key:
+                    repository.put_cached_response(canonical_key, active.id, encoded)
         if turn_id:
             repository.finish_turn(
                 turn_id,
                 response_json=response.model_dump_json(),
                 cache_outcome=response.metadata.provenance,
+                canonical_plan=local_plan,
             )
         return response
     except Exception:
@@ -123,7 +161,12 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO if args.verbose else logging.CRITICAL)
     question = _resolve_question(args.question)
     response = asyncio.run(
-        _ask_question(question, db_path=args.db_path, conversation_id=args.conversation_id)
+        _ask_question(
+            question,
+            db_path=args.db_path,
+            conversation_id=args.conversation_id,
+            cache_mode=args.cache_mode,
+        )
     )
     _print_response(response, args.json)
     return 0
