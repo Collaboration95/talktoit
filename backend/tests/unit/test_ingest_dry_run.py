@@ -17,3 +17,12 @@ def test_dry_run_report_is_json_and_does_not_open_database(monkeypatch, tmp_path
     assert report["activation"] == "not_started"
     assert report["source_size_bytes"] == export.stat().st_size
     assert report["resolved_workers"] == 1
+    assert report["quality_checks"] == [
+        "schema",
+        "reconciliation",
+        "canonical-counts",
+        "typed-category-capture",
+        "child-relation-integrity",
+        "staged-activation",
+        "manifest",
+    ]

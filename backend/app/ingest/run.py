@@ -79,7 +79,15 @@ def main() -> None:
                     "source_size_bytes": xml_path.stat().st_size,
                     "resolved_workers": resolved_workers,
                     "activation": "not_started",
-                    "quality_checks": ["schema", "reconciliation", "manifest"],
+                    "quality_checks": [
+                        "schema",
+                        "reconciliation",
+                        "canonical-counts",
+                        "typed-category-capture",
+                        "child-relation-integrity",
+                        "staged-activation",
+                        "manifest",
+                    ],
                 },
                 sort_keys=True,
             )
