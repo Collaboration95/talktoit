@@ -1,6 +1,12 @@
 import { useState, useCallback, useEffect } from 'react'
 import { askQuestion, ChatApiError } from '@/api/chat'
-import { createConversation, listConversations, type Conversation } from '@/api/conversations'
+import {
+  createConversation,
+  deleteConversation,
+  getConversationTurns,
+  listConversations,
+  type Conversation,
+} from '@/api/conversations'
 import type { ChatEnvelope } from '@/types/templates'
 import { TemplateDispatch } from '@/components/template-dispatch'
 import { ChatInput } from '@/components/chat-input'
@@ -60,6 +66,32 @@ export function ChatView() {
 
   const isLoading = turns.some((turn) => turn.status === 'loading')
 
+  const selectConversation = useCallback(async (id: string) => {
+    const stored = await getConversationTurns(id)
+    setConversationId(id)
+    setTurns(
+      stored.map((turn) => ({
+        status: 'success' as const,
+        question: turn.question,
+        envelope: JSON.parse(turn.response_json) as ChatEnvelope,
+      })),
+    )
+  }, [])
+
+  const removeConversation = useCallback(
+    async (id: string) => {
+      if (!window.confirm('Delete this local conversation? Health data will not be affected.'))
+        return
+      await deleteConversation(id)
+      if (conversationId === id) {
+        setConversationId(undefined)
+        setTurns([])
+      }
+      setConversations(await listConversations())
+    },
+    [conversationId],
+  )
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
       <header className="mb-8 text-center">
@@ -87,6 +119,27 @@ export function ChatView() {
             New conversation
           </button>
         </div>
+        {conversations.length > 0 ? (
+          <ul className="flex flex-wrap gap-2" aria-label="Local conversations">
+            {conversations.map((conversation) => (
+              <li key={conversation.id}>
+                <button
+                  onClick={() => void selectConversation(conversation.id)}
+                  className="text-sm text-blue-600"
+                >
+                  {conversation.title}
+                </button>
+                <button
+                  onClick={() => void removeConversation(conversation.id)}
+                  className="ml-1 text-xs text-red-600"
+                  aria-label={`Delete ${conversation.title}`}
+                >
+                  Delete
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <ChatInput onSubmit={handleQuestion} isLoading={isLoading} />
         <SeedPrompts onSelect={handleQuestion} disabled={isLoading} />
       </div>

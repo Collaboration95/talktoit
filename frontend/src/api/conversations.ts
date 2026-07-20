@@ -5,6 +5,12 @@ export interface Conversation {
   updated_at: string
 }
 
+interface StoredTurn {
+  question: string
+  state: 'completed'
+  response_json: string
+}
+
 export async function createConversation(title = 'New conversation'): Promise<string> {
   const response = await fetch('/api/conversations', {
     method: 'POST',
@@ -19,4 +25,15 @@ export async function listConversations(): Promise<Conversation[]> {
   const response = await fetch('/api/conversations')
   if (!response.ok) throw new Error('Could not load conversations')
   return response.json() as Promise<Conversation[]>
+}
+
+export async function getConversationTurns(id: string): Promise<StoredTurn[]> {
+  const response = await fetch(`/api/conversations/${encodeURIComponent(id)}/turns`)
+  if (!response.ok) throw new Error('Could not load conversation')
+  return response.json() as Promise<StoredTurn[]>
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+  const response = await fetch(`/api/conversations/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (!response.ok) throw new Error('Could not delete conversation')
 }
