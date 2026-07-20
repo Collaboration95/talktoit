@@ -6,6 +6,7 @@ import {
   deleteConversation,
   getConversationTurns,
   listConversations,
+  renameConversation,
   type Conversation,
 } from '@/api/conversations'
 import type { ChatEnvelope } from '@/types/templates'
@@ -106,6 +107,16 @@ export function ChatView() {
     [conversationId],
   )
 
+  const renameConversationFromWorkspace = useCallback(
+    async (conversation: Conversation) => {
+      const title = window.prompt('Rename this local conversation', conversation.title)?.trim()
+      if (!title || title === conversation.title) return
+      await renameConversation(conversation.id, title)
+      setConversations(await listConversations(conversationSearch))
+    },
+    [conversationSearch],
+  )
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
       <header className="mb-8 text-center">
@@ -150,6 +161,13 @@ export function ChatView() {
                   className="text-sm text-blue-600"
                 >
                   {conversation.title}
+                </button>
+                <button
+                  onClick={() => void renameConversationFromWorkspace(conversation)}
+                  className="ml-1 text-xs text-gray-600"
+                  aria-label={`Rename ${conversation.title}`}
+                >
+                  Rename
                 </button>
                 <button
                   onClick={() => void archiveConversationFromWorkspace(conversation.id)}

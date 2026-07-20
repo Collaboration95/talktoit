@@ -34,6 +34,15 @@ export async function getConversationTurns(id: string): Promise<StoredTurn[]> {
   return response.json() as Promise<StoredTurn[]>
 }
 
+export async function renameConversation(id: string, title: string): Promise<void> {
+  const response = await fetch(`/api/conversations/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  })
+  if (!response.ok) throw new Error('Could not rename conversation')
+}
+
 export async function deleteConversation(id: string): Promise<void> {
   const response = await fetch(`/api/conversations/${encodeURIComponent(id)}`, { method: 'DELETE' })
   if (!response.ok) throw new Error('Could not delete conversation')
