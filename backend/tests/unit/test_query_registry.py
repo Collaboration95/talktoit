@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from app.analytics.registry import (
     QUERY_REGISTRY,
     execute_activity_summary,
+    execute_period_summary,
     get_query_definition,
     validate_query_catalogue,
 )
@@ -60,3 +61,14 @@ def test_activity_summary_executor_validates_absolute_scope_and_returns_facts() 
     ]
     with pytest.raises(ValueError, match="absolute start and end"):
         execute_activity_summary(conn, {})
+
+
+def test_period_summary_executor_validates_and_returns_template_facts() -> None:
+    conn = duckdb.connect(":memory:")
+    conn.execute(SQL_CREATE_TABLES)
+    result = execute_period_summary(
+        conn, {"start": "2024-01-01", "end": "2024-01-07", "title": "Week"}
+    )
+    assert result.title == "Week"
+    with pytest.raises(ValidationError):
+        execute_period_summary(conn, {"start": "not-a-date", "end": "2024-01-07"})

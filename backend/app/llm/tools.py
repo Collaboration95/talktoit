@@ -11,7 +11,7 @@ import json
 from datetime import date
 from typing import TYPE_CHECKING, Any, Literal
 
-from app.analytics.registry import execute_metric_trend
+from app.analytics.registry import execute_metric_trend, execute_period_summary
 from app.db import queries
 from app.db.data_profile import display_activity_type, resolve_activity_type
 from app.models.templates import FallbackData
@@ -313,7 +313,7 @@ def _tool_get_period_summary(
     start = date.fromisoformat(args["start_date"])
     end = date.fromisoformat(args["end_date"])
     title: str | None = args.get("title")
-    result = queries.get_period_summary(conn, start, end, title=title)
+    result = execute_period_summary(conn, {"start": start, "end": end, "title": title})
     return ("period_summary", result.model_dump(mode="json"))
 
 

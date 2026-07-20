@@ -9,7 +9,7 @@ from typing import Literal, cast
 from pydantic import BaseModel, Field
 
 from app.analytics.metric_catalog import METRIC_CATALOG
-from app.models.templates import TrendChartData
+from app.models.templates import PeriodSummaryData, TrendChartData
 
 _SQL_ACTIVITY_SUMMARY = """
 SELECT date_components, active_energy_burned, active_energy_burned_goal,
@@ -62,11 +62,11 @@ class WorkoutDetailInput(BaseModel):
 
 
 class PeriodSummaryInput(BaseModel):
-    """Validated training-summary period and optional activity scope."""
+    """Validated training-summary period and display title."""
 
     start: date
     end: date
-    activity_type: str | None = None
+    title: str | None = Field(default=None, max_length=160)
 
 
 class MetricTrendInput(BaseModel):
@@ -148,7 +148,7 @@ QUERY_REGISTRY: dict[str, QueryDefinition] = {
         "zero_summary",
         "success",
         "unavailable",
-        ("start", "end", "activity_type"),
+        ("start", "end", "title"),
         ("workouts",),
         "Workout statistics are normalized from the selected local workout rows.",
         "Each workout contributes once to a period summary.",
@@ -225,6 +225,14 @@ def execute_metric_trend(conn: object, values: dict[str, object]) -> TrendChartD
         args.end,
         aggregation=args.aggregation,
     )
+
+
+def execute_period_summary(conn: object, values: dict[str, object]) -> PeriodSummaryData:
+    """Validate and execute the registry-owned training period summary."""
+    from app.db import queries
+
+    args = PeriodSummaryInput.model_validate(values)
+    return queries.get_period_summary(conn, args.start, args.end, title=args.title)  # type: ignore[arg-type]
 
 
 def execute_activity_summary(conn: object, values: dict[str, object]) -> list[ActivitySummaryRow]:
