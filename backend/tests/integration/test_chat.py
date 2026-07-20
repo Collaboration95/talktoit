@@ -95,6 +95,21 @@ async def test_get_last_workout_returns_workout_card(
     client.chat.completions.create.assert_not_awaited()
 
 
+async def test_validated_followup_plan_override_stays_local(
+    db: duckdb.DuckDBPyConnection,
+) -> None:
+    """A resolved local follow-up plan must not ask the optional provider again."""
+    client = _make_stub_client("get_fallback_answer", {"text": "unused"}, "unused")
+    orchestrator = ChatOrchestrator(client=client, conn=db)  # type: ignore[arg-type]
+    response = await orchestrator.answer(
+        "Compare that to prior period",
+        plan_override={"tool_name": "get_last_workout", "arguments": {"activity_type": "Running"}},
+    )
+    assert response.template_id == "workout_card"
+    assert response.metadata.provenance == "deterministic_local"
+    client.chat.completions.create.assert_not_awaited()
+
+
 async def test_narrative_prompt_uses_compact_tool_result(
     db: duckdb.DuckDBPyConnection,
     monkeypatch: pytest.MonkeyPatch,

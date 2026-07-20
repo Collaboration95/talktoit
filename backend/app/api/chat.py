@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from app.db.connection import connect
 from app.db.data_profile import get_data_profile
 from app.llm.client import get_model
+from app.llm.followups import FollowupContext, resolve_followup
 from app.llm.local_planner import plan_local_question
 from app.llm.orchestrator import ChatOrchestrator
 from app.llm.provider_gateway import ProviderGateway, make_provider_gateway
@@ -68,6 +69,27 @@ async def chat(
         active = repository.get_active()
         cache_key = hashlib.sha256(request.question.strip().casefold().encode()).hexdigest()
         local_plan = plan_local_question(request.question, get_data_profile(conn))
+        followup_plan = None
+        if request.parent_turn_id and active is not None:
+            parent = repository.get_turn(request.parent_turn_id)
+            raw_plan = parent.get("canonical_plan_json") if parent else None
+            if isinstance(raw_plan, str):
+                try:
+                    plan = json.loads(raw_plan)
+                    if isinstance(plan, dict):
+                        followup_plan = resolve_followup(
+                            request.question,
+                            [
+                                FollowupContext(
+                                    active.id,
+                                    str(plan.get("tool_name", "")),
+                                    dict(plan.get("arguments", {})),
+                                )
+                            ],
+                            active.id,
+                        )
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    followup_plan = None
         canonical_key = (
             hashlib.sha256(json.dumps(local_plan, sort_keys=True).encode()).hexdigest()
             if local_plan is not None
@@ -89,7 +111,7 @@ async def chat(
             response = ChatResponse.model_validate_json(cached)
             response.metadata.provenance = "cached"
         else:
-            response = await orchestrator.answer(request.question)
+            response = await orchestrator.answer(request.question, plan_override=followup_plan)
         if active is not None:
             response.metadata.dataset_version_id = active.id
             response.metadata.coverage_start = active.coverage_start

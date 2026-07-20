@@ -316,6 +316,13 @@ class AppStateRepository:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def get_turn(self, turn_id: str) -> dict[str, object] | None:
+        """Return one local transcript turn for an explicit follow-up reference."""
+        self.migrate()
+        with self._connection() as conn:
+            row = conn.execute("SELECT * FROM turns WHERE id = ?", (turn_id,)).fetchone()
+        return dict(row) if row else None
+
     def rename_conversation(self, conversation_id: str, title: str) -> bool:
         """Rename only the selected local conversation."""
         self.migrate()

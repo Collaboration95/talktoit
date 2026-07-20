@@ -187,7 +187,9 @@ class ChatOrchestrator:
         self.model = model
         self.gateway = gateway
 
-    async def answer(self, question: str) -> ChatResponse:
+    async def answer(
+        self, question: str, plan_override: dict[str, Any] | None = None
+    ) -> ChatResponse:
         """Process a question and return a structured chat response.
 
         Sends the question to the LLM with all tool schemas. The LLM must
@@ -196,6 +198,8 @@ class ChatOrchestrator:
 
         Args:
             question: The natural-language health question from the user.
+            plan_override: Optional validated deterministic plan from a local
+                follow-up resolver.
 
         Returns:
             A :class:`ChatResponse` envelope with ``template_id``, ``data``,
@@ -223,7 +227,9 @@ class ChatOrchestrator:
         # ── Stage 1: deterministic local plan ────────────────────────────────
         # A recognised question must not touch the optional provider. This is
         # both the privacy boundary and the fast path for ordinary use.
-        local_plan = _validated_plan(plan_local_question(question, data_profile))
+        local_plan = _validated_plan(plan_override) or _validated_plan(
+            plan_local_question(question, data_profile)
+        )
         if local_plan is not None:
             tool_name, args = local_plan
             try:
