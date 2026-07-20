@@ -86,6 +86,26 @@ describe('ChatView', () => {
     expect(screen.getByText(/Deterministic local answer · dataset ds_fixture/)).toBeInTheDocument()
   })
 
+  it('collapses answer details without removing the query or stored answer', async () => {
+    server.use(http.post('/api/chat', () => HttpResponse.json(WORKOUT_ENVELOPE)))
+    const user = userEvent.setup()
+    render(<ChatView />)
+    await user.type(screen.getByRole('textbox'), 'last run')
+    await user.click(screen.getByRole('button', { name: /ask/i }))
+    await screen.findByText('Your last run was on June 5.')
+
+    await user.click(screen.getByRole('button', { name: 'Hide answer details' }))
+    expect(screen.getByText('last run')).toBeInTheDocument()
+    expect(screen.queryByText('Your last run was on June 5.')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Show answer details' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Show answer details' }))
+    expect(await screen.findByText('Your last run was on June 5.')).toBeInTheDocument()
+  })
+
   it('renders error state on API failure', async () => {
     server.use(http.post('/api/chat', () => HttpResponse.json({}, { status: 500 })))
     const user = userEvent.setup()

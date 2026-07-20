@@ -15,9 +15,9 @@ import { ChatInput } from '@/components/chat-input'
 import { SeedPrompts } from '@/components/seed-prompts'
 
 type ChatTurn =
-  | { status: 'loading'; question: string }
-  | { status: 'success'; question: string; envelope: ChatEnvelope }
-  | { status: 'error'; question: string; message: string }
+  | { id: string; status: 'loading'; question: string }
+  | { id: string; status: 'success'; question: string; envelope: ChatEnvelope; expanded: boolean }
+  | { id: string; status: 'error'; question: string; message: string }
 
 /** Top-level chat page component: input → loading → template result. */
 export function ChatView() {
@@ -27,6 +27,12 @@ export function ChatView() {
   const [conversationSearch, setConversationSearch] = useState('')
   const [backendDown, setBackendDown] = useState(false)
   const activeRequest = useRef<AbortController | null>(null)
+  const nextTurnId = useRef(0)
+
+  const newTurnId = () => {
+    nextTurnId.current += 1
+    return `local-turn-${nextTurnId.current}`
+  }
 
   // Health check on mount (R1-12): non-blocking, 3s timeout
   useEffect(() => {
@@ -53,7 +59,8 @@ export function ChatView() {
         setConversationId(activeConversation)
         setConversations(await listConversations())
       }
-      setTurns((current) => [...current, { status: 'loading', question }])
+      const turnId = newTurnId()
+      setTurns((current) => [...current, { id: turnId, status: 'loading', question }])
       const controller = new AbortController()
       activeRequest.current = controller
       try {
@@ -63,7 +70,10 @@ export function ChatView() {
           ...(signal ? { signal } : {}),
         })
         if (activeRequest.current !== controller) return
-        setTurns((current) => [...current.slice(0, -1), { status: 'success', question, envelope }])
+        setTurns((current) => [
+          ...current.slice(0, -1),
+          { id: turnId, status: 'success', question, envelope, expanded: true },
+        ])
       } catch (err) {
         if (activeRequest.current !== controller) return
         const message = controller.signal.aborted
@@ -71,7 +81,10 @@ export function ChatView() {
           : err instanceof ChatApiError
             ? `Request failed (${err.status}). Please try again.`
             : 'Something went wrong. Please try again.'
-        setTurns((current) => [...current.slice(0, -1), { status: 'error', question, message }])
+        setTurns((current) => [
+          ...current.slice(0, -1),
+          { id: turnId, status: 'error', question, message },
+        ])
       } finally {
         if (activeRequest.current === controller) activeRequest.current = null
       }
@@ -88,7 +101,12 @@ export function ChatView() {
       if (!last || last.status !== 'loading') return current
       return [
         ...current.slice(0, -1),
-        { status: 'error', question: last.question, message: 'This request was cancelled.' },
+        {
+          id: last.id,
+          status: 'error',
+          question: last.question,
+          message: 'This request was cancelled.',
+        },
       ]
     })
   }, [])
@@ -99,15 +117,19 @@ export function ChatView() {
     const stored = await getConversationTurns(id)
     setConversationId(id)
     setTurns(
-      stored.map((turn) => {
+      stored.map((turn, index) => {
+        const id = `stored-turn-${index}`
         if (turn.state === 'completed' && turn.response_json) {
           return {
+            id,
             status: 'success' as const,
             question: turn.question,
             envelope: JSON.parse(turn.response_json) as ChatEnvelope,
+            expanded: index === stored.length - 1,
           }
         }
         return {
+          id,
           status: 'error' as const,
           question: turn.question,
           message:
@@ -158,6 +180,16 @@ export function ChatView() {
 
   const copyAnswer = useCallback((narrative: string) => {
     void navigator.clipboard?.writeText(narrative)
+  }, [])
+
+  const toggleTurnDetails = useCallback((turnId: string) => {
+    setTurns((current) =>
+      current.map((turn) =>
+        turn.id === turnId && turn.status === 'success'
+          ? { ...turn, expanded: !turn.expanded }
+          : turn,
+      ),
+    )
   }, [])
 
   return (
@@ -241,7 +273,7 @@ export function ChatView() {
           </p>
         )}
         {turns.map((turn) => (
-          <div key={turn.question} className="space-y-4">
+          <div key={turn.id} className="space-y-4">
             <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
               <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Query</p>
               <p className="mt-0.5 text-sm text-gray-700">{turn.question}</p>
@@ -249,8 +281,20 @@ export function ChatView() {
             {turn.status === 'loading' ? (
               <p className="text-sm text-gray-500">Thinking about: {turn.question}</p>
             ) : null}
-            {turn.status === 'success' ? <TemplateDispatch envelope={turn.envelope} /> : null}
             {turn.status === 'success' ? (
+              <button
+                type="button"
+                className="text-sm text-blue-600"
+                onClick={() => toggleTurnDetails(turn.id)}
+                aria-expanded={turn.expanded}
+              >
+                {turn.expanded ? 'Hide answer details' : 'Show answer details'}
+              </button>
+            ) : null}
+            {turn.status === 'success' && turn.expanded ? (
+              <TemplateDispatch envelope={turn.envelope} />
+            ) : null}
+            {turn.status === 'success' && turn.expanded ? (
               <div className="flex items-center gap-3 text-xs text-gray-500">
                 <p>
                   {turn.envelope.metadata?.provenance === 'cached'
