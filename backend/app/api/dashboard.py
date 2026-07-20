@@ -514,20 +514,36 @@ def get_sleep_stages(
         if "Asleep" not in label:
             continue
         interval = (start_dt, end_dt)
+        # The total is the compatible union of every measured asleep interval,
+        # including stage-less observations.  Stage rows are only a partition
+        # when the source actually supplies a recognized stage label.
+        asleep.append(interval)
         for stage in ("Core", "Deep", "REM"):
             if label.endswith(stage):
                 intervals.setdefault(stage.lower(), []).append(interval)
+    total_asleep_hours = round(_union_interval_hours(asleep), 2)
     stages = {stage: round(_union_interval_hours(values), 2) for stage, values in intervals.items()}
     if not stages:
         return SleepStagesResponse(
-            total_asleep_hours=round(_union_interval_hours(asleep), 2),
+            total_asleep_hours=total_asleep_hours,
             stages_hours={},
             stage_data_available=False,
             message="Sleep stage labels are not available in this imported data.",
             resource=_resource_metadata(conn, start_date, end_date, started_at, bool(asleep)),
         )
+    if sum(stages.values()) > total_asleep_hours:
+        return SleepStagesResponse(
+            total_asleep_hours=total_asleep_hours,
+            stages_hours={},
+            stage_data_available=False,
+            message=(
+                "Sleep stage intervals overlap, so this import cannot provide a safe "
+                "stage-duration partition."
+            ),
+            resource=_resource_metadata(conn, start_date, end_date, started_at, bool(asleep)),
+        )
     return SleepStagesResponse(
-        total_asleep_hours=round(_union_interval_hours(asleep), 2),
+        total_asleep_hours=total_asleep_hours,
         stages_hours=stages,
         stage_data_available=True,
         message=(
