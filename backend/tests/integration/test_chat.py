@@ -316,18 +316,19 @@ async def test_chat_endpoint_integration(
 
     app.dependency_overrides[_get_conn] = lambda: (yield db)
 
-    # Patch make_client so the router uses our stub
-    import app.api.chat as chat_module
+    # Override the app-owned gateway with the deterministic provider stub.
+    from app.api.chat import _get_gateway
+    from app.llm.provider_gateway import ProviderGateway
 
-    original_make_client = chat_module.make_client
-    chat_module.make_client = lambda: stub_client  # type: ignore[assignment]
+    app.dependency_overrides[_get_gateway] = lambda: ProviderGateway(
+        stub_client, mode="remote_planning_and_narration"
+    )
 
     try:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post("/api/chat", json={"question": "show my last run"})
     finally:
-        chat_module.make_client = original_make_client  # type: ignore[assignment]
         app.dependency_overrides.clear()
 
     assert resp.status_code == 200

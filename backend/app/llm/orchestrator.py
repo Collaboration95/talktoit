@@ -7,10 +7,11 @@ unknown tool names, tool errors, and empty data.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import date
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import openai
 
@@ -19,6 +20,7 @@ from app.db.queries import get_fallback
 from app.llm.client import DEFAULT_MODEL
 from app.llm.local_planner import plan_local_question
 from app.llm.prompt_format import compact_tool_result_for_llm
+from app.llm.provider_gateway import ProviderGateway, ProviderUnavailableError
 from app.llm.tools import TOOL_NAMES, dispatch_tool, normalize_tool_name, render_tool_catalog
 from app.models.chat import ChatResponse, ResponseMetadata
 from app.models.templates import FallbackData
@@ -170,6 +172,7 @@ class ChatOrchestrator:
         client: openai.AsyncOpenAI,
         conn: duckdb.DuckDBPyConnection,
         model: str = DEFAULT_MODEL,
+        gateway: ProviderGateway | None = None,
     ) -> None:
         """Initialise the orchestrator.
 
@@ -177,10 +180,12 @@ class ChatOrchestrator:
             client: An async OpenAI-compatible client (injectable for tests).
             conn: Open DuckDB connection.
             model: LLM model identifier.
+            gateway: Optional app-owned provider lifecycle gateway.
         """
         self.client = client
         self.conn = conn
         self.model = model
+        self.gateway = gateway
 
     async def answer(self, question: str) -> ChatResponse:
         """Process a question and return a structured chat response.
@@ -230,17 +235,10 @@ class ChatOrchestrator:
         # ── Stage 2: optional remote plan for unresolved wording ────────────
         plan: dict[str, Any] | None = None
         try:
-            planner_response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=planner_messages,  # type: ignore[arg-type]
-                temperature=0,
-            )
-            if planner_response.choices:
-                plan = _parse_tool_plan(planner_response.choices[0].message.content)
-            else:
-                logger.warning("LLM planner returned no choices")
-        except Exception:
-            logger.exception("LLM planner request failed")
+            planner_content = await self._complete_provider("planning", planner_messages)
+            plan = _parse_tool_plan(planner_content)
+        except ProviderUnavailableError:
+            logger.info("Remote planner unavailable or disabled")
 
         resolved_plan = _validated_plan(plan)
         if resolved_plan is None:
@@ -275,13 +273,9 @@ class ChatOrchestrator:
 
         # ── Turn 2: narrative ────────────────────────────────────────────────
         try:
-            narrative_response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=narrative_messages,  # type: ignore[arg-type]
-            )
-            narrative = narrative_response.choices[0].message.content or ""
-        except Exception:
-            logger.exception("LLM narrative request failed")
+            narrative = await self._complete_provider("narration", narrative_messages)
+        except ProviderUnavailableError:
+            logger.info("Remote narrator unavailable or disabled")
             narrative = _local_narrative(template_id, data_dict)
 
         return ChatResponse(
@@ -290,3 +284,22 @@ class ChatOrchestrator:
             narrative=narrative,
             metadata=ResponseMetadata(provenance="remote_planned"),
         )
+
+    async def _complete_provider(
+        self, stage: Literal["planning", "narration"], messages: list[dict[str, Any]]
+    ) -> str:
+        """Use the process gateway when available; preserve CLI/test injection."""
+        if self.gateway is not None:
+            return await self.gateway.complete(stage, messages)
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,  # type: ignore[arg-type]
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            raise ProviderUnavailableError("Remote provider is unavailable") from exc
+        if not response.choices:
+            raise ProviderUnavailableError("Remote provider returned no answer")
+        return response.choices[0].message.content or ""

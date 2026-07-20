@@ -3,6 +3,8 @@
 Exposes the health-check endpoint and mounts the API router.
 """
 
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -12,11 +14,21 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.chat import router as chat_router
 from app.api.dashboard import router as dashboard_router
+from app.llm.provider_gateway import make_provider_gateway
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    app.state.provider_gateway = make_provider_gateway()
+    try:
+        yield
+    finally:
+        await app.state.provider_gateway.aclose()
 
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
-    app = FastAPI(title="tti", version="0.1.0")
+    app = FastAPI(title="tti", version="0.1.0", lifespan=_lifespan)
 
     app.add_middleware(
         CORSMiddleware,
