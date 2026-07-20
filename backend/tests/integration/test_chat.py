@@ -90,7 +90,9 @@ async def test_get_last_workout_returns_workout_card(
     assert "activity_type" in response.data
     assert response.data["activity_type"] == "Running"
     assert response.data["duration_minutes"] == pytest.approx(45.5)
-    assert response.narrative == "Test narrative."
+    assert response.narrative == "Here is your most recent workout."
+    assert response.metadata.provenance == "deterministic_local"
+    client.chat.completions.create.assert_not_awaited()
 
 
 async def test_narrative_prompt_uses_compact_tool_result(
@@ -132,6 +134,7 @@ async def test_narrative_prompt_uses_compact_tool_result(
     monkeypatch.setattr("app.llm.orchestrator.dispatch_tool", fake_dispatch)
 
     orchestrator = ChatOrchestrator(client=client, conn=db)  # type: ignore[arg-type]
+    monkeypatch.setattr("app.llm.orchestrator.plan_local_question", lambda *_args: None)
     await orchestrator.answer("Show my last run")
 
     narrative_messages = client.chat.completions.create.await_args_list[1].kwargs["messages"]
@@ -155,7 +158,7 @@ async def test_planner_receives_local_coverage_instead_of_computer_date(
     )
     orchestrator = ChatOrchestrator(client=client, conn=db)  # type: ignore[arg-type]
 
-    await orchestrator.answer("Show my last run")
+    await orchestrator.answer("What is my most recent workout?")
 
     planner_messages = client.chat.completions.create.await_args_list[0].kwargs["messages"]
     planner_prompt = planner_messages[0]["content"]
@@ -182,7 +185,7 @@ async def test_get_top_workouts_returns_ranked_list(
     assert response.data["rows"][0]["rank"] == 1
 
 
-async def test_invalid_planner_output_uses_local_fallback_plan(
+async def test_deterministic_plan_does_not_depend_on_invalid_remote_output(
     db: duckdb.DuckDBPyConnection,
 ) -> None:
     client = _make_stub_client(
@@ -194,7 +197,8 @@ async def test_invalid_planner_output_uses_local_fallback_plan(
     response = await orchestrator.answer("Show my last run")
 
     assert response.template_id == "workout_card"
-    assert response.narrative == "Test narrative."
+    assert response.narrative == "Here is your most recent workout."
+    client.chat.completions.create.assert_not_awaited()
 
 
 async def test_get_trend_returns_trend_chart(

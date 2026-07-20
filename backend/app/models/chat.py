@@ -46,7 +46,7 @@ class ResponseMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     api_version: Literal["v1"] = "v1"
-    provenance: Literal["unknown"] = "unknown"
+    provenance: Literal["unknown", "deterministic_local", "remote_planned", "fallback"] = "unknown"
 
 
 class ChatResponse(BaseModel):

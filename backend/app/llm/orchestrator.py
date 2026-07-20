@@ -20,7 +20,7 @@ from app.llm.client import DEFAULT_MODEL
 from app.llm.local_planner import plan_local_question
 from app.llm.prompt_format import compact_tool_result_for_llm
 from app.llm.tools import TOOL_NAMES, dispatch_tool, normalize_tool_name, render_tool_catalog
-from app.models.chat import ChatResponse
+from app.models.chat import ChatResponse, ResponseMetadata
 from app.models.templates import FallbackData
 
 if TYPE_CHECKING:
@@ -83,6 +83,7 @@ def _make_fallback_response(question: str, narrative: str = "") -> ChatResponse:
         template_id="fallback",
         data=fallback.model_dump(mode="json"),
         narrative=narrative,
+        metadata=ResponseMetadata(provenance="fallback"),
     )
 
 
@@ -208,11 +209,25 @@ class ChatOrchestrator:
             {"role": "user", "content": question},
         ]
 
-        # ── Turn 1: plan the tool call ───────────────────────────────────────
-        # Recognised time and activity phrases are resolved locally first for
-        # correctness, while the model remains available for open-ended input.
+        # ── Stage 1: deterministic local plan ────────────────────────────────
+        # A recognised question must not touch the optional provider. This is
+        # both the privacy boundary and the fast path for ordinary use.
         local_plan = _validated_plan(plan_local_question(question, data_profile))
-        used_local_plan = local_plan is not None
+        if local_plan is not None:
+            tool_name, args = local_plan
+            try:
+                template_id, data_dict = dispatch_tool(tool_name, args, self.conn, question)
+            except Exception:
+                logger.exception("Local tool dispatch failed for tool %r", tool_name)
+                return _make_fallback_response(question)
+            return ChatResponse(
+                template_id=template_id,
+                data=data_dict,
+                narrative=_local_narrative(template_id, data_dict),
+                metadata=ResponseMetadata(provenance="deterministic_local"),
+            )
+
+        # ── Stage 2: optional remote plan for unresolved wording ────────────
         plan: dict[str, Any] | None = None
         try:
             planner_response = await self.client.chat.completions.create(
@@ -227,9 +242,7 @@ class ChatOrchestrator:
         except Exception:
             logger.exception("LLM planner request failed")
 
-        resolved_plan = local_plan or _validated_plan(plan)
-        if local_plan is not None:
-            logger.info("Using deterministic local plan for recognised question")
+        resolved_plan = _validated_plan(plan)
         if resolved_plan is None:
             return _make_fallback_response(question)
         tool_name, args = resolved_plan
@@ -261,13 +274,6 @@ class ChatOrchestrator:
         ]
 
         # ── Turn 2: narrative ────────────────────────────────────────────────
-        if used_local_plan and template_id == "trend_chart":
-            return ChatResponse(
-                template_id=template_id,
-                data=data_dict,
-                narrative=_local_narrative(template_id, data_dict),
-            )
-
         try:
             narrative_response = await self.client.chat.completions.create(
                 model=self.model,
@@ -282,4 +288,5 @@ class ChatOrchestrator:
             template_id=template_id,
             data=data_dict,
             narrative=narrative,
+            metadata=ResponseMetadata(provenance="remote_planned"),
         )
