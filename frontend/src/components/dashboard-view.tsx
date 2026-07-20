@@ -9,6 +9,8 @@ import type {
   WorkoutSummary,
 } from '@/api/dashboard'
 import { fetchCapabilities, fetchSummary, fetchTrend, fetchWorkouts } from '@/api/dashboard'
+import type { DashboardScope } from '@/api/dashboard'
+import { decodeDashboardQuery } from '@/lib/dashboard-query'
 import { formatDateOnly, formatNumber } from '@/lib/format'
 
 type DashboardViewMode = { view: 'list' } | { view: 'detail'; workoutId: number }
@@ -220,6 +222,10 @@ export function DashboardView() {
     error: null,
   })
   const [mode, setMode] = useState<DashboardViewMode>({ view: 'list' })
+  const [scope] = useState<DashboardScope>(() => {
+    const query = decodeDashboardQuery(window.location.search)
+    return query.start && query.end ? { start: query.start, end: query.end } : {}
+  })
   const [backendDown, setBackendDown] = useState(false)
 
   // Health check on mount (R1-12)
@@ -236,11 +242,11 @@ export function DashboardView() {
 
   useEffect(() => {
     Promise.allSettled([
-      fetchSummary(),
-      fetchWorkouts(),
-      fetchTrend('steps', 'day'),
-      fetchTrend('heart', 'week'),
-      fetchTrend('sleep', 'day'),
+      fetchSummary(scope),
+      fetchWorkouts(scope),
+      fetchTrend('steps', 'day', scope),
+      fetchTrend('heart', 'week', scope),
+      fetchTrend('sleep', 'day', scope),
       fetchCapabilities(),
     ]).then((results) => {
       const [summaryResult, workoutsResult, stepsResult, heartResult, sleepResult, capsResult] =
@@ -266,7 +272,7 @@ export function DashboardView() {
         error: null,
       })
     })
-  }, [])
+  }, [scope])
 
   if (state.loading) {
     return (
@@ -291,6 +297,11 @@ export function DashboardView() {
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 space-y-4">
       {backendDown ? <BackendDownBanner /> : null}
+      {scope.start && scope.end ? (
+        <p className="text-sm text-gray-500" aria-label="Active dashboard scope">
+          Showing {scope.start} to {scope.end}
+        </p>
+      ) : null}
 
       <Section title="Activity Rings (Latest available day)">
         <ActivityRingsPanel days={state.summary} />

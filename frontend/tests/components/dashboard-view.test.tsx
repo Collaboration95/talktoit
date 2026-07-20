@@ -164,6 +164,16 @@ describe('DashboardView', () => {
     })
     expect(screen.getAllByText('No data').length).toBeGreaterThanOrEqual(1)
   })
+
+  it('restores a URL date scope across panel requests', async () => {
+    window.history.replaceState({}, '', '?start=2024-01-01&end=2024-01-31')
+    setupHandlers()
+    render(<DashboardView />)
+    await waitFor(() => {
+      expect(screen.getByText('Showing 2024-01-01 to 2024-01-31')).toBeInTheDocument()
+    })
+    window.history.replaceState({}, '', '/')
+  })
 })
 
 describe('App tab navigation', () => {
