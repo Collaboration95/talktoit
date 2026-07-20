@@ -11,7 +11,13 @@ import json
 from datetime import date
 from typing import TYPE_CHECKING, Any, Literal
 
-from app.analytics.registry import execute_comparison, execute_metric_trend, execute_period_summary
+from app.analytics.registry import (
+    execute_comparison,
+    execute_latest_workout,
+    execute_metric_trend,
+    execute_period_summary,
+    execute_ranked_workouts,
+)
 from app.db import queries
 from app.db.data_profile import display_activity_type, resolve_activity_type
 from app.models.templates import FallbackData
@@ -234,7 +240,9 @@ def _tool_get_last_workout(
     activity_type: str = resolve_activity_type(conn, args["activity_type"])
     raw_min_duration = args.get("min_duration_minutes")
     min_duration = float(raw_min_duration) if raw_min_duration is not None else None
-    result = queries.get_last_workout(conn, activity_type, min_duration)
+    result = execute_latest_workout(
+        conn, {"activity_type": activity_type, "min_duration_minutes": min_duration}
+    )
     if result is None:
         fallback = FallbackData(
             question=question,
@@ -265,7 +273,9 @@ def _tool_get_top_workouts(
     n: int = args.get("n", 5)
     start: date | None = date.fromisoformat(args["start_date"]) if args.get("start_date") else None
     end: date | None = date.fromisoformat(args["end_date"]) if args.get("end_date") else None
-    result = queries.get_top_workouts(conn, activity_type, metric, n=n, start=start, end=end)
+    result = execute_ranked_workouts(
+        conn, {"activity_type": activity_type, "metric": metric, "n": n, "start": start, "end": end}
+    )
     data = result.model_dump(mode="json")
     data["title"] = data["title"].replace(activity_type, display_activity_type(activity_type))
     for row in data["rows"]:

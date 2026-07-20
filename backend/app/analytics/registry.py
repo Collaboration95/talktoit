@@ -9,7 +9,13 @@ from typing import Literal, cast
 from pydantic import BaseModel, Field
 
 from app.analytics.metric_catalog import METRIC_CATALOG
-from app.models.templates import ComparisonData, PeriodSummaryData, TrendChartData
+from app.models.templates import (
+    ComparisonData,
+    PeriodSummaryData,
+    RankedListData,
+    TrendChartData,
+    WorkoutCardData,
+)
 
 _SQL_ACTIVITY_SUMMARY = """
 SELECT date_components, active_energy_burned, active_energy_burned_goal,
@@ -59,6 +65,23 @@ class WorkoutDetailInput(BaseModel):
 
     workout_id: int = Field(ge=1)
     fingerprint: str | None = Field(default=None, pattern="^[a-f0-9]{16}$")
+
+
+class LatestWorkoutInput(BaseModel):
+    """Validated local latest-workout request after activity-name resolution."""
+
+    activity_type: str = Field(min_length=1, max_length=160)
+    min_duration_minutes: float | None = Field(default=None, ge=0)
+
+
+class RankedWorkoutsInput(BaseModel):
+    """Validated local ranked-workout request after activity-name resolution."""
+
+    activity_type: str = Field(min_length=1, max_length=160)
+    metric: Literal["distance", "duration", "avg_hr", "energy"]
+    n: int = Field(default=5, ge=1, le=100)
+    start: date | None = None
+    end: date | None = None
 
 
 class PeriodSummaryInput(BaseModel):
@@ -150,6 +173,38 @@ QUERY_REGISTRY: dict[str, QueryDefinition] = {
         "Route points preserve their recorded order after local validation.",
         "none",
         WorkoutDetailInput,
+    ),
+    "latest_workout": QueryDefinition(
+        "latest_workout",
+        "v1",
+        "Asia/Singapore",
+        "mixed",
+        ("workouts", "workout_statistics"),
+        "not_found",
+        "success",
+        "unavailable",
+        ("activity_type", "min_duration_minutes"),
+        ("workouts",),
+        "One latest local workout is selected after validated activity resolution.",
+        "No record-interval aggregation applies to one workout event.",
+        "compact_facts",
+        LatestWorkoutInput,
+    ),
+    "ranked_workouts": QueryDefinition(
+        "ranked_workouts",
+        "v1",
+        "Asia/Singapore",
+        "mixed",
+        ("workouts", "workout_statistics"),
+        "empty_list",
+        "success",
+        "unavailable",
+        ("activity_type", "metric", "n", "start", "end"),
+        ("workouts",),
+        "Rankings use only selected local workout statistics.",
+        "Each workout contributes once to a ranked local list.",
+        "compact_facts",
+        RankedWorkoutsInput,
     ),
     "period_summary": QueryDefinition(
         "period_summary",
@@ -285,6 +340,33 @@ def execute_comparison(conn: object, values: dict[str, object]) -> ComparisonDat
         args.this_label,
         args.last_label,
         activity_type=args.activity_type,
+    )
+
+
+def execute_latest_workout(conn: object, values: dict[str, object]) -> WorkoutCardData | None:
+    """Validate and execute one local latest-workout fact query."""
+    from app.db import queries
+
+    args = LatestWorkoutInput.model_validate(values)
+    return queries.get_last_workout(
+        conn,  # type: ignore[arg-type]
+        args.activity_type,
+        args.min_duration_minutes,
+    )
+
+
+def execute_ranked_workouts(conn: object, values: dict[str, object]) -> RankedListData:
+    """Validate and execute one local ranked-workout fact query."""
+    from app.db import queries
+
+    args = RankedWorkoutsInput.model_validate(values)
+    return queries.get_top_workouts(
+        conn,  # type: ignore[arg-type]
+        args.activity_type,
+        args.metric,
+        n=args.n,
+        start=args.start,
+        end=args.end,
     )
 
 
