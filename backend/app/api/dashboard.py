@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from app.analytics.metric_catalog import METRIC_CATALOG
-from app.analytics.registry import execute_metric_trend
+from app.analytics.registry import execute_activity_summary, execute_metric_trend
 from app.db.aggregations import (
     DEFAULT_TZ,
     bucket_key,
@@ -47,15 +47,6 @@ router = APIRouter(prefix="/api/dashboard")
 # ---------------------------------------------------------------------------
 # SQL constants (no f-strings in execute calls — avoids S608)
 # ---------------------------------------------------------------------------
-
-_SQL_ACTIVITY_SUMMARY = """
-SELECT date_components, active_energy_burned, active_energy_burned_goal,
-       apple_exercise_time, apple_exercise_time_goal,
-       apple_stand_hours, apple_stand_hours_goal
-FROM activity_summaries
-WHERE date_components >= ? AND date_components <= ?
-ORDER BY date_components DESC
-"""
 
 _SQL_DISTANCE_STATS = """
 SELECT workout_id,
@@ -291,9 +282,7 @@ def get_summary(
     started_at = time.perf_counter()
     start_date, end_date = _resolve_window(conn, start, end, days=7)
 
-    rows = conn.execute(
-        _SQL_ACTIVITY_SUMMARY, [start_date.isoformat(), end_date.isoformat()]
-    ).fetchall()
+    rows = execute_activity_summary(conn, {"start": start_date, "end": end_date})
 
     days = [
         ActivityRingDay(

@@ -4,12 +4,31 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Literal
+from typing import Literal, cast
 
 from pydantic import BaseModel, Field
 
 from app.analytics.metric_catalog import METRIC_CATALOG
 from app.models.templates import TrendChartData
+
+_SQL_ACTIVITY_SUMMARY = """
+SELECT date_components, active_energy_burned, active_energy_burned_goal,
+       apple_exercise_time, apple_exercise_time_goal,
+       apple_stand_hours, apple_stand_hours_goal
+FROM activity_summaries
+WHERE date_components >= ? AND date_components <= ?
+ORDER BY date_components DESC
+"""
+
+type ActivitySummaryRow = tuple[
+    str,
+    float | None,
+    float | None,
+    float | None,
+    float | None,
+    int | None,
+    int | None,
+]
 
 
 class WorkoutCollectionInput(BaseModel):
@@ -192,3 +211,14 @@ def execute_metric_trend(conn: object, values: dict[str, object]) -> TrendChartD
         args.end,
         aggregation=args.aggregation,
     )
+
+
+def execute_activity_summary(conn: object, values: dict[str, object]) -> list[ActivitySummaryRow]:
+    """Validate and execute the registry-owned activity-ring fact query."""
+    args = ActivitySummaryInput.model_validate(values)
+    if args.start is None or args.end is None:
+        raise ValueError("Activity summary execution requires an absolute start and end date")
+    rows = conn.execute(  # type: ignore[union-attr]
+        _SQL_ACTIVITY_SUMMARY, [args.start.isoformat(), args.end.isoformat()]
+    ).fetchall()
+    return cast(list[ActivitySummaryRow], rows)
