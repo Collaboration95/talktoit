@@ -4,7 +4,11 @@ import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { ChatView } from '@/components/chat-view'
 
-const server = setupServer(http.get('/health', () => HttpResponse.json({ status: 'ok' })))
+const server = setupServer(
+  http.get('/health', () => HttpResponse.json({ status: 'ok' })),
+  http.get('/api/conversations', () => HttpResponse.json([])),
+  http.post('/api/conversations', () => HttpResponse.json({ id: 'cv_test' })),
+)
 beforeAll(() => server.listen())
 afterEach(() => server.resetHandlers())
 afterAll(() => server.close())

@@ -1,19 +1,21 @@
 import { useState, useCallback, useEffect } from 'react'
 import { askQuestion, ChatApiError } from '@/api/chat'
+import { createConversation, listConversations, type Conversation } from '@/api/conversations'
 import type { ChatEnvelope } from '@/types/templates'
 import { TemplateDispatch } from '@/components/template-dispatch'
 import { ChatInput } from '@/components/chat-input'
 import { SeedPrompts } from '@/components/seed-prompts'
 
-type ChatState =
-  | { status: 'idle' }
+type ChatTurn =
   | { status: 'loading'; question: string }
   | { status: 'success'; question: string; envelope: ChatEnvelope }
   | { status: 'error'; question: string; message: string }
 
 /** Top-level chat page component: input → loading → template result. */
 export function ChatView() {
-  const [state, setState] = useState<ChatState>({ status: 'idle' })
+  const [turns, setTurns] = useState<ChatTurn[]>([])
+  const [conversationId, setConversationId] = useState<string>()
+  const [conversations, setConversations] = useState<Conversation[]>([])
   const [backendDown, setBackendDown] = useState(false)
 
   // Health check on mount (R1-12): non-blocking, 3s timeout
@@ -28,21 +30,35 @@ export function ChatView() {
       .finally(() => clearTimeout(timer))
   }, [])
 
-  const handleQuestion = useCallback(async (question: string) => {
-    setState({ status: 'loading', question })
-    try {
-      const envelope = await askQuestion(question)
-      setState({ status: 'success', question, envelope })
-    } catch (err) {
-      const message =
-        err instanceof ChatApiError
-          ? `Request failed (${err.status}). Please try again.`
-          : 'Something went wrong. Please try again.'
-      setState({ status: 'error', question, message })
-    }
-  }, [])
+  useEffect(() => {
+    listConversations()
+      .then(setConversations)
+      .catch(() => undefined)
+  }, [conversationId])
 
-  const isLoading = state.status === 'loading'
+  const handleQuestion = useCallback(
+    async (question: string) => {
+      const activeConversation = conversationId ?? (await createConversation(question.slice(0, 80)))
+      if (!conversationId) {
+        setConversationId(activeConversation)
+        setConversations(await listConversations())
+      }
+      setTurns((current) => [...current, { status: 'loading', question }])
+      try {
+        const envelope = await askQuestion(question, { conversationId: activeConversation })
+        setTurns((current) => [...current.slice(0, -1), { status: 'success', question, envelope }])
+      } catch (err) {
+        const message =
+          err instanceof ChatApiError
+            ? `Request failed (${err.status}). Please try again.`
+            : 'Something went wrong. Please try again.'
+        setTurns((current) => [...current.slice(0, -1), { status: 'error', question, message }])
+      }
+    },
+    [conversationId],
+  )
+
+  const isLoading = turns.some((turn) => turn.status === 'loading')
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
@@ -59,41 +75,43 @@ export function ChatView() {
       ) : null}
 
       <div className="space-y-4">
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-gray-500">{conversations.length} local conversations</span>
+          <button
+            onClick={() => {
+              setConversationId(undefined)
+              setTurns([])
+            }}
+            className="text-blue-600"
+          >
+            New conversation
+          </button>
+        </div>
         <ChatInput onSubmit={handleQuestion} isLoading={isLoading} />
         <SeedPrompts onSelect={handleQuestion} disabled={isLoading} />
       </div>
 
       <div className="mt-8">
-        {state.status === 'idle' && (
+        {turns.length === 0 && (
           <p className="text-center text-sm text-gray-400">
             Ask a question or pick one above to get started.
           </p>
         )}
-        {state.status === 'loading' && (
-          <div className="text-center">
-            <p className="text-sm text-gray-500">
-              Thinking about: <em>{state.question}</em>
-            </p>
-          </div>
-        )}
-        {state.status === 'error' && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-            <p className="text-sm font-medium text-red-700">Could not load an answer</p>
-            <p className="mt-1 text-sm text-red-600">{state.message}</p>
-            <p className="mt-2 text-xs text-red-500">
-              Try a shorter question or one of the suggested prompts above.
-            </p>
-          </div>
-        )}
-        {state.status === 'success' && (
-          <div className="space-y-4">
+        {turns.map((turn) => (
+          <div key={turn.question} className="space-y-4">
             <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
               <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Query</p>
-              <p className="mt-0.5 text-sm text-gray-700">{state.question}</p>
+              <p className="mt-0.5 text-sm text-gray-700">{turn.question}</p>
             </div>
-            <TemplateDispatch envelope={state.envelope} />
+            {turn.status === 'loading' ? (
+              <p className="text-sm text-gray-500">Thinking about: {turn.question}</p>
+            ) : null}
+            {turn.status === 'success' ? <TemplateDispatch envelope={turn.envelope} /> : null}
+            {turn.status === 'error' ? (
+              <p className="text-sm text-red-600">{turn.message}</p>
+            ) : null}
           </div>
-        )}
+        ))}
       </div>
     </div>
   )
