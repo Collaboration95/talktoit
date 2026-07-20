@@ -1,0 +1,11 @@
+{
+  "version": "v1",
+  "fixtures": [
+    {"name": "reordered-escaped-record", "outcome": "accept", "checks": ["attribute_order", "xml_entities"]},
+    {"name": "category-overlap", "outcome": "accept", "checks": ["category_text", "interval_overlap"]},
+    {"name": "timestamp-offset", "outcome": "accept", "checks": ["utc_offset", "dst_boundary"]},
+    {"name": "worker-boundary-child", "outcome": "accept", "checks": ["long_child_content", "relation_integrity"]},
+    {"name": "missing-required-field", "outcome": "fallback_or_reject", "checks": ["required_fields", "quality_report"]},
+    {"name": "partial-export", "outcome": "fallback_or_reject", "checks": ["malformed_xml", "activation_preserved"]}
+  ]
+}

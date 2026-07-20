@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import duckdb
 import pytest
 
@@ -9,6 +12,20 @@ from app.db.schema import SQL_CREATE_TABLES
 from app.ingest.compatibility import V2CompatibilityError, require_v2_compatibility
 
 pytestmark = pytest.mark.ingest_contract
+
+
+def test_adversarial_corpus_manifest_declares_required_safe_outcomes() -> None:
+    """The generated non-personal corpus documents every compatibility class."""
+    path = Path(__file__).parent.parent / "fixtures" / "ingest_corpus_manifest.json"
+    manifest = json.loads(path.read_text())
+    assert manifest["version"] == "v1"
+    fixtures = {item["name"]: item for item in manifest["fixtures"]}
+    assert fixtures["reordered-escaped-record"]["outcome"] == "accept"
+    assert fixtures["category-overlap"]["outcome"] == "accept"
+    assert fixtures["timestamp-offset"]["outcome"] == "accept"
+    assert fixtures["worker-boundary-child"]["outcome"] == "accept"
+    assert fixtures["missing-required-field"]["outcome"] == "fallback_or_reject"
+    assert fixtures["partial-export"]["outcome"] == "fallback_or_reject"
 
 
 def _empty_db() -> duckdb.DuckDBPyConnection:
