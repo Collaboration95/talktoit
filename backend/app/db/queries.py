@@ -12,7 +12,7 @@ therefore convert local dates to UTC bounds before querying.
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from app.db.aggregations import (
     DEFAULT_TZ,
@@ -126,6 +126,39 @@ LEFT JOIN workout_statistics energy
 WHERE w.activity_type = ?
   AND w.start_date >= ?
   AND w.start_date < ?
+"""
+
+_SQL_WORKOUT_COLLECTION = """
+SELECT w.id, w.activity_type, w.start_date, w.duration, w.duration_unit, w.source_name,
+    hr.average AS avg_hr,
+    dist.distance_m AS distance_m,
+    energy.sum AS energy_kj
+FROM workouts w
+LEFT JOIN workout_statistics hr
+    ON hr.workout_id = w.id
+    AND hr.type = 'HKQuantityTypeIdentifierHeartRate'
+LEFT JOIN (
+    SELECT workout_id,
+        SUM(CASE
+            WHEN LOWER(unit) = 'km' THEN sum * 1000.0
+            WHEN LOWER(unit) IN ('mi', 'mile', 'miles') THEN sum * 1609.344
+            ELSE sum
+        END) AS distance_m
+    FROM workout_statistics
+    WHERE type IN ('HKQuantityTypeIdentifierDistanceWalkingRunning',
+                   'HKQuantityTypeIdentifierDistanceCycling',
+                   'HKQuantityTypeIdentifierDistanceSwimming')
+    GROUP BY workout_id
+) dist ON dist.workout_id = w.id
+LEFT JOIN workout_statistics energy
+    ON energy.workout_id = w.id
+    AND energy.type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
+WHERE w.start_date >= ? AND w.start_date < ?
+  AND (? IS NULL OR w.activity_type = ?)
+  AND (? IS NULL OR w.source_name = ?)
+  AND (? IS NULL OR (w.start_date, w.id) < (?, ?))
+ORDER BY w.start_date DESC, w.id DESC
+LIMIT ?
 """
 
 _SQL_TREND = """
@@ -265,6 +298,37 @@ def get_last_workout(
         elevation_ascent_meters=elevation_m,
         gps_route=None,
     )
+
+
+def get_workout_collection(
+    conn: duckdb.DuckDBPyConnection,
+    start: date,
+    end: date,
+    activity_type: str | None,
+    source: str | None,
+    cursor_date: datetime | None,
+    cursor_id: int | None,
+    limit: int,
+    tz: str = DEFAULT_TZ,
+) -> list[tuple[Any, ...]]:
+    """Return deterministic local workout rows for a cursor-paged library."""
+    utc_start, utc_end = _utc_bounds(start, end, tz)
+    rows = conn.execute(
+        _SQL_WORKOUT_COLLECTION,
+        [
+            utc_start,
+            utc_end,
+            activity_type,
+            activity_type,
+            source,
+            source,
+            cursor_date,
+            cursor_date,
+            cursor_id,
+            limit,
+        ],
+    ).fetchall()
+    return rows
 
 
 def get_top_workouts(

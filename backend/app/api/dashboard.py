@@ -11,7 +11,11 @@ from typing import TYPE_CHECKING, Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from app.analytics.metric_catalog import METRIC_CATALOG
-from app.analytics.registry import execute_activity_summary, execute_metric_trend
+from app.analytics.registry import (
+    execute_activity_summary,
+    execute_metric_trend,
+    execute_workout_collection,
+)
 from app.db.aggregations import (
     DEFAULT_TZ,
     bucket_key,
@@ -318,31 +322,20 @@ def get_workouts(
     started_at = time.perf_counter()
     start_date, end_date = _resolve_window(conn, start, end, days=30)
 
-    utc_start, utc_end = utc_bounds(start_date, end_date, DEFAULT_TZ)
-    cursor_date: datetime | None = None
-    cursor_id: int | None = None
-    if cursor is not None:
-        try:
-            date_text, id_text = cursor.rsplit("|", maxsplit=1)
-            cursor_date = datetime.fromisoformat(date_text)
-            cursor_id = int(id_text)
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(status_code=422, detail="Invalid workout cursor") from exc
-    rows = conn.execute(
-        _SQL_WORKOUTS_LIST,
-        [
-            utc_start,
-            utc_end,
-            activity_type_filter,
-            activity_type_filter,
-            source,
-            source,
-            cursor_date,
-            cursor_date,
-            cursor_id,
-            limit + 1,
-        ],
-    ).fetchall()
+    try:
+        rows = execute_workout_collection(
+            conn,
+            {
+                "start": start_date,
+                "end": end_date,
+                "activity_type": activity_type_filter,
+                "source": source,
+                "cursor": cursor,
+                "limit": limit,
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     workouts = []
     for row in rows[:limit]:

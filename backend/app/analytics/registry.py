@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Literal, cast
 
 from pydantic import BaseModel, Field
@@ -30,12 +30,26 @@ type ActivitySummaryRow = tuple[
     int | None,
 ]
 
+type WorkoutCollectionRow = tuple[
+    int,
+    str,
+    datetime,
+    float | None,
+    str | None,
+    str,
+    float | None,
+    float | None,
+    float | None,
+]
+
 
 class WorkoutCollectionInput(BaseModel):
     """Validated input for the paged local workout collection."""
 
     start: date | None = None
     end: date | None = None
+    activity_type: str | None = Field(default=None, min_length=1, max_length=160)
+    source: str | None = Field(default=None, min_length=1, max_length=160)
     cursor: str | None = None
     limit: int = Field(default=50, ge=1, le=100)
 
@@ -102,7 +116,7 @@ QUERY_REGISTRY: dict[str, QueryDefinition] = {
         "empty_list",
         "success",
         "unavailable",
-        ("start", "end", "cursor", "limit"),
+        ("start", "end", "activity_type", "source", "cursor", "limit"),
         ("workouts",),
         "Workout rows remain distinct local activity events.",
         "No record-interval aggregation applies to workout rows.",
@@ -222,3 +236,34 @@ def execute_activity_summary(conn: object, values: dict[str, object]) -> list[Ac
         _SQL_ACTIVITY_SUMMARY, [args.start.isoformat(), args.end.isoformat()]
     ).fetchall()
     return cast(list[ActivitySummaryRow], rows)
+
+
+def execute_workout_collection(
+    conn: object, values: dict[str, object]
+) -> list[WorkoutCollectionRow]:
+    """Validate and execute the registry-owned cursor-paged workout collection."""
+    from app.db import queries
+
+    args = WorkoutCollectionInput.model_validate(values)
+    if args.start is None or args.end is None:
+        raise ValueError("Workout collection execution requires an absolute start and end date")
+    cursor_date: datetime | None = None
+    cursor_id: int | None = None
+    if args.cursor is not None:
+        try:
+            date_text, id_text = args.cursor.rsplit("|", maxsplit=1)
+            cursor_date = datetime.fromisoformat(date_text)
+            cursor_id = int(id_text)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Invalid workout cursor") from exc
+    rows = queries.get_workout_collection(
+        conn,  # type: ignore[arg-type]
+        args.start,
+        args.end,
+        args.activity_type,
+        args.source,
+        cursor_date,
+        cursor_id,
+        args.limit + 1,
+    )
+    return cast(list[WorkoutCollectionRow], rows)
