@@ -199,7 +199,16 @@ export function ChatView() {
               </p>
             ) : null}
             {turn.status === 'error' ? (
-              <p className="text-sm text-red-600">{turn.message}</p>
+              <div className="flex items-center gap-3">
+                <p className="text-sm text-red-600">{turn.message}</p>
+                <button
+                  type="button"
+                  className="text-sm text-blue-600"
+                  onClick={() => void handleQuestion(turn.question)}
+                >
+                  Retry
+                </button>
+              </div>
             ) : null}
           </div>
         ))}
