@@ -5,7 +5,11 @@ export interface ChatEnvelope {
   narrative: string
   metadata?: {
     api_version: 'v1'
-    provenance: 'unknown'
+    provenance: 'unknown' | 'deterministic_local' | 'remote_planned' | 'fallback' | 'cached'
+    dataset_version_id?: string | null
+    coverage_start?: string | null
+    coverage_end?: string | null
+    generated_at?: string | null
   }
 }
 

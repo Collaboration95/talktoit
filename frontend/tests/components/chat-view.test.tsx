@@ -31,6 +31,7 @@ const WORKOUT_ENVELOPE = {
     elevation_ascent_meters: null,
   },
   narrative: 'Your last run was on June 5.',
+  metadata: { api_version: 'v1' as const, provenance: 'deterministic_local' as const },
 }
 
 describe('ChatView', () => {
@@ -67,6 +68,7 @@ describe('ChatView', () => {
     // Query is displayed above the answer
     expect(screen.getByText('last run')).toBeInTheDocument()
     expect(screen.getByText('Your last run was on June 5.')).toBeInTheDocument()
+    expect(screen.getByText('Deterministic local answer')).toBeInTheDocument()
   })
 
   it('renders error state on API failure', async () => {

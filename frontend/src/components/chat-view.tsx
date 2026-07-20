@@ -160,6 +160,15 @@ export function ChatView() {
               <p className="text-sm text-gray-500">Thinking about: {turn.question}</p>
             ) : null}
             {turn.status === 'success' ? <TemplateDispatch envelope={turn.envelope} /> : null}
+            {turn.status === 'success' ? (
+              <p className="text-xs text-gray-500">
+                {turn.envelope.metadata?.provenance === 'cached'
+                  ? 'Cached local answer'
+                  : turn.envelope.metadata?.provenance === 'deterministic_local'
+                    ? 'Deterministic local answer'
+                    : 'Generated answer'}
+              </p>
+            ) : null}
             {turn.status === 'error' ? (
               <p className="text-sm text-red-600">{turn.message}</p>
             ) : null}
