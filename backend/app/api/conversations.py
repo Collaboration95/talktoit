@@ -1,6 +1,6 @@
 """Local conversation-history endpoints."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.state.app_state import AppStateRepository
@@ -12,6 +12,12 @@ class ConversationCreate(BaseModel):
     """Input for a local conversation."""
 
     title: str = Field(default="New conversation", max_length=160)
+
+
+class ConversationRename(BaseModel):
+    """Validated local conversation title."""
+
+    title: str = Field(min_length=1, max_length=160)
 
 
 @router.post("")
@@ -32,3 +38,19 @@ async def list_conversations(search: str = "") -> list[dict[str, object]]:
 async def get_turns(conversation_id: str) -> list[dict[str, object]]:
     """Read a conversation's immutable local transcript."""
     return AppStateRepository().get_turns(conversation_id)
+
+
+@router.patch("/{conversation_id}")
+async def rename_conversation(conversation_id: str, body: ConversationRename) -> dict[str, bool]:
+    """Rename one conversation without affecting health data."""
+    if not AppStateRepository().rename_conversation(conversation_id, body.title):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"ok": True}
+
+
+@router.delete("/{conversation_id}")
+async def delete_conversation(conversation_id: str) -> dict[str, bool]:
+    """Delete only a selected local conversation after client confirmation."""
+    if not AppStateRepository().delete_conversation(conversation_id):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"ok": True}

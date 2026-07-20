@@ -291,6 +291,26 @@ class AppStateRepository:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def rename_conversation(self, conversation_id: str, title: str) -> bool:
+        """Rename only the selected local conversation."""
+        self.migrate()
+        with self._connection() as conn:
+            changed = conn.execute(
+                "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?",
+                (title.strip(), _now(), conversation_id),
+            ).rowcount
+        return changed == 1
+
+    def delete_conversation(self, conversation_id: str) -> bool:
+        """Delete local history only; never delete cache entries or health data."""
+        self.migrate()
+        with self._connection() as conn:
+            conn.execute("DELETE FROM turns WHERE conversation_id = ?", (conversation_id,))
+            changed = conn.execute(
+                "DELETE FROM conversations WHERE id = ?", (conversation_id,)
+            ).rowcount
+        return changed == 1
+
     def get_cached_response(self, cache_key: str, dataset_version_id: str) -> str | None:
         """Read an exact dataset-scoped cached envelope and record its local hit."""
         self.migrate()
