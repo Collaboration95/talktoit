@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.ingest.gpx import parse_gpx_route
+from app.ingest.gpx import parse_gpx_route, simplify_route_points
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "route.gpx"
 
@@ -25,6 +25,16 @@ def test_parse_nonexistent_file() -> None:
     """A nonexistent GPX file returns None."""
     result = parse_gpx_route("/nonexistent/path.gpx")
     assert result is None
+
+
+def test_route_simplification_preserves_order_and_endpoints() -> None:
+    """Large local routes stay ordered and bounded without losing endpoints."""
+    points = [[float(index), 1.0] for index in range(1001)]
+    simplified = simplify_route_points(points, max_points=10)
+    assert len(simplified) == 10
+    assert simplified[0] == points[0]
+    assert simplified[-1] == points[-1]
+    assert [point[0] for point in simplified] == sorted(point[0] for point in simplified)
 
 
 def test_parse_empty_gpx() -> None:
