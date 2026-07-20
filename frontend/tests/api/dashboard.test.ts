@@ -43,8 +43,8 @@ const SAMPLE_TREND: TrendResponse = {
 }
 
 const SAMPLE_CAPABILITIES: CapabilityFlag[] = [
-  { name: 'resting_hr', present: true },
-  { name: 'steps', present: true },
+  { name: 'resting_hr', present: true, state: 'available' },
+  { name: 'steps', present: true, state: 'available' },
 ]
 
 describe('fetchSummary', () => {
@@ -124,5 +124,16 @@ describe('fetchCapabilities', () => {
     expect(result).toHaveLength(2)
     expect(result[0].name).toBe('resting_hr')
     expect(result[0].present).toBe(true)
+  })
+
+  it('propagates the shared date scope to catalog availability', async () => {
+    server.use(
+      http.get('/api/dashboard/capabilities', ({ request }) => {
+        expect(new URL(request.url).searchParams.get('start')).toBe('2024-01-01')
+        expect(new URL(request.url).searchParams.get('end')).toBe('2024-01-31')
+        return HttpResponse.json({ capabilities: SAMPLE_CAPABILITIES })
+      }),
+    )
+    await fetchCapabilities({ start: '2024-01-01', end: '2024-01-31' })
   })
 })
