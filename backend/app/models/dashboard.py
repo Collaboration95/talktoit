@@ -70,6 +70,15 @@ class TrendResponse(DashboardResponse):
     series: list[TrendPoint]
 
 
+class SleepStagesResponse(DashboardResponse):
+    """Measured, overlap-safe sleep duration and available stage durations."""
+
+    total_asleep_hours: float
+    stages_hours: dict[str, float]
+    stage_data_available: bool
+    message: str
+
+
 class CapabilityFlag(BaseModel):
     """One data-source capability flag."""
 

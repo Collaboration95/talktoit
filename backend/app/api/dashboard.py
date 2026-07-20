@@ -25,6 +25,7 @@ from app.models.dashboard import (
     CapabilitiesResponse,
     CapabilityFlag,
     KeyValuePair,
+    SleepStagesResponse,
     TrendPoint,
     TrendResponse,
     WorkoutDetail,
@@ -105,6 +106,14 @@ SELECT start_date, end_date
 FROM records
 WHERE type = 'HKCategoryTypeIdentifierSleepAnalysis'
   AND source_name != 'AutoSleep'
+  AND start_date >= ? AND start_date < ?
+ORDER BY start_date
+"""
+
+_SQL_SLEEP_STAGE_RECORDS = """
+SELECT start_date, end_date, text_value
+FROM records
+WHERE type = 'HKCategoryTypeIdentifierSleepAnalysis'
   AND start_date >= ? AND start_date < ?
 ORDER BY start_date
 """
@@ -387,6 +396,48 @@ def get_sleep(
     )
 
 
+@router.get("/sleep/stages", response_model=SleepStagesResponse)
+def get_sleep_stages(
+    start: date | None = None,
+    end: date | None = None,
+    conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
+) -> SleepStagesResponse:
+    """Return local measured sleep stage durations without summing overlaps."""
+    start_date, end_date = _resolve_window(conn, start, end, days=30)
+    utc_start, utc_end = utc_bounds(start_date, end_date, DEFAULT_TZ)
+    rows = conn.execute(_SQL_SLEEP_STAGE_RECORDS, [utc_start, utc_end]).fetchall()
+    intervals: dict[str, list[tuple[datetime, datetime]]] = {}
+    asleep: list[tuple[datetime, datetime]] = []
+    for start_dt, end_dt, text_value in rows:
+        if start_dt is None or end_dt is None:
+            continue
+        label = str(text_value or "")
+        if "Asleep" not in label:
+            continue
+        interval = (start_dt, end_dt)
+        asleep.append(interval)
+        for stage in ("Core", "Deep", "REM"):
+            if label.endswith(stage):
+                intervals.setdefault(stage.lower(), []).append(interval)
+    stages = {stage: round(_union_interval_hours(values), 2) for stage, values in intervals.items()}
+    if not stages:
+        return SleepStagesResponse(
+            total_asleep_hours=round(_union_interval_hours(asleep), 2),
+            stages_hours={},
+            stage_data_available=False,
+            message="Sleep stage labels are not available in this imported data.",
+        )
+    return SleepStagesResponse(
+        total_asleep_hours=round(_union_interval_hours(asleep), 2),
+        stages_hours=stages,
+        stage_data_available=True,
+        message=(
+            "Stage durations are measured source observations; overlapping intervals are unioned "
+            "locally."
+        ),
+    )
+
+
 @router.get("/capabilities", response_model=CapabilitiesResponse)
 def get_capabilities(
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
@@ -452,6 +503,17 @@ def _build_trend(
         granularity=granularity,
         series=series,
     )
+
+
+def _union_interval_hours(intervals: list[tuple[datetime, datetime]]) -> float:
+    """Return elapsed hours for intervals after merging compatible overlaps."""
+    merged: list[list[datetime]] = []
+    for interval_start, interval_end in sorted(intervals):
+        if not merged or interval_start > merged[-1][1]:
+            merged.append([interval_start, interval_end])
+        elif interval_end > merged[-1][1]:
+            merged[-1][1] = interval_end
+    return sum((end - start).total_seconds() / 3600.0 for start, end in merged)
 
 
 # ---------------------------------------------------------------------------
