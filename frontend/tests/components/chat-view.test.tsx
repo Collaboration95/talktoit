@@ -60,6 +60,21 @@ describe('ChatView', () => {
     resolve!(new Response())
   })
 
+  it('keeps a reader at the transcript end when a new turn is appended', async () => {
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    })
+    server.use(http.post('/api/chat', () => HttpResponse.json(WORKOUT_ENVELOPE)))
+    const user = userEvent.setup()
+    render(<ChatView />)
+    await user.type(screen.getByRole('textbox'), 'last run')
+    await user.click(screen.getByRole('button', { name: /ask/i }))
+    await screen.findByText('Your last run was on June 5.')
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'end' })
+  })
+
   it('cancels an in-flight request while keeping a retryable visible turn', async () => {
     server.use(http.post('/api/chat', () => new Promise(() => {})))
     const user = userEvent.setup()

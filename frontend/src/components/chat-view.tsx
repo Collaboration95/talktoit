@@ -28,6 +28,8 @@ export function ChatView() {
   const [backendDown, setBackendDown] = useState(false)
   const activeRequest = useRef<AbortController | null>(null)
   const nextTurnId = useRef(0)
+  const transcriptEnd = useRef<HTMLDivElement | null>(null)
+  const readerIsAtBottom = useRef(true)
 
   const newTurnId = () => {
     nextTurnId.current += 1
@@ -51,6 +53,21 @@ export function ChatView() {
       .then(setConversations)
       .catch(() => undefined)
   }, [conversationId, conversationSearch])
+
+  useEffect(() => {
+    const updateScrollAnchor = () => {
+      const root = document.documentElement
+      readerIsAtBottom.current = window.innerHeight + window.scrollY >= root.scrollHeight - 96
+    }
+    updateScrollAnchor()
+    window.addEventListener('scroll', updateScrollAnchor, { passive: true })
+    return () => window.removeEventListener('scroll', updateScrollAnchor)
+  }, [])
+
+  useEffect(() => {
+    if (!readerIsAtBottom.current) return
+    transcriptEnd.current?.scrollIntoView?.({ block: 'end' })
+  }, [turns])
 
   const handleQuestion = useCallback(
     async (question: string) => {
@@ -332,6 +349,7 @@ export function ChatView() {
             ) : null}
           </div>
         ))}
+        <div ref={transcriptEnd} aria-hidden="true" />
       </div>
     </div>
   )
