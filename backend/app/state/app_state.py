@@ -262,11 +262,15 @@ class AppStateRepository:
     def list_conversations(self, search: str = "") -> list[dict[str, object]]:
         """List non-archived local conversation metadata."""
         self.migrate()
+        pattern = f"%{search.strip()}%"
         with self._connection() as conn:
             rows = conn.execute(
-                "SELECT * FROM conversations WHERE archived = 0 AND title LIKE ? "
+                "SELECT c.* FROM conversations c WHERE c.archived = 0 AND (c.title LIKE ? "
+                "OR EXISTS (SELECT 1 FROM turns t WHERE t.conversation_id = c.id "
+                "AND (t.question LIKE ? OR t.response_json LIKE ? "
+                "OR t.canonical_plan_json LIKE ?))) "
                 "ORDER BY updated_at DESC",
-                (f"%{search.strip()}%",),
+                (pattern, pattern, pattern, pattern),
             ).fetchall()
         return [dict(row) for row in rows]
 

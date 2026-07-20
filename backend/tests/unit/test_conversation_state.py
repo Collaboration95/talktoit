@@ -51,3 +51,20 @@ def test_archive_hides_only_selected_conversation_and_preserves_turns(tmp_path) 
     assert repo.archive_conversation(archived)
     assert [conversation["id"] for conversation in repo.list_conversations()] == [visible]
     assert len(repo.get_turns(archived)) == 1
+
+
+def test_local_conversation_search_includes_question_and_result(tmp_path) -> None:
+    repo = AppStateRepository(tmp_path / "state.sqlite3")
+    conversation_id = repo.create_conversation("Generic", "ds_fixture")
+    repo.add_completed_turn(
+        conversation_id,
+        "Show recent runs",
+        '{"text":"A useful local result"}',
+        "default",
+        "fallback",
+        canonical_plan={"intent": "ranked_workouts"},
+    )
+
+    assert repo.list_conversations("recent runs")[0]["id"] == conversation_id
+    assert repo.list_conversations("useful local")[0]["id"] == conversation_id
+    assert repo.list_conversations("ranked_workouts")[0]["id"] == conversation_id
