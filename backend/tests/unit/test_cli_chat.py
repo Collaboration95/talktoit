@@ -12,11 +12,12 @@ def test_cli_prints_json_output(monkeypatch, capsys) -> None:
     """The CLI should emit a machine-readable envelope when requested."""
 
     async def _fake_ask_question(
-        question: str, db_path=None, conversation_id=None, cache_mode="default"
+        question: str, db_path=None, conversation_id=None, parent_turn_id=None, cache_mode="default"
     ) -> ChatResponse:
         assert question == "Show my last run"
         assert db_path is None
         assert conversation_id is None
+        assert parent_turn_id is None
         assert cache_mode == "default"
         return ChatResponse(
             template_id="fallback",
@@ -43,11 +44,12 @@ def test_cli_prints_human_readable_output(monkeypatch, capsys) -> None:
     """The default CLI output should stay readable for interactive use."""
 
     async def _fake_ask_question(
-        question: str, db_path=None, conversation_id=None, cache_mode="default"
+        question: str, db_path=None, conversation_id=None, parent_turn_id=None, cache_mode="default"
     ) -> ChatResponse:
         assert question == "Show my last run"
         assert db_path is None
         assert conversation_id is None
+        assert parent_turn_id is None
         assert cache_mode == "default"
         return ChatResponse(
             template_id="workout_card",
@@ -79,11 +81,12 @@ def test_cli_passes_local_conversation_id_to_headless_lifecycle(monkeypatch, cap
     """The headless path can append a durable local conversation turn."""
 
     async def _fake_ask_question(
-        question: str, db_path=None, conversation_id=None, cache_mode="default"
+        question: str, db_path=None, conversation_id=None, parent_turn_id=None, cache_mode="default"
     ) -> ChatResponse:
         assert question == "Show my last run"
         assert db_path is None
         assert conversation_id == "cv_local"
+        assert parent_turn_id is None
         assert cache_mode == "default"
         return ChatResponse(
             template_id="fallback",
@@ -100,11 +103,12 @@ def test_cli_passes_fresh_cache_mode(monkeypatch) -> None:
     """The CLI exposes the same cache refresh contract as HTTP chat."""
 
     async def _fake_ask_question(
-        question: str, db_path=None, conversation_id=None, cache_mode="default"
+        question: str, db_path=None, conversation_id=None, parent_turn_id=None, cache_mode="default"
     ) -> ChatResponse:
         assert question == "Show my last run"
         assert db_path is None
         assert conversation_id is None
+        assert parent_turn_id is None
         assert cache_mode == "fresh"
         return ChatResponse(
             template_id="fallback",
@@ -114,3 +118,36 @@ def test_cli_passes_fresh_cache_mode(monkeypatch) -> None:
 
     monkeypatch.setattr(chat_cli, "_ask_question", _fake_ask_question)
     assert chat_cli.main(["--question", "Show my last run", "--cache-mode", "fresh"]) == 0
+
+
+def test_cli_passes_scoped_parent_turn_id(monkeypatch) -> None:
+    """The headless client can request deterministic follow-up resolution."""
+
+    async def _fake_ask_question(
+        question: str, db_path=None, conversation_id=None, parent_turn_id=None, cache_mode="default"
+    ) -> ChatResponse:
+        assert question == "Compare that to prior period"
+        assert db_path is None
+        assert conversation_id == "cv_local"
+        assert parent_turn_id == "tr_parent"
+        assert cache_mode == "default"
+        return ChatResponse(
+            template_id="fallback",
+            data={"question": question, "table": None, "text": "No answer available."},
+            narrative="Try another question.",
+        )
+
+    monkeypatch.setattr(chat_cli, "_ask_question", _fake_ask_question)
+    assert (
+        chat_cli.main(
+            [
+                "--question",
+                "Compare that to prior period",
+                "--conversation-id",
+                "cv_local",
+                "--parent-turn-id",
+                "tr_parent",
+            ]
+        )
+        == 0
+    )

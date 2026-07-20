@@ -116,9 +116,10 @@ async def chat(
                     disambiguation = followup_disambiguation(request.question, contexts, active.id)
         canonical_plan = local_plan or followup_plan
         canonical_key = build_cache_key("canonical", canonical_plan) if canonical_plan else None
+        use_exact_cache = request.parent_turn_id is None
         cached = (
             repository.get_cached_response(cache_key, active.id)
-            if active is not None and request.cache_mode != "fresh"
+            if active is not None and request.cache_mode != "fresh" and use_exact_cache
             else None
         )
         if (
@@ -146,7 +147,8 @@ async def chat(
             response.metadata.coverage_end = active.coverage_end
             response.metadata.generated_at = active.activated_at
             if request.cache_mode != "fresh":
-                repository.put_cached_response(cache_key, active.id, response.model_dump_json())
+                if use_exact_cache:
+                    repository.put_cached_response(cache_key, active.id, response.model_dump_json())
                 if canonical_key:
                     repository.put_cached_response(
                         canonical_key, active.id, response.model_dump_json()
