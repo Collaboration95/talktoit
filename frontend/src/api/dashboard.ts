@@ -42,7 +42,7 @@ export interface SleepStagesResponse {
 export interface CapabilityFlag {
   name: string
   present: boolean
-  state: 'available' | 'unavailable' | 'out_of_range'
+  state: 'available' | 'unavailable' | 'out_of_range' | 'malformed' | 'unsupported'
 }
 
 export interface DatasetStatus {

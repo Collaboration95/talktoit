@@ -114,9 +114,22 @@ ORDER BY start_date
 
 _SQL_CAPABILITIES_RECORDS = "SELECT DISTINCT type FROM records"
 
+_SQL_CAPABILITIES_RECORD_HEALTH = """
+SELECT type, COUNT(*) AS row_count, COUNT(value) AS numeric_count, COUNT(text_value) AS text_count
+FROM records
+GROUP BY type
+"""
+
 _SQL_CAPABILITIES_RECORDS_IN_WINDOW = """
 SELECT DISTINCT type FROM records
 WHERE start_date >= ? AND start_date < ?
+"""
+
+_SQL_CAPABILITIES_RECORD_HEALTH_IN_WINDOW = """
+SELECT type, COUNT(*) AS row_count, COUNT(value) AS numeric_count, COUNT(text_value) AS text_count
+FROM records
+WHERE start_date >= ? AND start_date < ?
+GROUP BY type
 """
 
 _SQL_CAPABILITIES_WORKOUTS = """
@@ -481,6 +494,10 @@ def get_capabilities(
     """Return catalog availability, including the requested dashboard range."""
     rows = conn.execute(_SQL_CAPABILITIES_RECORDS).fetchall()
     present_types = {row[0] for row in rows}
+    record_health = {
+        row[0]: {"rows": row[1], "numeric": row[2], "text": row[3]}
+        for row in conn.execute(_SQL_CAPABILITIES_RECORD_HEALTH).fetchall()
+    }
 
     counts = {
         "workouts": (conn.execute(_SQL_CAPABILITIES_WORKOUTS).fetchone() or [0])[0],
@@ -498,6 +515,12 @@ def get_capabilities(
                 _SQL_CAPABILITIES_RECORDS_IN_WINDOW, [utc_start, utc_end]
             ).fetchall()
         }
+        scoped_record_health = {
+            row[0]: {"rows": row[1], "numeric": row[2], "text": row[3]}
+            for row in conn.execute(
+                _SQL_CAPABILITIES_RECORD_HEALTH_IN_WINDOW, [utc_start, utc_end]
+            ).fetchall()
+        }
         scoped_counts = {
             "workouts": (
                 conn.execute(_SQL_CAPABILITIES_WORKOUTS_IN_WINDOW, [utc_start, utc_end]).fetchone()
@@ -513,21 +536,35 @@ def get_capabilities(
         }
     else:
         scoped_record_types = present_types
+        scoped_record_health = record_health
         scoped_counts = counts
 
     def availability(
         metric_id: str,
-    ) -> tuple[bool, Literal["available", "unavailable", "out_of_range"]]:
+    ) -> tuple[
+        bool, Literal["available", "unavailable", "out_of_range", "malformed", "unsupported"]
+    ]:
         metric = METRIC_CATALOG[metric_id]
         if metric.availability_source == "records":
-            globally_present = bool(set(metric.apple_types).intersection(present_types))
+            matching_types = set(metric.apple_types).intersection(present_types)
+            globally_present = bool(matching_types)
             scoped_present = bool(set(metric.apple_types).intersection(scoped_record_types))
+            required_value = "text" if metric.value_kind == "category" else "numeric"
+            globally_valid = any(record_health[item][required_value] > 0 for item in matching_types)
+            scoped_valid = any(
+                scoped_record_health[item][required_value] > 0
+                for item in set(metric.apple_types).intersection(scoped_record_types)
+            )
         else:
             globally_present = counts[metric.availability_source] > 0
             scoped_present = scoped_counts[metric.availability_source] > 0
+            globally_valid = globally_present
+            scoped_valid = scoped_present
         if not globally_present:
             return False, "unavailable"
-        if not scoped_present:
+        if not globally_valid:
+            return False, "malformed"
+        if not scoped_present or not scoped_valid:
             return False, "out_of_range"
         return True, "available"
 

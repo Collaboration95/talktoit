@@ -204,6 +204,19 @@ describe('DashboardView', () => {
     expect(await screen.findByText(/steps out of range/i)).toBeInTheDocument()
   })
 
+  it('labels malformed imported metric values distinctly', async () => {
+    setupHandlers()
+    server.use(
+      http.get('/api/dashboard/capabilities', () =>
+        HttpResponse.json({
+          capabilities: [{ name: 'steps', present: false, state: 'malformed' }],
+        }),
+      ),
+    )
+    render(<DashboardView />)
+    expect(await screen.findByText(/steps malformed/i)).toBeInTheDocument()
+  })
+
   it('shows local import coverage with the dashboard facts', async () => {
     setupHandlers()
     render(<DashboardView />)

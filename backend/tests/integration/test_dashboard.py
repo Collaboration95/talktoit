@@ -357,3 +357,19 @@ async def test_http_capabilities_marks_present_data_out_of_range(client: AsyncCl
     assert r.status_code == 200
     caps = {c["name"]: c for c in r.json()["capabilities"]}
     assert caps["steps"] == {"name": "steps", "present": False, "state": "out_of_range"}
+
+
+@pytest.mark.asyncio
+async def test_http_capabilities_marks_invalid_metric_values_as_malformed(
+    client: AsyncClient, db: duckdb.DuckDBPyConnection
+) -> None:
+    """A known metric with no usable values is not presented as merely absent."""
+    db.execute("DELETE FROM records WHERE type = 'HKQuantityTypeIdentifierStepCount'")
+    db.execute(
+        """INSERT INTO records VALUES
+        (999, 'HKQuantityTypeIdentifierStepCount', 'Watch', NULL, NULL, 'count', NULL,
+         '2026-06-05 07:00:00', '2026-06-05 08:00:00', NULL, NULL)"""
+    )
+    response = await client.get("/api/dashboard/capabilities")
+    caps = {item["name"]: item for item in response.json()["capabilities"]}
+    assert caps["steps"] == {"name": "steps", "present": False, "state": "malformed"}
