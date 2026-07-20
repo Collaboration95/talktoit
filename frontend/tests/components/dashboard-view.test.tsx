@@ -153,6 +153,16 @@ describe('DashboardView', () => {
       expect(noDataElements.length).toBeGreaterThanOrEqual(3)
     })
   })
+
+  it('keeps healthy panels visible when one panel fails', async () => {
+    setupHandlers()
+    server.use(http.get('/api/dashboard/sleep', () => HttpResponse.json({}, { status: 500 })))
+    render(<DashboardView />)
+    await waitFor(() => {
+      expect(screen.getAllByText('Running').length).toBeGreaterThanOrEqual(1)
+    })
+    expect(screen.getAllByText('No data').length).toBeGreaterThanOrEqual(1)
+  })
 })
 
 describe('App tab navigation', () => {

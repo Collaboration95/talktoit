@@ -235,30 +235,37 @@ export function DashboardView() {
   }, [])
 
   useEffect(() => {
-    Promise.all([
+    Promise.allSettled([
       fetchSummary(),
       fetchWorkouts(),
       fetchTrend('steps', 'day'),
       fetchTrend('heart', 'week'),
       fetchTrend('sleep', 'day'),
       fetchCapabilities(),
-    ])
-      .then(([summary, workouts, steps, heart, sleep, caps]) => {
-        setState({
-          summary,
-          workouts,
-          steps,
-          heart,
-          sleep,
-          capabilities: caps,
-          loading: false,
-          error: null,
-        })
+    ]).then((results) => {
+      const [summaryResult, workoutsResult, stepsResult, heartResult, sleepResult, capsResult] =
+        results
+      if (
+        !summaryResult ||
+        !workoutsResult ||
+        !stepsResult ||
+        !heartResult ||
+        !sleepResult ||
+        !capsResult
+      ) {
+        return
+      }
+      setState({
+        summary: summaryResult.status === 'fulfilled' ? summaryResult.value : [],
+        workouts: workoutsResult.status === 'fulfilled' ? workoutsResult.value : [],
+        steps: stepsResult.status === 'fulfilled' ? stepsResult.value : null,
+        heart: heartResult.status === 'fulfilled' ? heartResult.value : null,
+        sleep: sleepResult.status === 'fulfilled' ? sleepResult.value : null,
+        capabilities: capsResult.status === 'fulfilled' ? capsResult.value : [],
+        loading: false,
+        error: null,
       })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : 'Failed to load dashboard'
-        setState((prev) => ({ ...prev, loading: false, error: msg }))
-      })
+    })
   }, [])
 
   if (state.loading) {
@@ -268,14 +275,6 @@ export function DashboardView() {
         data-testid="loading"
       >
         Loading dashboard…
-      </div>
-    )
-  }
-
-  if (state.error) {
-    return (
-      <div className="flex items-center justify-center min-h-64 text-red-500">
-        Error: {state.error}
       </div>
     )
   }
