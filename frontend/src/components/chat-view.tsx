@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { askQuestion, ChatApiError } from '@/api/chat'
 import {
   createConversation,
+  archiveConversation,
   deleteConversation,
   getConversationTurns,
   listConversations,
@@ -92,6 +93,18 @@ export function ChatView() {
     [conversationId],
   )
 
+  const archiveConversationFromWorkspace = useCallback(
+    async (id: string) => {
+      await archiveConversation(id)
+      if (conversationId === id) {
+        setConversationId(undefined)
+        setTurns([])
+      }
+      setConversations(await listConversations())
+    },
+    [conversationId],
+  )
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
       <header className="mb-8 text-center">
@@ -128,6 +141,13 @@ export function ChatView() {
                   className="text-sm text-blue-600"
                 >
                   {conversation.title}
+                </button>
+                <button
+                  onClick={() => void archiveConversationFromWorkspace(conversation.id)}
+                  className="ml-1 text-xs text-gray-600"
+                  aria-label={`Archive ${conversation.title}`}
+                >
+                  Archive
                 </button>
                 <button
                   onClick={() => void removeConversation(conversation.id)}

@@ -37,3 +37,10 @@ export async function deleteConversation(id: string): Promise<void> {
   const response = await fetch(`/api/conversations/${encodeURIComponent(id)}`, { method: 'DELETE' })
   if (!response.ok) throw new Error('Could not delete conversation')
 }
+
+export async function archiveConversation(id: string): Promise<void> {
+  const response = await fetch(`/api/conversations/${encodeURIComponent(id)}/archive`, {
+    method: 'POST',
+  })
+  if (!response.ok) throw new Error('Could not archive conversation')
+}
