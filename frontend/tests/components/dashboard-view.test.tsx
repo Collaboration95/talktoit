@@ -72,6 +72,7 @@ function setupHandlers() {
             avg_heart_rate: 148,
             distance_meters: 8500,
             energy_burned_kj: 2500,
+            fingerprint: 'fixture-fingerprint',
           },
         ],
       }),

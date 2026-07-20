@@ -43,6 +43,7 @@ class WorkoutSummary(BaseModel):
     avg_heart_rate: int | None
     distance_meters: float | None
     energy_burned_kj: float | None
+    fingerprint: str
 
 
 class WorkoutsResponse(DashboardResponse):
@@ -115,6 +116,7 @@ class WorkoutDetail(DashboardResponse):
     """Full detail for a single workout (R1-01)."""
 
     id: int
+    fingerprint: str
     activity_type: str
     date: str  # ISO-8601 local timezone
     duration_minutes: float | None

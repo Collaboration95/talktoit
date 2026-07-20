@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Generator
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -69,7 +70,7 @@ GROUP BY workout_id
 
 _SQL_WORKOUTS_LIST = (
     """
-SELECT w.id, w.activity_type, w.start_date, w.duration, w.duration_unit,
+SELECT w.id, w.activity_type, w.start_date, w.duration, w.duration_unit, w.source_name,
     hr.average AS avg_hr,
     dist.distance_m AS distance_m,
     energy.sum AS energy_kj
@@ -218,6 +219,14 @@ def _duration_minutes(duration: float | None, unit: str | None) -> float | None:
     return float(duration)
 
 
+def _workout_fingerprint(
+    activity_type: str, start_date: datetime, duration: float | None, source_name: str
+) -> str:
+    """Return a stable local identity supplementing rebuild-local workout IDs."""
+    raw = "|".join((activity_type, start_date.isoformat(), str(duration or ""), source_name))
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -285,6 +294,7 @@ def get_workouts(
             start_date_utc,
             duration,
             duration_unit,
+            source_name,
             avg_hr,
             distance_m,
             energy_kj,
@@ -300,6 +310,9 @@ def get_workouts(
                 avg_heart_rate=avg_hr_int,
                 distance_meters=distance_m,
                 energy_burned_kj=energy_kj,
+                fingerprint=_workout_fingerprint(
+                    activity_type, start_date_utc, duration, source_name
+                ),
             )
         )
     next_cursor = None
@@ -559,6 +572,7 @@ def get_workout_detail(
 
     return WorkoutDetail(
         id=wid,
+        fingerprint=_workout_fingerprint(activity_type, start_date_utc, duration, source_name),
         activity_type=activity_type,
         date=local_dt.isoformat(),
         duration_minutes=duration_minutes,
