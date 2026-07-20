@@ -36,6 +36,7 @@ def main() -> None:
     # Parse arguments
     legacy_mode = False
     dry_run_report = False
+    report_json = False
     xml_path_str = None
     workers_override = None
 
@@ -44,6 +45,8 @@ def main() -> None:
             legacy_mode = True
         elif arg == "--dry-run-report":
             dry_run_report = True
+        elif arg == "--report-json":
+            report_json = True
         elif arg == "--workers" and i < len(sys.argv) - 1:
             workers_override = int(sys.argv[i + 1])
             sys.argv[i + 1] = ""  # Mark as consumed
@@ -55,6 +58,10 @@ def main() -> None:
         print("\nOptions:", file=sys.stderr)
         print("  --legacy       Use the original lxml-based parser", file=sys.stderr)
         print("  --workers N    Number of parallel workers (default: auto)", file=sys.stderr)
+        print(
+            "  --report-json  Print a non-sensitive completed-import report as JSON",
+            file=sys.stderr,
+        )
         print("\nEnvironment variables:", file=sys.stderr)
         print("  TTI_INGEST_WORKERS      Number of parallel workers", file=sys.stderr)
         print("  TTI_INGEST_SHARDS       Custom shard directory", file=sys.stderr)
@@ -214,7 +221,7 @@ def main() -> None:
         profile = get_data_profile(profile_conn)
     finally:
         profile_conn.close()
-    AppStateRepository().activate_file(
+    manifest = AppStateRepository().activate_file(
         xml_path,
         parser_version=parser_version,
         schema_version="1",
@@ -224,6 +231,28 @@ def main() -> None:
         counts={key: int(value) for key, value in stats.items() if isinstance(value, int)},
         warnings=manifest_warnings,
     )
+    if report_json:
+        timing = {
+            name: round(float(stats[name]), 6)
+            for name in ("parse_time_seconds", "load_time_seconds", "total_time_seconds")
+            if name in stats
+        }
+        print(
+            json.dumps(
+                {
+                    "mode": parser_version,
+                    "source_size_bytes": xml_path.stat().st_size,
+                    "resolved_workers": resolved_workers,
+                    "dataset_version_id": manifest.id,
+                    "coverage_start": manifest.coverage_start,
+                    "coverage_end": manifest.coverage_end,
+                    "counts": manifest.counts,
+                    "timing_seconds": timing,
+                    "warnings": list(manifest.warnings),
+                },
+                sort_keys=True,
+            )
+        )
 
 
 if __name__ == "__main__":
