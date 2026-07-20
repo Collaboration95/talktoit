@@ -19,8 +19,8 @@ from app.db.data_profile import get_data_profile
 from app.db.queries import get_fallback
 from app.llm.client import DEFAULT_MODEL
 from app.llm.local_planner import plan_local_question
-from app.llm.prompt_format import compact_tool_result_for_llm
 from app.llm.provider_gateway import ProviderGateway, ProviderUnavailableError
+from app.llm.provider_projection import narration_projection, planning_projection
 from app.llm.tools import TOOL_NAMES, dispatch_tool, normalize_tool_name, render_tool_catalog
 from app.models.chat import ChatResponse, ResponseMetadata
 from app.models.templates import FallbackData
@@ -211,7 +211,13 @@ class ChatOrchestrator:
         )
         planner_messages: list[dict[str, Any]] = [
             {"role": "system", "content": planner_prompt},
-            {"role": "user", "content": question},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    planning_projection(question, data_profile.planner_summary()),
+                    separators=(",", ":"),
+                ),
+            },
         ]
 
         # ── Stage 1: deterministic local plan ────────────────────────────────
@@ -254,20 +260,13 @@ class ChatOrchestrator:
 
         narrative_prompt = _NARRATIVE_PROMPT.format(today=today)
         compact_result = json.dumps(
-            compact_tool_result_for_llm(data_dict),
-            default=str,
-            separators=(",", ":"),
+            narration_projection(question, tool_name, data_dict), default=str, separators=(",", ":")
         )
         narrative_messages: list[dict[str, Any]] = [
             {"role": "system", "content": narrative_prompt},
             {
                 "role": "user",
-                "content": (
-                    f"Question: {question}\n\n"
-                    f"Tool used: {tool_name}\n\n"
-                    f"Tool result (rounded and compact):\n"
-                    f"{compact_result}"
-                ),
+                "content": (f"Use this versioned, allowlisted projection only:\n{compact_result}"),
             },
         ]
 

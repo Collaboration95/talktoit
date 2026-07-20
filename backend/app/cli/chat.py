@@ -12,6 +12,7 @@ from pathlib import Path
 from app.db.connection import connect
 from app.llm.client import get_model, make_client
 from app.llm.orchestrator import ChatOrchestrator
+from app.llm.provider_gateway import ProviderGateway
 from app.models.chat import ChatResponse
 
 
@@ -67,11 +68,14 @@ def _resolve_question(question: str | None) -> str:
 async def _ask_question(question: str, db_path: Path | None = None) -> ChatResponse:
     """Run one question against the orchestrator and return the response."""
     conn = connect(db_path, read_only=True)
+    gateway = ProviderGateway(make_client(), model=get_model())
     try:
-        client = make_client()
-        orchestrator = ChatOrchestrator(client=client, conn=conn, model=get_model())
+        orchestrator = ChatOrchestrator(
+            client=gateway.client, conn=conn, model=get_model(), gateway=gateway
+        )
         return await orchestrator.answer(question)
     finally:
+        await gateway.aclose()
         conn.close()
 
 
