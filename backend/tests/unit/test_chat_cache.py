@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import app.state.app_state as app_state
+from app.llm.cache_keys import CACHE_KEY_VERSION, build_cache_key
 from app.state.app_state import CACHE_MAX_ENTRIES, AppStateRepository
 
 
@@ -20,6 +21,23 @@ def test_canonical_cache_key_can_share_equivalent_local_intent(tmp_path) -> None
         repo.get_cached_response("canonical-last-running", "ds_one")
         == '{"template_id":"workout_card"}'
     )
+
+
+def test_versioned_cache_keys_normalize_equivalent_intent_without_sharing_different_facts() -> None:
+    assert CACHE_KEY_VERSION == "chat-cache-v2"
+    assert build_cache_key("exact", "  Last RUN  ") == build_cache_key("exact", "last run")
+    plan = {
+        "tool_name": "get_trend",
+        "arguments": {"metric_id": "HKQuantityTypeIdentifierStepCount", "granularity": "day"},
+    }
+    assert build_cache_key("canonical", plan) == build_cache_key("canonical", dict(plan))
+    assert build_cache_key(
+        "canonical",
+        {
+            "tool_name": "get_trend",
+            "arguments": {"metric_id": "HKQuantityTypeIdentifierRestingHeartRate"},
+        },
+    ) != build_cache_key("canonical", plan)
 
 
 def test_lru_cache_eviction_is_bounded_and_does_not_touch_turns(tmp_path) -> None:

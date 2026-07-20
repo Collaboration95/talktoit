@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 from collections.abc import Generator
 
@@ -12,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.db.connection import connect
 from app.db.data_profile import get_data_profile
+from app.llm.cache_keys import build_cache_key
 from app.llm.client import get_model
 from app.llm.followups import FollowupContext, resolve_followup
 from app.llm.local_planner import plan_local_question
@@ -74,7 +74,7 @@ async def chat(
                 request.conversation_id, request.question, request.cache_mode
             )
         active = repository.get_active()
-        cache_key = hashlib.sha256(request.question.strip().casefold().encode()).hexdigest()
+        cache_key = build_cache_key("exact", request.question)
         local_plan = plan_local_question(request.question, get_data_profile(conn))
         followup_plan = None
         if request.parent_turn_id and active is not None:
@@ -97,11 +97,7 @@ async def chat(
                         )
                 except (TypeError, ValueError, json.JSONDecodeError):
                     followup_plan = None
-        canonical_key = (
-            hashlib.sha256(json.dumps(local_plan, sort_keys=True).encode()).hexdigest()
-            if local_plan is not None
-            else None
-        )
+        canonical_key = build_cache_key("canonical", local_plan) if local_plan is not None else None
         cached = (
             repository.get_cached_response(cache_key, active.id)
             if active is not None and request.cache_mode != "fresh"
