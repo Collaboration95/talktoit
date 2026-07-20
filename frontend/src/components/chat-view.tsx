@@ -23,6 +23,7 @@ export function ChatView() {
   const [turns, setTurns] = useState<ChatTurn[]>([])
   const [conversationId, setConversationId] = useState<string>()
   const [conversations, setConversations] = useState<Conversation[]>([])
+  const [conversationSearch, setConversationSearch] = useState('')
   const [backendDown, setBackendDown] = useState(false)
 
   // Health check on mount (R1-12): non-blocking, 3s timeout
@@ -38,10 +39,10 @@ export function ChatView() {
   }, [])
 
   useEffect(() => {
-    listConversations()
+    listConversations(conversationSearch)
       .then(setConversations)
       .catch(() => undefined)
-  }, [conversationId])
+  }, [conversationId, conversationSearch])
 
   const handleQuestion = useCallback(
     async (question: string) => {
@@ -132,6 +133,14 @@ export function ChatView() {
             New conversation
           </button>
         </div>
+        <input
+          type="search"
+          value={conversationSearch}
+          onChange={(event) => setConversationSearch(event.target.value)}
+          aria-label="Search local conversations"
+          placeholder="Search local conversations"
+          className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+        />
         {conversations.length > 0 ? (
           <ul className="flex flex-wrap gap-2" aria-label="Local conversations">
             {conversations.map((conversation) => (

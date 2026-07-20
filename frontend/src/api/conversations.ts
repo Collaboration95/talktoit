@@ -21,8 +21,9 @@ export async function createConversation(title = 'New conversation'): Promise<st
   return ((await response.json()) as { id: string }).id
 }
 
-export async function listConversations(): Promise<Conversation[]> {
-  const response = await fetch('/api/conversations')
+export async function listConversations(search = ''): Promise<Conversation[]> {
+  const query = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : ''
+  const response = await fetch(`/api/conversations${query}`)
   if (!response.ok) throw new Error('Could not load conversations')
   return response.json() as Promise<Conversation[]>
 }
