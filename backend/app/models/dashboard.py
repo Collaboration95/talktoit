@@ -21,10 +21,24 @@ class ActivityRingDay(BaseModel):
     stand_goal_hours: int | None
 
 
+class DashboardResource(BaseModel):
+    """Lifecycle and data-scope metadata for one independently loaded panel."""
+
+    state: Literal["success", "empty", "unavailable", "stale", "error"]
+    dataset_version_id: str | None
+    effective_start: str | None
+    effective_end: str | None
+    coverage_start: str | None
+    coverage_end: str | None
+    generated_at: str
+    duration_ms: int
+
+
 class DashboardResponse(BaseModel):
     """Version marker shared by dashboard response envelopes."""
 
     api_version: Literal["v1"] = "v1"
+    resource: DashboardResource | None = None
 
 
 class ActivitySummaryResponse(DashboardResponse):

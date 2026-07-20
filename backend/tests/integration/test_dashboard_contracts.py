@@ -59,7 +59,14 @@ async def test_dashboard_routes_return_versioned_success_envelopes(
 ) -> None:
     response = await client.get(path)
     assert response.status_code == 200
-    assert response.json()["api_version"] == "v1"
+    body = response.json()
+    assert body["api_version"] == "v1"
+    resource = body["resource"]
+    assert resource["state"] in {"success", "empty"}
+    assert resource["coverage_start"] is not None
+    assert resource["coverage_end"] is not None
+    assert resource["generated_at"]
+    assert resource["duration_ms"] >= 0
 
 
 @pytest.mark.asyncio
@@ -71,6 +78,7 @@ async def test_workout_detail_contract_includes_normalized_distance_and_route_st
     body = response.json()
     assert body["distance_meters"] == pytest.approx(8_500)
     assert body["route"] == {"state": "invalid", "message": "The saved route could not be read."}
+    assert body["resource"]["state"] == "success"
 
 
 @pytest.mark.asyncio
