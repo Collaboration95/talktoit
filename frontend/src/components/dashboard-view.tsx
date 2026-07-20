@@ -5,12 +5,14 @@ import { WorkoutDetail } from '@/components/workout-detail'
 import type {
   ActivityRingDay,
   CapabilityFlag,
+  DatasetStatus,
   SleepStagesResponse,
   TrendResponse,
   WorkoutSummary,
 } from '@/api/dashboard'
 import {
   fetchCapabilities,
+  fetchDatasetStatus,
   fetchSleepStages,
   fetchSummary,
   fetchTrend,
@@ -33,6 +35,7 @@ interface DashboardState {
   sleep: TrendResponse | null
   sleepStages: SleepStagesResponse | null
   capabilities: CapabilityFlag[]
+  datasetStatus: DatasetStatus | null
   nextWorkoutCursor: string | null
   loading: boolean
   error: string | null
@@ -293,6 +296,7 @@ export function DashboardView() {
     sleep: null,
     sleepStages: null,
     capabilities: [],
+    datasetStatus: null,
     nextWorkoutCursor: null,
     loading: true,
     error: null,
@@ -343,6 +347,7 @@ export function DashboardView() {
       fetchTrend('sleep', 'day', scope),
       fetchSleepStages(scope),
       fetchCapabilities(),
+      fetchDatasetStatus(),
     ]).then((results) => {
       const [
         summaryResult,
@@ -352,6 +357,7 @@ export function DashboardView() {
         sleepResult,
         stagesResult,
         capsResult,
+        statusResult,
       ] = results
       if (
         !active ||
@@ -361,7 +367,8 @@ export function DashboardView() {
         !heartResult ||
         !sleepResult ||
         !stagesResult ||
-        !capsResult
+        !capsResult ||
+        !statusResult
       ) {
         return
       }
@@ -375,6 +382,7 @@ export function DashboardView() {
         sleep: sleepResult.status === 'fulfilled' ? sleepResult.value : null,
         sleepStages: stagesResult.status === 'fulfilled' ? stagesResult.value : null,
         capabilities: capsResult.status === 'fulfilled' ? capsResult.value : [],
+        datasetStatus: statusResult.status === 'fulfilled' ? statusResult.value : null,
         loading: false,
         error: null,
       })
@@ -463,6 +471,12 @@ export function DashboardView() {
       {scope.start && scope.end ? (
         <p className="text-sm text-gray-500" aria-label="Active dashboard scope">
           Showing {scope.start} to {scope.end}
+        </p>
+      ) : null}
+      {state.datasetStatus?.dataset ? (
+        <p className="text-xs text-gray-500" aria-label="Imported data coverage">
+          Imported coverage: {state.datasetStatus.dataset.coverage_start ?? 'unknown'} to{' '}
+          {state.datasetStatus.dataset.coverage_end ?? 'unknown'}
         </p>
       ) : null}
       <SavedViewsPanel views={savedViews} onApply={applySavedView} />

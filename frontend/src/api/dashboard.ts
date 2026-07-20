@@ -43,6 +43,11 @@ export interface CapabilityFlag {
   present: boolean
 }
 
+export interface DatasetStatus {
+  readiness: 'ready' | 'no_active_import'
+  dataset: { coverage_start: string | null; coverage_end: string | null } | null
+}
+
 export interface DashboardScope {
   start?: string
   end?: string
@@ -133,6 +138,11 @@ export async function fetchCapabilities(): Promise<CapabilityFlag[]> {
   const r = await checkedFetch('/api/dashboard/capabilities')
   const d = (await r.json()) as { capabilities: CapabilityFlag[] }
   return d.capabilities
+}
+
+export async function fetchDatasetStatus(): Promise<DatasetStatus> {
+  const r = await checkedFetch('/api/status')
+  return r.json() as Promise<DatasetStatus>
 }
 
 /** Fetch full detail for a single workout (R1-01). */

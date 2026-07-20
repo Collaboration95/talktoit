@@ -100,6 +100,12 @@ function setupHandlers() {
       }),
     ),
     http.get('/api/saved-views', () => HttpResponse.json([])),
+    http.get('/api/status', () =>
+      HttpResponse.json({
+        readiness: 'ready',
+        dataset: { coverage_start: '2024-01-01', coverage_end: '2024-12-31' },
+      }),
+    ),
   )
 }
 
@@ -146,6 +152,14 @@ describe('DashboardView', () => {
     await waitFor(() => {
       expect(screen.getByText(/resting hr/i)).toBeInTheDocument()
     })
+  })
+
+  it('shows local import coverage with the dashboard facts', async () => {
+    setupHandlers()
+    render(<DashboardView />)
+    expect(await screen.findByLabelText('Imported data coverage')).toHaveTextContent(
+      '2024-01-01 to 2024-12-31',
+    )
   })
 
   it('handles empty series gracefully — shows No data', async () => {
