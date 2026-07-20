@@ -68,10 +68,11 @@ def main() -> None:
         print(f"File not found: {xml_path}", file=sys.stderr)
         sys.exit(1)
 
+    resolved_workers = (
+        1 if legacy_mode else resolve_worker_count(xml_path.stat().st_size, workers_override)
+    )
+
     if dry_run_report:
-        resolved_workers = (
-            1 if legacy_mode else resolve_worker_count(xml_path.stat().st_size, workers_override)
-        )
         print(
             json.dumps(
                 {
@@ -149,10 +150,7 @@ def main() -> None:
 
             logger.info("Starting V2 parallel ingestion...")
             try:
-                if workers_override:
-                    stats = ingest_v2(xml_path=xml_path, db=db, n_workers=workers_override)
-                else:
-                    stats = ingest_v2(xml_path=xml_path, db=db)
+                stats = ingest_v2(xml_path=xml_path, db=db, n_workers=resolved_workers)
             except V2CompatibilityError as error:
                 if os.environ.get("TTI_INGEST_FALLBACK_LEGACY", "0") != "1":
                     raise
@@ -220,7 +218,7 @@ def main() -> None:
         xml_path,
         parser_version=parser_version,
         schema_version="1",
-        worker_count=workers_override or (int(os.environ.get("TTI_INGEST_WORKERS", "0")) or 0),
+        worker_count=resolved_workers,
         coverage_start=profile.first_date.isoformat() if profile.first_date else None,
         coverage_end=profile.latest_date.isoformat() if profile.latest_date else None,
         counts={key: int(value) for key, value in stats.items() if isinstance(value, int)},
