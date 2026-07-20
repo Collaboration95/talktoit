@@ -12,6 +12,7 @@ Environment variables:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -20,6 +21,7 @@ from pathlib import Path
 
 from app.db.connection import connect, resolve_db_path
 from app.db.data_profile import get_data_profile
+from app.ingest.coordinator import resolve_worker_count
 from app.state.app_state import AppStateRepository
 
 
@@ -33,12 +35,15 @@ def main() -> None:
 
     # Parse arguments
     legacy_mode = False
+    dry_run_report = False
     xml_path_str = None
     workers_override = None
 
     for i, arg in enumerate(sys.argv[1:], start=1):
         if arg == "--legacy":
             legacy_mode = True
+        elif arg == "--dry-run-report":
+            dry_run_report = True
         elif arg == "--workers" and i < len(sys.argv) - 1:
             workers_override = int(sys.argv[i + 1])
             sys.argv[i + 1] = ""  # Mark as consumed
@@ -62,6 +67,24 @@ def main() -> None:
     if not xml_path.exists():
         print(f"File not found: {xml_path}", file=sys.stderr)
         sys.exit(1)
+
+    if dry_run_report:
+        resolved_workers = (
+            1 if legacy_mode else resolve_worker_count(xml_path.stat().st_size, workers_override)
+        )
+        print(
+            json.dumps(
+                {
+                    "mode": "legacy-v1" if legacy_mode else "v2",
+                    "source_size_bytes": xml_path.stat().st_size,
+                    "resolved_workers": resolved_workers,
+                    "activation": "not_started",
+                    "quality_checks": ["schema", "reconciliation", "manifest"],
+                },
+                sort_keys=True,
+            )
+        )
+        return
 
     # Display configuration
     logger = logging.getLogger(__name__)
