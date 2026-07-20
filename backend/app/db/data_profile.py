@@ -41,11 +41,14 @@ GROUP BY activity_type
 ORDER BY count DESC, activity_type
 """
 
-_SQL_AVAILABLE_METRICS = """
+_SQL_AVAILABLE_METRICS = (
+    """
 SELECT DISTINCT type
 FROM records
-WHERE type IN (?, ?, ?, ?, ?)
-"""
+WHERE type IN ("""
+    + ", ".join("?" for _metric in METRIC_META)
+    + ")"
+)
 
 
 def display_activity_type(activity_type: str) -> str:

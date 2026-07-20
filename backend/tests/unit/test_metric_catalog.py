@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.analytics.metric_catalog import METRIC_CATALOG, catalog_for_apple_type
+from app.db.aggregations import METRIC_AGGREGATION, METRIC_META
 
 
 def test_all_catalog_entries_declare_unit_policy_and_safe_language() -> None:
@@ -26,3 +27,10 @@ def test_catalog_resolves_declared_apple_type_only() -> None:
 def test_summary_metrics_declare_non_record_availability_sources() -> None:
     assert METRIC_CATALOG["activity_rings"].availability_source == "activity_summaries"
     assert METRIC_CATALOG["workouts"].availability_source == "workouts"
+
+
+def test_numeric_aggregation_presentation_is_derived_from_catalog() -> None:
+    steps_type = "HKQuantityTypeIdentifierStepCount"
+    assert METRIC_META[steps_type] == (METRIC_CATALOG["steps"].label, "count")
+    assert METRIC_AGGREGATION[steps_type] == "sum"
+    assert METRIC_META["HKQuantityTypeIdentifierRestingHeartRate"] == ("Resting HR", "bpm")

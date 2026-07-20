@@ -38,7 +38,7 @@ METRIC_CATALOG: dict[str, MetricDefinition] = {
     "active_energy": MetricDefinition(
         "active_energy",
         ("HKQuantityTypeIdentifierActiveEnergyBurned",),
-        "Active energy",
+        "Active Energy",
         "kJ",
         "sum",
         "Apple Health source values are summed per bucket.",
@@ -52,7 +52,7 @@ METRIC_CATALOG: dict[str, MetricDefinition] = {
             "HKQuantityTypeIdentifierDistanceCycling",
         ),
         "Distance",
-        "m",
+        "km",
         "sum",
         "Workout statistics are normalized locally to metres.",
         "compact_fact",
@@ -61,7 +61,7 @@ METRIC_CATALOG: dict[str, MetricDefinition] = {
     "resting_hr": MetricDefinition(
         "resting_hr",
         ("HKQuantityTypeIdentifierRestingHeartRate",),
-        "Resting heart rate",
+        "Resting HR",
         "bpm",
         "average",
         "Measurements are shown by source date without health interpretation.",
@@ -71,7 +71,7 @@ METRIC_CATALOG: dict[str, MetricDefinition] = {
     "hrv": MetricDefinition(
         "hrv",
         ("HKQuantityTypeIdentifierHeartRateVariabilitySDNN",),
-        "HRV",
+        "HRV SDNN",
         "ms",
         "average",
         "Measurements are shown by source date without health interpretation.",

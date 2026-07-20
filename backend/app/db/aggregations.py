@@ -10,24 +10,22 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
 
+from app.analytics.metric_catalog import METRIC_CATALOG
+
 Granularity = Literal["day", "week", "month"]
 
-# Maps metric_id → (human label, display unit)
+# The catalog owns every user-facing metric label, unit, and aggregation policy.
 METRIC_META: dict[str, tuple[str, str]] = {
-    "HKQuantityTypeIdentifierRestingHeartRate": ("Resting HR", "bpm"),
-    "HKQuantityTypeIdentifierHeartRateVariabilitySDNN": ("HRV SDNN", "ms"),
-    "HKQuantityTypeIdentifierStepCount": ("Steps", "count"),
-    "HKQuantityTypeIdentifierActiveEnergyBurned": ("Active Energy", "kJ"),
-    "HKQuantityTypeIdentifierDistanceWalkingRunning": ("Distance", "km"),
+    apple_type: (metric.label, metric.unit)
+    for metric in METRIC_CATALOG.values()
+    if metric.value_kind == "numeric"
+    for apple_type in metric.apple_types
 }
-
-# Default aggregation per metric: sum for accumulators, avg for rates
 METRIC_AGGREGATION: dict[str, Literal["avg", "sum"]] = {
-    "HKQuantityTypeIdentifierRestingHeartRate": "avg",
-    "HKQuantityTypeIdentifierHeartRateVariabilitySDNN": "avg",
-    "HKQuantityTypeIdentifierStepCount": "sum",
-    "HKQuantityTypeIdentifierActiveEnergyBurned": "sum",
-    "HKQuantityTypeIdentifierDistanceWalkingRunning": "sum",
+    apple_type: "sum" if metric.aggregation == "sum" else "avg"
+    for metric in METRIC_CATALOG.values()
+    if metric.value_kind == "numeric" and metric.aggregation in {"sum", "average"}
+    for apple_type in metric.apple_types
 }
 
 # Apple Health workout_statistics types that represent distances
