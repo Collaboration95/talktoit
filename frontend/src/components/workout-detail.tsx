@@ -11,11 +11,12 @@ import {
 
 interface WorkoutDetailProps {
   workoutId: number
+  fingerprint?: string
   onBack: () => void
 }
 
 /** Renders full detail for a single workout, including GPS map and metadata (R1-01). */
-export function WorkoutDetail({ workoutId, onBack }: WorkoutDetailProps) {
+export function WorkoutDetail({ workoutId, fingerprint, onBack }: WorkoutDetailProps) {
   const [data, setData] = useState<WorkoutDetailType | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -23,13 +24,13 @@ export function WorkoutDetail({ workoutId, onBack }: WorkoutDetailProps) {
   useEffect(() => {
     setLoading(true)
     setError(null)
-    fetchWorkoutDetail(workoutId)
+    fetchWorkoutDetail(workoutId, fingerprint)
       .then(setData)
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : 'Failed to load workout')
       })
       .finally(() => setLoading(false))
-  }, [workoutId])
+  }, [fingerprint, workoutId])
 
   if (loading) {
     return (

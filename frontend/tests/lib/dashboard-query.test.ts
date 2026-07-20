@@ -9,6 +9,7 @@ describe('dashboard URL query', () => {
       activityType: 'HKWorkoutActivityTypeRunning',
       source: 'Apple Watch',
       selectedWorkout: 42,
+      selectedWorkoutFingerprint: '0000000000000000',
     }
     expect(decodeDashboardQuery(encodeDashboardQuery(query))).toEqual(query)
   })

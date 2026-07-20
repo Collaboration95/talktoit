@@ -81,6 +81,19 @@ async def test_workout_detail_not_found_and_invalid_id_are_safe(client: AsyncCli
 
 
 @pytest.mark.asyncio
+async def test_workout_detail_rejects_a_stale_dataset_fingerprint(client: AsyncClient) -> None:
+    """A deep link cannot silently resolve to a rebuilt local workout ID."""
+    detail = await client.get("/api/dashboard/workouts/1")
+    assert detail.status_code == 200
+    fingerprint = detail.json()["fingerprint"]
+    matched = await client.get(f"/api/dashboard/workouts/1?fingerprint={fingerprint}")
+    stale = await client.get("/api/dashboard/workouts/1?fingerprint=0000000000000000")
+    assert matched.status_code == 200
+    assert stale.status_code == 404
+    assert stale.json()["detail"] == "Workout link no longer matches this dataset"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "path,params",
     [

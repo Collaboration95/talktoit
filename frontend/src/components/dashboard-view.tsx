@@ -25,7 +25,9 @@ import { createSavedView, listSavedViews } from '@/api/saved-views'
 import type { SavedView } from '@/api/saved-views'
 import { formatDateOnly, formatNumber } from '@/lib/format'
 
-type DashboardViewMode = { view: 'list' } | { view: 'detail'; workoutId: number }
+type DashboardViewMode =
+  | { view: 'list' }
+  | { view: 'detail'; workoutId: number; fingerprint?: string }
 
 interface DashboardState {
   summary: ActivityRingDay[]
@@ -134,7 +136,7 @@ function WorkoutsPanel({
   nextWorkoutCursor: string | null
   scope: DashboardScope
   onScopeChange: (scope: DashboardScope) => void
-  onSelect: (id: number) => void
+  onSelect: (workout: WorkoutSummary) => void
   onLoadMore: () => void
 }) {
   const workoutTypes = useMemo(
@@ -235,11 +237,11 @@ function WorkoutsPanel({
             {workouts.map((w) => (
               <tr
                 key={w.id}
-                onClick={() => onSelect(w.id)}
+                onClick={() => onSelect(w)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault()
-                    onSelect(w.id)
+                    onSelect(w)
                   }
                 }}
                 tabIndex={0}
@@ -359,7 +361,13 @@ export function DashboardView() {
   })
   const [mode, setMode] = useState<DashboardViewMode>(() =>
     initialQuery.selectedWorkout
-      ? { view: 'detail', workoutId: initialQuery.selectedWorkout }
+      ? {
+          view: 'detail',
+          workoutId: initialQuery.selectedWorkout,
+          ...(initialQuery.selectedWorkoutFingerprint
+            ? { fingerprint: initialQuery.selectedWorkoutFingerprint }
+            : {}),
+        }
       : { view: 'list' },
   )
   const [scope, setScope] = useState<DashboardScope>(() => {
@@ -497,20 +505,27 @@ export function DashboardView() {
     setScope(normalized)
   }
 
-  const selectWorkout = (workoutId: number) => {
+  const selectWorkout = (workout: WorkoutSummary) => {
     const query = decodeDashboardQuery(window.location.search)
     window.history.pushState(
       {},
       '',
-      `?${encodeDashboardQuery({ ...query, tab: 'workouts', selectedWorkout: workoutId })}`,
+      `?${encodeDashboardQuery({
+        ...query,
+        tab: 'workouts',
+        selectedWorkout: workout.id,
+        selectedWorkoutFingerprint: workout.fingerprint,
+      })}`,
     )
-    setMode({ view: 'detail', workoutId })
+    setMode({ view: 'detail', workoutId: workout.id, fingerprint: workout.fingerprint })
   }
 
   const returnToWorkoutList = () => {
-    const { selectedWorkout: _selectedWorkout, ...query } = decodeDashboardQuery(
-      window.location.search,
-    )
+    const {
+      selectedWorkout: _selectedWorkout,
+      selectedWorkoutFingerprint: _selectedWorkoutFingerprint,
+      ...query
+    } = decodeDashboardQuery(window.location.search)
     window.history.pushState({}, '', `?${encodeDashboardQuery(query)}`)
     setMode({ view: 'list' })
   }
@@ -554,7 +569,11 @@ export function DashboardView() {
   if (mode.view === 'detail') {
     return (
       <div className="mx-auto max-w-3xl px-4 py-6">
-        <WorkoutDetail workoutId={mode.workoutId} onBack={returnToWorkoutList} />
+        <WorkoutDetail
+          workoutId={mode.workoutId}
+          {...(mode.fingerprint ? { fingerprint: mode.fingerprint } : {})}
+          onBack={returnToWorkoutList}
+        />
       </div>
     )
   }

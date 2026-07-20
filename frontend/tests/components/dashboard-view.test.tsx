@@ -76,7 +76,7 @@ function setupHandlers() {
             distance_meters: 8500,
             energy_burned_kj: 2500,
             source_name: 'Apple Watch',
-            fingerprint: 'fixture-fingerprint',
+            fingerprint: '0123456789abcdef',
           },
         ],
       }),
@@ -159,7 +159,7 @@ describe('DashboardView', () => {
               distance_meters: 8500,
               energy_burned_kj: 2500,
               source_name: 'Apple Watch',
-              fingerprint: 'fixture-fingerprint',
+              fingerprint: '0123456789abcdef',
             },
           ],
           next_cursor: null,
@@ -374,6 +374,17 @@ describe('DashboardView', () => {
     await user.click(await screen.findByRole('button', { name: /back to list/i }))
     expect(await screen.findByText('Showing 2024-01-01 to 2024-01-31')).toBeInTheDocument()
     expect(window.location.search).not.toContain('workout=1')
+    window.history.replaceState({}, '', '/')
+  })
+
+  it('adds the selected workout fingerprint to its detail URL', async () => {
+    setupHandlers()
+    const user = userEvent.setup()
+    render(<DashboardView />)
+    const runningButtons = await screen.findAllByRole('button', { name: /running/i })
+    await user.click(runningButtons.at(-1)!)
+    expect(window.location.search).toContain('workout=1')
+    expect(window.location.search).toContain('workout_fp=0123456789abcdef')
     window.history.replaceState({}, '', '/')
   })
 })

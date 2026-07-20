@@ -163,7 +163,8 @@ export async function fetchDatasetStatus(signal?: AbortSignal): Promise<DatasetS
 }
 
 /** Fetch full detail for a single workout (R1-01). */
-export async function fetchWorkoutDetail(id: number): Promise<WorkoutDetail> {
-  const r = await checkedFetch(`/api/dashboard/workouts/${id}`)
+export async function fetchWorkoutDetail(id: number, fingerprint?: string): Promise<WorkoutDetail> {
+  const params = fingerprint ? `?fingerprint=${encodeURIComponent(fingerprint)}` : ''
+  const r = await checkedFetch(`/api/dashboard/workouts/${id}${params}`)
   return r.json() as Promise<WorkoutDetail>
 }

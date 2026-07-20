@@ -609,6 +609,7 @@ def _union_interval_hours(intervals: list[tuple[datetime, datetime]]) -> float:
 @router.get("/workouts/{workout_id}", response_model=WorkoutDetail)
 def get_workout_detail(
     workout_id: int = Path(ge=1),
+    fingerprint: str | None = Query(default=None, pattern="^[a-f0-9]{16}$"),
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
 ) -> WorkoutDetail:
     """Return full detail for a single workout, including GPS and metadata."""
@@ -631,6 +632,11 @@ def get_workout_detail(
     ) = row
 
     local_dt = to_local_dt(start_date_utc, DEFAULT_TZ)
+    canonical_fingerprint = _workout_fingerprint(
+        activity_type, start_date_utc, duration, source_name
+    )
+    if fingerprint is not None and fingerprint != canonical_fingerprint:
+        raise HTTPException(status_code=404, detail="Workout link no longer matches this dataset")
     duration_minutes = _duration_minutes(duration, duration_unit)
     avg_heart_rate = round(avg_hr_raw) if avg_hr_raw is not None else None
     max_heart_rate = round(max_hr_raw) if max_hr_raw is not None else None
@@ -652,7 +658,7 @@ def get_workout_detail(
 
     return WorkoutDetail(
         id=wid,
-        fingerprint=_workout_fingerprint(activity_type, start_date_utc, duration, source_name),
+        fingerprint=canonical_fingerprint,
         activity_type=activity_type,
         date=local_dt.isoformat(),
         duration_minutes=duration_minutes,

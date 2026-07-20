@@ -5,6 +5,7 @@ export interface DashboardQuery {
   activityType?: string
   source?: string
   selectedWorkout?: number
+  selectedWorkoutFingerprint?: string
 }
 
 const DEFAULT_QUERY: DashboardQuery = { tab: 'overview' }
@@ -20,6 +21,7 @@ export function decodeDashboardQuery(search: string): DashboardQuery {
   const start = params.get('start')
   const end = params.get('end')
   const selected = Number(params.get('workout'))
+  const selectedFingerprint = params.get('workout_fp')
   const activityType = params.get('activity_type')
   const source = params.get('source')
   return {
@@ -28,6 +30,9 @@ export function decodeDashboardQuery(search: string): DashboardQuery {
     ...(activityType && activityType.length <= 160 ? { activityType } : {}),
     ...(source && source.length <= 160 ? { source } : {}),
     ...(Number.isInteger(selected) && selected > 0 ? { selectedWorkout: selected } : {}),
+    ...(selectedFingerprint && /^[a-f0-9]{16}$/.test(selectedFingerprint)
+      ? { selectedWorkoutFingerprint: selectedFingerprint }
+      : {}),
   }
 }
 
@@ -41,5 +46,6 @@ export function encodeDashboardQuery(query: DashboardQuery): string {
   if (query.activityType) params.set('activity_type', query.activityType)
   if (query.source) params.set('source', query.source)
   if (query.selectedWorkout) params.set('workout', String(query.selectedWorkout))
+  if (query.selectedWorkoutFingerprint) params.set('workout_fp', query.selectedWorkoutFingerprint)
   return params.toString()
 }
