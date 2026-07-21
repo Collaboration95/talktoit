@@ -32,6 +32,8 @@ class WorkoutCardData(BaseModel):
     energy_burned_kj: float | None
     elevation_ascent_meters: float | None
     gps_route: GpsRoute | None = None  # absent when None (SPEC §2.1 optional semantics)
+    workout_id: int | None = None
+    workout_fingerprint: str | None = None
 
 
 class RankedListRow(BaseModel):

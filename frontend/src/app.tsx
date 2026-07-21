@@ -3,7 +3,9 @@ import { ChatView } from '@/components/chat-view'
 import { DashboardView } from '@/components/dashboard-view'
 
 export function App() {
-  const [tab, setTab] = useState<'chat' | 'dashboard'>('chat')
+  const [tab, setTab] = useState<'chat' | 'dashboard'>(() =>
+    new URLSearchParams(window.location.search).get('tab') === 'workouts' ? 'dashboard' : 'chat',
+  )
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="border-b border-gray-200 bg-white">

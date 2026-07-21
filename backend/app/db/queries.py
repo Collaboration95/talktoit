@@ -11,6 +11,7 @@ therefore convert local dates to UTC bounds before querying.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -54,6 +55,7 @@ SELECT
     w.start_date,
     w.duration,
     w.duration_unit,
+    w.source_name,
     hr.average          AS avg_hr,
     hr.maximum          AS max_hr,
     dist.distance_m     AS distance_m,
@@ -269,11 +271,12 @@ def get_last_workout(
         return None
 
     (
-        _workout_id,
+        workout_id,
         act_type,
         start_date_utc,
         duration,
         duration_unit,
+        source_name,
         avg_hr_raw,
         max_hr_raw,
         distance_m,
@@ -285,6 +288,7 @@ def get_last_workout(
     duration_minutes = minutes_from_duration(duration, duration_unit) or 0.0
     avg_heart_rate = round(avg_hr_raw) if avg_hr_raw is not None else None
     max_heart_rate = round(max_hr_raw) if max_hr_raw is not None else None
+    fingerprint = _workout_fingerprint(act_type, start_date_utc, duration, source_name)
 
     return WorkoutCardData(
         activity_type=act_type,
@@ -297,7 +301,17 @@ def get_last_workout(
         energy_burned_kj=energy_kj,
         elevation_ascent_meters=elevation_m,
         gps_route=None,
+        workout_id=workout_id,
+        workout_fingerprint=fingerprint,
     )
+
+
+def _workout_fingerprint(
+    activity_type: str, start_date: datetime, duration: float | None, source_name: str
+) -> str:
+    """Return the same dataset-local workout identity used by dashboard detail links."""
+    raw = "|".join((activity_type, start_date.isoformat(), str(duration or ""), source_name))
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
 def get_workout_collection(

@@ -35,6 +35,14 @@ describe('WorkoutCard', () => {
     expect(screen.getByText('Great run!')).toBeInTheDocument()
   })
 
+  it('links a selected local workout to the fingerprinted dashboard detail URL', () => {
+    render(<WorkoutCard data={{ ...validData, workout_id: 12, workout_fingerprint: '0123456789abcdef' }} />)
+    expect(screen.getByRole('link', { name: 'Open workout details' })).toHaveAttribute(
+      'href',
+      '?tab=workouts&workout=12&workout_fp=0123456789abcdef',
+    )
+  })
+
   it('renders with null heart rate without crashing', () => {
     render(<WorkoutCard data={{ ...validData, avg_heart_rate: null, max_heart_rate: null }} />)
     expect(screen.getByText('Running')).toBeInTheDocument()

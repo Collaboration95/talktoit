@@ -20,6 +20,14 @@ export function WorkoutCard({ data, narrative }: WorkoutCardProps) {
       {narrative ? <p className="mb-4 text-gray-600">{narrative}</p> : null}
       <h2 className="text-xl font-bold text-gray-900">{data.activity_type}</h2>
       <p className="text-sm text-gray-500">{formatDateTime(data.date)}</p>
+      {data.workout_id && data.workout_fingerprint ? (
+        <a
+          className="mt-2 inline-block text-sm font-medium text-blue-600 hover:text-blue-700"
+          href={`?tab=workouts&workout=${data.workout_id}&workout_fp=${data.workout_fingerprint}`}
+        >
+          Open workout details
+        </a>
+      ) : null}
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Metric label="Duration" value={formatDurationMinutes(data.duration_minutes) ?? '—'} />
         {data.avg_heart_rate !== null ? (

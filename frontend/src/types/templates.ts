@@ -30,6 +30,8 @@ export interface WorkoutCardData {
   energy_burned_kj: number | null
   elevation_ascent_meters: number | null
   gps_route?: GpsRoute | null // optional: may be absent entirely (SPEC §2.1)
+  workout_id?: number | null
+  workout_fingerprint?: string | null
 }
 
 // ranked_list (SPEC §2.2)
