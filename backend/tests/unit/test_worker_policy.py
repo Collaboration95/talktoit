@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.ingest.coordinator import resolve_worker_count
 
 
@@ -18,3 +20,9 @@ def test_auto_workers_reserve_capacity_and_cap_at_eight(monkeypatch) -> None:
 def test_explicit_worker_override_wins_and_is_bounded() -> None:
     assert resolve_worker_count(1, requested=4, cpu_count=1) == 4
     assert resolve_worker_count(1, requested=99, cpu_count=1) == 8
+
+
+@pytest.mark.benchmark
+def test_invalid_worker_configuration_falls_back_to_auto(monkeypatch) -> None:
+    monkeypatch.setenv("TTI_INGEST_WORKERS", "not-a-number")
+    assert resolve_worker_count(32 * 1024 * 1024, cpu_count=4) == 3

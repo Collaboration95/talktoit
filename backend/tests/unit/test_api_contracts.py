@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from app.api.chat import _problem
 from app.models.chat import ChatRequest, ChatResponse
 
 
@@ -34,3 +35,15 @@ def test_chat_response_has_compatibility_metadata() -> None:
     )
     assert response.metadata.api_version == "v1"
     assert response.metadata.provenance == "unknown"
+
+
+def test_runtime_errors_use_a_safe_versioned_problem_detail() -> None:
+    error = _problem(503, "data_unavailable", "Local health data is unavailable.", "req-test")
+
+    assert error.status_code == 503
+    assert error.detail == {
+        "api_version": "v1",
+        "code": "data_unavailable",
+        "message": "Local health data is unavailable.",
+        "request_id": "req-test",
+    }

@@ -63,6 +63,10 @@ make run-cli QUESTION="Which gym session had the highest heart rate last month?"
 make run-cli QUESTION="Show my last run" JSON=1
 ```
 
+The versioned chat/template payload contract lives in [`docs/SPEC.md`](docs/SPEC.md). Use
+`make verify-headless` for the browserless API, orchestration, privacy, cache, and frontend
+contract checks.
+
 ## Configuration (`.env`)
 
 | Variable | Required | Default | Description |
@@ -72,6 +76,9 @@ make run-cli QUESTION="Show my last run" JSON=1
 | `LLM_BASE_URL` | no | Groq | OpenAI-compatible base URL |
 | `LLM_MODEL` | no | `llama-3.3-70b-versatile` | Model name |
 | `TTI_PROVIDER_MODE` | no | `local_only` | `local_only`, `remote_planning`, or `remote_planning_and_narration` |
+| `TTI_PROVIDER_TIMEOUT_SECONDS` | no | `15` | Total provider request deadline |
+| `TTI_PROVIDER_MAX_RETRIES` | no | `2` | Bounded transient provider retries |
+| `TTI_PROVIDER_CIRCUIT_FAILURE_THRESHOLD` | no | `3` | Transient failures before temporary circuit open |
 | `TTI_DB_PATH` | no | `backend/data/health.duckdb` | Path to the DuckDB file |
 
 ## Privacy

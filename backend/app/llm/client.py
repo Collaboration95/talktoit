@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import httpx
 import openai
 
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
@@ -74,6 +75,12 @@ def make_client(
         Configured async OpenAI client.
     """
     _ensure_env_loaded()
+    timeout_seconds = _provider_timeout_seconds()
+    timeout = httpx.Timeout(
+        timeout_seconds,
+        connect=min(timeout_seconds, 5.0),
+        pool=min(timeout_seconds, 5.0),
+    )
     return openai.AsyncOpenAI(
         base_url=base_url
         or _get_env(
@@ -84,7 +91,18 @@ def make_client(
         ),
         api_key=api_key
         or _get_env("LLM_API_KEY", "GROQ_API_KEY", "OPENAI_API_KEY", default="not-set"),
+        timeout=timeout,
+        max_retries=0,
     )
+
+
+def _provider_timeout_seconds() -> float:
+    """Return a finite provider transport deadline from local configuration."""
+    try:
+        value = float(os.environ.get("TTI_PROVIDER_TIMEOUT_SECONDS", "15"))
+    except ValueError:
+        return 15.0
+    return value if value > 0 else 15.0
 
 
 def get_model() -> str:

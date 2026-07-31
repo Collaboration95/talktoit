@@ -20,6 +20,7 @@ import shutil
 import tempfile
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -45,7 +46,14 @@ def resolve_worker_count(
     """Resolve the reproducible local worker policy without inspecting export content."""
     if requested is None:
         configured = os.environ.get("TTI_INGEST_WORKERS", "auto").strip().lower()
-        requested = None if configured == "auto" else int(configured)
+        if configured == "auto":
+            requested = None
+        else:
+            try:
+                requested = int(configured)
+            except ValueError:
+                logger.warning("Invalid TTI_INGEST_WORKERS=%r; using auto policy", configured)
+                requested = None
     if requested is not None:
         return max(1, min(requested, 8))
     available = cpu_count if cpu_count is not None else (os.cpu_count() or 1)
@@ -174,8 +182,13 @@ def ingest(
             for i, (start, end) in enumerate(ranges):
                 logger.info(f"  Worker {i}: [{start:,}, {end:,}) = {end - start:,} bytes")
 
-            # Phase 2: Parallel execution using ProcessPoolExecutor
-            if n_workers == 1:
+            # Phase 2: Parallel execution using ProcessPoolExecutor. Some
+            # restricted runtimes (including sandboxed CI) expose no named
+            # semaphores; correctness is preserved with a visible serial
+            # fallback rather than failing an otherwise valid import.
+            if n_workers == 1 or not _multiprocessing_available():
+                if n_workers > 1:
+                    logger.warning("Multiprocessing is unavailable; processing the import serially")
                 # Single worker - execute synchronously
                 logger.info("Processing with single worker...")
                 results: list[WorkerResult] = []
@@ -251,6 +264,16 @@ def ingest(
         "parquet_files": all_parquet_files,
         "shard_dir": str(shard_dir),
     }
+
+
+def _multiprocessing_available() -> bool:
+    """Return whether this runtime can create the semaphores used by workers."""
+    try:
+        import_module("multiprocessing.synchronize")
+        os.sysconf("SC_SEM_NSEMS_MAX")
+    except (ImportError, OSError, ValueError):
+        return False
+    return True
 
 
 def ingest_v2(

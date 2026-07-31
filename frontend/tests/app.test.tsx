@@ -4,7 +4,10 @@ import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { App } from '../src/app'
 
-const server = setupServer(http.get('/health', () => HttpResponse.json({ status: 'ok' })))
+const server = setupServer(
+  http.get('/health', () => HttpResponse.json({ status: 'ok' })),
+  http.get('/api/conversations', () => HttpResponse.json([])),
+)
 beforeAll(() => server.listen())
 afterEach(() => server.resetHandlers())
 afterAll(() => server.close())

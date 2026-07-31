@@ -8,7 +8,8 @@
         test test-bk test-fe test-all test-backend test-frontend test-watch \
         typecheck typecheck-backend typecheck-frontend \
         lint lint-backend lint-frontend format format-backend format-frontend \
-        coverage ingest clean build run run-cli check check-full groq-smoke verify-headless
+        coverage ingest clean build run run-cli check check-full groq-smoke verify-headless \
+        test-bench
 
 # ── Bootstrap ────────────────────────────────────────────────────────────────
 install:
@@ -44,7 +45,7 @@ endif
 
 # ── Benchmark tests ─────────────────────────────────────────────────────────
 test-bench:
-	uv run --directory backend pytest -m benchmark --benchmark-only
+	uv run --directory backend pytest -m benchmark --no-cov
 
 # ── Tests ────────────────────────────────────────────────────────────────────
 test: test-all   # alias
@@ -63,7 +64,15 @@ test-watch:
 
 # Contract-focused verification; does not start a server or need personal data.
 verify-headless:
-	uv run --directory backend pytest tests/integration/test_dashboard_contracts.py tests/unit/test_api_contracts.py -q --no-cov
+	uv run --directory backend pytest \
+		tests/integration/test_dashboard_contracts.py \
+		tests/integration/test_chat.py \
+		tests/integration/test_import_activation.py \
+		tests/unit/test_api_contracts.py \
+		tests/unit/test_chat_cache.py \
+		tests/unit/test_provider_gateway.py \
+		tests/unit/test_provider_redaction.py \
+		-q --no-cov
 	npm --prefix frontend run test -- --run tests/api tests/components/template-dispatch.test.tsx
 
 # ── Typechecking ─────────────────────────────────────────────────────────────

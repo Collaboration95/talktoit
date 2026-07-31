@@ -73,4 +73,5 @@ testpaths = ["tests"]
 addopts = "--cov=app --cov-report=term-missing --cov-report=xml --cov-report=html --cov-fail-under=80 -n auto"
 markers = [
     "ingest_contract: canonical ingest compatibility and typed-schema release gate",
+    "benchmark: lightweight deterministic performance-policy checks",
 ]

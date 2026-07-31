@@ -12,6 +12,8 @@ export class ChatApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    public readonly code?: string,
+    public readonly requestId?: string,
   ) {
     super(message)
     this.name = 'ChatApiError'
@@ -37,7 +39,22 @@ export async function askQuestion(
     ...(options.signal ? { signal: options.signal } : {}),
   })
   if (!response.ok) {
-    throw new ChatApiError(response.status, `Chat request failed: ${response.status}`)
+    const payload = (await response.json().catch(() => null)) as {
+      detail?: { code?: string; message?: string; request_id?: string } | string
+    } | null
+    const detail = payload?.detail
+    if (typeof detail === 'object' && detail !== null) {
+      throw new ChatApiError(
+        response.status,
+        detail.message ?? `Chat request failed: ${response.status}`,
+        detail.code,
+        detail.request_id,
+      )
+    }
+    throw new ChatApiError(
+      response.status,
+      typeof detail === 'string' ? detail : `Chat request failed: ${response.status}`,
+    )
   }
   return response.json() as Promise<ChatEnvelope>
 }

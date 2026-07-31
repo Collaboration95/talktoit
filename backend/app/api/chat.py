@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
 from collections.abc import Generator
 
 import duckdb
@@ -16,8 +17,13 @@ from app.llm.client import get_model
 from app.llm.followups import FollowupContext, followup_disambiguation, resolve_followup
 from app.llm.local_planner import plan_local_question
 from app.llm.orchestrator import ChatOrchestrator
-from app.llm.provider_gateway import ProviderGateway, make_provider_gateway
+from app.llm.provider_gateway import (
+    ProviderGateway,
+    ProviderUnavailableError,
+    make_provider_gateway,
+)
 from app.models.chat import ChatRequest, ChatResponse, ResponseMetadata
+from app.models.errors import ErrorCode, ProblemDetail
 from app.state.app_state import AppStateRepository
 
 router = APIRouter(prefix="/api")
@@ -42,6 +48,17 @@ def _get_gateway(request: Request) -> ProviderGateway:
     return gateway if gateway is not None else make_provider_gateway()
 
 
+def _problem(
+    status_code: int,
+    code: ErrorCode,
+    message: str,
+    request_id: str,
+) -> HTTPException:
+    """Build one safe error envelope for every failure after validation."""
+    detail = ProblemDetail(code=code, message=message, request_id=request_id)
+    return HTTPException(status_code=status_code, detail=detail.model_dump(mode="json"))
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
@@ -60,13 +77,14 @@ async def chat(
         and ``narrative``.
 
     Raises:
-        HTTPException: 500 if the orchestrator raises an unhandled exception.
+        HTTPException: A stable, privacy-safe problem envelope for runtime failures.
     """
     orchestrator = ChatOrchestrator(
         client=gateway.client, conn=conn, model=get_model(), gateway=gateway
     )
     repository: AppStateRepository | None = None
     pending_turn_id: str | None = None
+    request_id = request.request_id or f"req_{uuid.uuid4().hex[:12]}"
     try:
         repository = AppStateRepository()
         if request.conversation_id:
@@ -167,9 +185,48 @@ async def chat(
                 pending_turn_id, state="cancelled", message="Request cancelled by the client."
             )
         raise
+    except HTTPException:
+        raise
+    except ProviderUnavailableError as exc:
+        if pending_turn_id and repository:
+            repository.terminate_turn(
+                pending_turn_id,
+                state="failed",
+                message="The optional provider is unavailable.",
+            )
+        raise _problem(
+            503,
+            "provider_unavailable",
+            "The optional language provider is unavailable. Try again or use local mode.",
+            request_id,
+        ) from exc
+    except TimeoutError as exc:
+        if pending_turn_id and repository:
+            repository.terminate_turn(
+                pending_turn_id, state="failed", message="The request timed out."
+            )
+        raise _problem(
+            504, "request_timeout", "The request timed out. Please try again.", request_id
+        ) from exc
+    except duckdb.Error as exc:
+        if pending_turn_id and repository:
+            repository.terminate_turn(
+                pending_turn_id, state="failed", message="Local health data is unavailable."
+            )
+        raise _problem(
+            503,
+            "data_unavailable",
+            "Local health data is temporarily unavailable.",
+            request_id,
+        ) from exc
     except Exception as exc:
         if pending_turn_id and repository:
             repository.terminate_turn(
                 pending_turn_id, state="failed", message="The answer could not be completed."
             )
-        raise HTTPException(status_code=500, detail="Internal server error") from exc
+        raise _problem(
+            500,
+            "internal_failure",
+            "The answer could not be completed. Try again.",
+            request_id,
+        ) from exc

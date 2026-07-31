@@ -25,8 +25,27 @@ describe('askQuestion', () => {
 
   it('throws ChatApiError on non-200 response', async () => {
     server.use(
-      http.post('/api/chat', () => HttpResponse.json({ detail: 'error' }, { status: 500 })),
+      http.post('/api/chat', () =>
+        HttpResponse.json(
+          {
+            detail: {
+              api_version: 'v1',
+              code: 'data_unavailable',
+              message: 'Local health data is unavailable.',
+              request_id: 'req-test',
+            },
+          },
+          { status: 503 },
+        ),
+      ),
     )
-    await expect(askQuestion('test')).rejects.toBeInstanceOf(ChatApiError)
+    const failure = await askQuestion('test').catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(ChatApiError)
+    expect(failure).toMatchObject({
+      status: 503,
+      message: 'Local health data is unavailable.',
+      code: 'data_unavailable',
+      requestId: 'req-test',
+    })
   })
 })

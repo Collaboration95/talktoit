@@ -5,7 +5,44 @@ import { setupServer } from 'msw/node'
 import { DashboardView } from '@/components/dashboard-view'
 import type { TrendResponse } from '@/api/dashboard'
 
-const server = setupServer(http.get('/health', () => HttpResponse.json({ status: 'ok' })))
+const server = setupServer(
+  http.get('/health', () => HttpResponse.json({ status: 'ok' })),
+  http.get('/api/conversations', () => HttpResponse.json([])),
+  http.get('/api/saved-views', () => HttpResponse.json([])),
+  http.get('/api/status', () =>
+    HttpResponse.json({
+      readiness: 'ready',
+      dataset: { coverage_start: '2024-01-01', coverage_end: '2024-12-31' },
+    }),
+  ),
+  http.get('/api/dashboard/sleep/stages', () =>
+    HttpResponse.json({
+      total_asleep_hours: 7.5,
+      stages_hours: { Core: 3.5, REM: 2 },
+      stage_data_available: true,
+      message: 'Stages are measured from the selected sleep source.',
+    }),
+  ),
+  http.get('/api/dashboard/workouts/1', () =>
+    HttpResponse.json({
+      id: 1,
+      fingerprint: '0123456789abcdef',
+      activity_type: 'Running',
+      date: '2026-06-05T07:00:00+08:00',
+      duration_minutes: 45.5,
+      avg_heart_rate: 148,
+      max_heart_rate: 171,
+      distance_meters: 8500,
+      distance_unit: 'm',
+      energy_burned_kj: 2500,
+      elevation_ascent_meters: 45.2,
+      source_name: 'Apple Watch',
+      gps_route: null,
+      metadata: [],
+      route: { state: 'missing', message: 'No route is available for this workout.' },
+    }),
+  ),
+)
 beforeAll(() => server.listen())
 afterEach(() => {
   server.resetHandlers()
