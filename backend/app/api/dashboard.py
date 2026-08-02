@@ -6,8 +6,9 @@ import hashlib
 import time
 from collections.abc import Generator
 from datetime import UTC, date, datetime, timedelta
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import Annotated, Literal
 
+import duckdb
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from app.analytics.metric_catalog import METRIC_CATALOG
@@ -25,6 +26,7 @@ from app.db.aggregations import (
 )
 from app.db.connection import connect
 from app.db.data_profile import get_data_profile
+from app.db.migrate import table_has_column
 from app.ingest.gpx import parse_gpx_route
 from app.models.dashboard import (
     ActivityRingDay,
@@ -42,9 +44,6 @@ from app.models.dashboard import (
     WorkoutSummary,
 )
 from app.state.app_state import AppStateRepository
-
-if TYPE_CHECKING:
-    import duckdb
 
 router = APIRouter(prefix="/api/dashboard")
 
@@ -125,6 +124,23 @@ WHERE start_date >= ? AND start_date < ?
 
 _SQL_CAPABILITIES_RECORD_HEALTH_IN_WINDOW = """
 SELECT type, COUNT(*) AS row_count, COUNT(value) AS numeric_count, COUNT(text_value) AS text_count
+FROM records
+WHERE start_date >= ? AND start_date < ?
+GROUP BY type
+"""
+
+# Variants for databases that predate typed category values (no text_value
+# column yet). Numeric health stays measurable; category text counts are 0.
+_SQL_CAPABILITIES_RECORD_HEALTH_LEGACY = """
+SELECT type, COUNT(*) AS row_count, COUNT(value) AS numeric_count,
+    COUNT(NULL) AS text_count
+FROM records
+GROUP BY type
+"""
+
+_SQL_CAPABILITIES_RECORD_HEALTH_IN_WINDOW_LEGACY = """
+SELECT type, COUNT(*) AS row_count, COUNT(value) AS numeric_count,
+    COUNT(NULL) AS text_count
 FROM records
 WHERE start_date >= ? AND start_date < ?
 GROUP BY type
@@ -486,7 +502,12 @@ def get_sleep_stages(
     started_at = time.perf_counter()
     start_date, end_date = _resolve_window(conn, start, end, days=30)
     utc_start, utc_end = utc_bounds(start_date, end_date, DEFAULT_TZ)
-    rows = conn.execute(_SQL_SLEEP_STAGE_RECORDS, [utc_start, utc_end]).fetchall()
+    try:
+        rows = conn.execute(_SQL_SLEEP_STAGE_RECORDS, [utc_start, utc_end]).fetchall()
+    except duckdb.BinderException:
+        # Imports that predate typed category values cannot supply stage
+        # labels; fall through to the existing no-labels response below.
+        rows = []
     intervals: dict[str, list[tuple[datetime, datetime]]] = {}
     asleep: list[tuple[datetime, datetime]] = []
     for start_dt, end_dt, text_value in rows:
@@ -546,9 +567,14 @@ def get_capabilities(
     started_at = time.perf_counter()
     rows = conn.execute(_SQL_CAPABILITIES_RECORDS).fetchall()
     present_types = {row[0] for row in rows}
+    text_values_available = table_has_column(conn, "records", "text_value")
     record_health = {
         row[0]: {"rows": row[1], "numeric": row[2], "text": row[3]}
-        for row in conn.execute(_SQL_CAPABILITIES_RECORD_HEALTH).fetchall()
+        for row in conn.execute(
+            _SQL_CAPABILITIES_RECORD_HEALTH
+            if text_values_available
+            else _SQL_CAPABILITIES_RECORD_HEALTH_LEGACY
+        ).fetchall()
     }
 
     counts = {
@@ -573,7 +599,10 @@ def get_capabilities(
         scoped_record_health = {
             row[0]: {"rows": row[1], "numeric": row[2], "text": row[3]}
             for row in conn.execute(
-                _SQL_CAPABILITIES_RECORD_HEALTH_IN_WINDOW, [utc_start, utc_end]
+                _SQL_CAPABILITIES_RECORD_HEALTH_IN_WINDOW
+                if text_values_available
+                else _SQL_CAPABILITIES_RECORD_HEALTH_IN_WINDOW_LEGACY,
+                [utc_start, utc_end],
             ).fetchall()
         }
         scoped_counts = {

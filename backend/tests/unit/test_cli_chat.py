@@ -151,3 +151,29 @@ def test_cli_passes_scoped_parent_turn_id(monkeypatch) -> None:
         )
         == 0
     )
+
+
+def test_cli_migrates_database_before_read_only_open(monkeypatch) -> None:
+    """Headless chat repairs a stale schema before opening its read-only DB."""
+    import asyncio
+
+    import pytest
+
+    events: list[str] = []
+
+    def _fake_migrate(db_path=None) -> bool:
+        assert db_path is None
+        events.append("migrate")
+        return False
+
+    def _fake_connect(db_path=None, *, read_only=False):
+        events.append(f"connect:{read_only}")
+        raise RuntimeError("intentional stop after migration")
+
+    monkeypatch.setattr(chat_cli, "migrate", _fake_migrate)
+    monkeypatch.setattr(chat_cli, "connect", _fake_connect)
+
+    with pytest.raises(RuntimeError, match="intentional stop"):
+        asyncio.run(chat_cli._ask_question("Show my last run"))
+
+    assert events == ["migrate", "connect:True"]

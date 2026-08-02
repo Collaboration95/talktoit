@@ -11,6 +11,7 @@ from pathlib import Path
 
 from app.db.connection import connect
 from app.db.data_profile import get_data_profile
+from app.db.migrate import migrate
 from app.llm.cache_keys import build_cache_key
 from app.llm.client import get_model, make_client
 from app.llm.followups import FollowupContext, resolve_followup
@@ -92,6 +93,7 @@ async def _ask_question(
     cache_mode: str = "default",
 ) -> ChatResponse:
     """Run one question through the same local cache and orchestration path as HTTP."""
+    migrate(db_path)
     conn = connect(db_path, read_only=True)
     gateway = ProviderGateway(make_client(), model=get_model())
     repository = AppStateRepository()
