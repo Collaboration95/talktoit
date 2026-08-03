@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
@@ -193,5 +193,36 @@ describe('ChatView', () => {
     })
     // Query label is visible
     expect(screen.getByText('Query')).toBeInTheDocument()
+  })
+
+  it('pins the composer to the bottom after the first query', async () => {
+    server.use(http.post('/api/chat', () => HttpResponse.json(WORKOUT_ENVELOPE)))
+    const user = userEvent.setup()
+    render(<ChatView />)
+    // Idle state: composer sits in the upper area, no pinned bottom bar.
+    expect(screen.queryByTestId('composer-bar')).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
+    await user.type(screen.getByRole('textbox'), 'last run')
+    await user.click(screen.getByRole('button', { name: /ask/i }))
+    await screen.findByText('Your last run was on June 5.')
+    // After the first turn the composer moves into the pinned bottom bar.
+    const bar = screen.getByTestId('composer-bar')
+    expect(bar).toHaveClass('sticky')
+    expect(within(bar).getByRole('textbox')).toBeInTheDocument()
+    // Seed prompts no longer clutter the active conversation.
+    expect(screen.queryByRole('button', { name: /last long run/i })).not.toBeInTheDocument()
+  })
+
+  it('returns to the idle composer when starting a new conversation', async () => {
+    server.use(http.post('/api/chat', () => HttpResponse.json(WORKOUT_ENVELOPE)))
+    const user = userEvent.setup()
+    render(<ChatView />)
+    await user.type(screen.getByRole('textbox'), 'last run')
+    await user.click(screen.getByRole('button', { name: /ask/i }))
+    await screen.findByText('Your last run was on June 5.')
+    expect(screen.getByTestId('composer-bar')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'New conversation' }))
+    expect(screen.queryByTestId('composer-bar')).not.toBeInTheDocument()
+    expect(screen.getByText(/ask a question/i)).toBeInTheDocument()
   })
 })

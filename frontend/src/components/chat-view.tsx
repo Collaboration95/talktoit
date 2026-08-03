@@ -279,8 +279,16 @@ export function ChatView() {
             ))}
           </ul>
         ) : null}
-        <ChatInput onSubmit={handleQuestion} onCancel={cancelActiveRequest} isLoading={isLoading} />
-        <SeedPrompts onSelect={handleQuestion} disabled={isLoading} />
+        {turns.length === 0 ? (
+          <>
+            <ChatInput
+              onSubmit={handleQuestion}
+              onCancel={cancelActiveRequest}
+              isLoading={isLoading}
+            />
+            <SeedPrompts onSelect={handleQuestion} disabled={isLoading} />
+          </>
+        ) : null}
       </div>
 
       <div className="mt-8">
@@ -351,6 +359,19 @@ export function ChatView() {
         ))}
         <div ref={transcriptEnd} aria-hidden="true" />
       </div>
+
+      {turns.length > 0 ? (
+        <div
+          data-testid="composer-bar"
+          className="sticky bottom-0 -mx-4 mt-8 border-t border-gray-200 bg-gray-50/95 px-4 pb-4 pt-3 backdrop-blur"
+        >
+          <ChatInput
+            onSubmit={handleQuestion}
+            onCancel={cancelActiveRequest}
+            isLoading={isLoading}
+          />
+        </div>
+      ) : null}
     </div>
   )
 }
