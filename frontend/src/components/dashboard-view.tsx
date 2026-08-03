@@ -496,11 +496,22 @@ export function DashboardView() {
       ...(nextScope.activityType ? { activityType: nextScope.activityType } : {}),
       ...(nextScope.source ? { source: nextScope.source } : {}),
     }
+    // Build the URL from the fresh scope instead of merging over the previous
+    // query string: collapsing scope (e.g. resetting source to "All sources")
+    // must not leave stale filter params like `source=…` in the URL. Preserve
+    // only non-filter URL state such as the selected workout detail.
     const query = decodeDashboardQuery(window.location.search)
     window.history.pushState(
       {},
       '',
-      `?${encodeDashboardQuery({ ...query, tab: 'workouts', ...normalized })}`,
+      `?${encodeDashboardQuery({
+        tab: 'workouts',
+        ...normalized,
+        ...(query.selectedWorkout ? { selectedWorkout: query.selectedWorkout } : {}),
+        ...(query.selectedWorkoutFingerprint
+          ? { selectedWorkoutFingerprint: query.selectedWorkoutFingerprint }
+          : {}),
+      })}`,
     )
     setScope(normalized)
   }
