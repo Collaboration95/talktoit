@@ -17,6 +17,7 @@ from app.api.conversations import router as conversations_router
 from app.api.dashboard import router as dashboard_router
 from app.api.diagnostics import router as diagnostics_router
 from app.api.saved_views import router as saved_views_router
+from app.api.settings import router as settings_router
 from app.api.status import router as status_router
 from app.db.migrate import SCHEMA_VERSION, migrate
 from app.llm.provider_gateway import make_provider_gateway
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
     app.include_router(status_router)
     app.include_router(saved_views_router)
     app.include_router(diagnostics_router)
+    app.include_router(settings_router)
 
     # Serve built frontend if dist/ exists (production: make run).
     # API routes above take precedence; this catch-all handles SPA navigation.

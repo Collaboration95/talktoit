@@ -468,6 +468,53 @@ class AppStateRepository:
             ).rowcount
         return changed == 1
 
+    def count_conversations(self) -> int:
+        """Return the total number of stored local conversations."""
+        self.migrate()
+        with self._connection() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()
+        return int(row[0])
+
+    def delete_all_conversations(self) -> int:
+        """Delete all local history; cache, views, and health data remain."""
+        self.migrate()
+        with self._connection() as conn:
+            conn.execute("DELETE FROM turns")
+            deleted = conn.execute("DELETE FROM conversations").rowcount
+        return deleted
+
+    def cache_usage(self) -> dict[str, int]:
+        """Return the local response-cache size in entries and bytes."""
+        self.migrate()
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS entries, "
+                "COALESCE(SUM(length(CAST(response_json AS BLOB))), 0) AS bytes "
+                "FROM cache_entries"
+            ).fetchone()
+        return {"entries": int(row["entries"]), "bytes": int(row["bytes"])}
+
+    def clear_cache(self) -> int:
+        """Delete all local cached responses without touching history or health."""
+        self.migrate()
+        with self._connection() as conn:
+            deleted = conn.execute("DELETE FROM cache_entries").rowcount
+        return deleted
+
+    def saved_view_count(self) -> int:
+        """Return the number of stored local saved dashboard views."""
+        self.migrate()
+        with self._connection() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM saved_views").fetchone()
+        return int(row[0])
+
+    def deactivate_active_dataset(self) -> bool:
+        """Persistently clear the active-dataset reference (health data already deleted)."""
+        self.migrate()
+        with self._connection() as conn:
+            changed = conn.execute("DELETE FROM app_state WHERE key = 'active_dataset_id'").rowcount
+        return changed == 1
+
     def create_saved_view(self, title: str, query: Mapping[str, object]) -> str:
         """Persist a validated dashboard scope locally for the active dataset."""
         self.migrate()
