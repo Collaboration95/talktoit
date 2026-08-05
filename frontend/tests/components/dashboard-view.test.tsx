@@ -437,6 +437,114 @@ describe('DashboardView', () => {
     expect(window.location.search).toContain('workout_fp=0123456789abcdef')
     window.history.replaceState({}, '', '/')
   })
+
+  it('removes a cleared source filter from the shared URL', async () => {
+    setupHandlers()
+    server.use(
+      http.get('/api/dashboard/workouts', ({ request }) => {
+        const source = new URL(request.url).searchParams.get('source')
+        const all = [
+          {
+            id: 1,
+            activity_type: 'Running',
+            date: '2026-06-05T07:00:00+08:00',
+            duration_minutes: 45.5,
+            avg_heart_rate: 148,
+            distance_meters: 8500,
+            energy_burned_kj: 2500,
+            source_name: 'Apple Watch',
+            fingerprint: '0123456789abcdef',
+          },
+          {
+            id: 2,
+            activity_type: 'Cycling',
+            date: '2026-06-04T07:00:00+08:00',
+            duration_minutes: 60,
+            avg_heart_rate: 130,
+            distance_meters: 20000,
+            energy_burned_kj: 1500,
+            source_name: 'Strava',
+            fingerprint: 'ffffffffffffffff',
+          },
+        ]
+        const workouts = source ? all.filter((workout) => workout.source_name === source) : all
+        return HttpResponse.json({ workouts, next_cursor: null })
+      }),
+    )
+    const user = userEvent.setup()
+    render(<DashboardView />)
+    const select = await screen.findByLabelText('Filter workouts by source')
+    await user.selectOptions(select, 'Strava')
+    await waitFor(() => expect(window.location.search).toContain('source=Strava'))
+    // Reset to "All sources" — the stale source param must leave the URL.
+    await user.selectOptions(select, '')
+    await waitFor(() => expect(window.location.search).not.toContain('source='))
+    expect(screen.getAllByText('Running').length).toBeGreaterThanOrEqual(1)
+    window.history.replaceState({}, '', '/')
+  })
+
+  it('removes a cleared activity filter from the shared URL', async () => {
+    setupHandlers()
+    const user = userEvent.setup()
+    render(<DashboardView />)
+    const runningButton = await screen.findByRole('button', { name: /Running 1/ })
+    await user.click(runningButton)
+    await waitFor(() => expect(window.location.search).toContain('activity_type=Running'))
+    // Toggle the active pill off — the stale activity param must leave the URL.
+    await user.click(screen.getByRole('button', { name: /Running 1/ }))
+    await waitFor(() => expect(window.location.search).not.toContain('activity_type='))
+    window.history.replaceState({}, '', '/')
+  })
+
+  it('shows all sources after a filter reset survives a dashboard remount', async () => {
+    setupHandlers()
+    server.use(
+      http.get('/api/dashboard/workouts', ({ request }) => {
+        const source = new URL(request.url).searchParams.get('source')
+        const all = [
+          {
+            id: 1,
+            activity_type: 'Running',
+            date: '2026-06-05T07:00:00+08:00',
+            duration_minutes: 45.5,
+            avg_heart_rate: 148,
+            distance_meters: 8500,
+            energy_burned_kj: 2500,
+            source_name: 'Apple Watch',
+            fingerprint: '0123456789abcdef',
+          },
+          {
+            id: 2,
+            activity_type: 'Cycling',
+            date: '2026-06-04T07:00:00+08:00',
+            duration_minutes: 60,
+            avg_heart_rate: 130,
+            distance_meters: 20000,
+            energy_burned_kj: 1500,
+            source_name: 'Strava',
+            fingerprint: 'ffffffffffffffff',
+          },
+        ]
+        const workouts = source ? all.filter((workout) => workout.source_name === source) : all
+        return HttpResponse.json({ workouts, next_cursor: null })
+      }),
+    )
+    const user = userEvent.setup()
+    const firstView = render(<DashboardView />)
+    const select = await screen.findByLabelText('Filter workouts by source')
+    await user.selectOptions(select, 'Strava')
+    await waitFor(() => expect(window.location.search).toContain('source=Strava'))
+    await user.selectOptions(select, '')
+    await waitFor(() => expect(window.location.search).not.toContain('source='))
+    firstView.unmount()
+    // Simulate the Chat → Dashboard round trip: the view re-initializes from the URL.
+    render(<DashboardView />)
+    const restoredSelect = await screen.findByLabelText('Filter workouts by source')
+    await waitFor(() => expect((restoredSelect as HTMLSelectElement).value).toBe(''))
+    expect(screen.getAllByText('Running').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('Cycling').length).toBeGreaterThanOrEqual(1)
+    window.history.replaceState({}, '', '/')
+  })
 })
 
 describe('App tab navigation', () => {
@@ -454,5 +562,16 @@ describe('App tab navigation', () => {
     await waitFor(() => {
       expect(screen.queryByRole('heading', { name: 'tti' })).not.toBeInTheDocument()
     })
+  })
+
+  it('keeps the URL tab in sync when switching views', async () => {
+    setupHandlers()
+    const { App } = await import('@/app.tsx')
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /dashboard/i }))
+    await waitFor(() => expect(window.location.search).toContain('tab=dashboard'))
+    await user.click(screen.getByRole('button', { name: /chat/i }))
+    await waitFor(() => expect(window.location.search).toContain('tab=chat'))
   })
 })

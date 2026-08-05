@@ -17,12 +17,14 @@ from app.api.conversations import router as conversations_router
 from app.api.dashboard import router as dashboard_router
 from app.api.saved_views import router as saved_views_router
 from app.api.status import router as status_router
+from app.db.migrate import migrate
 from app.llm.provider_gateway import make_provider_gateway
 
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.provider_gateway = make_provider_gateway()
+    migrate()
     try:
         yield
     finally:

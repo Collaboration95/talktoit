@@ -52,3 +52,74 @@ export function formatDateOnly(isoDate: string): string {
 export function formatDateRange(startDate: string, endDate: string): string {
   return `${formatDateOnly(startDate)} to ${formatDateOnly(endDate)}`
 }
+
+const ISO_DAY_BUCKET = /^\d{4}-\d{2}-\d{2}$/
+const ISO_MONTH_BUCKET = /^\d{4}-\d{2}$/
+const ISO_WEEK_BUCKET = /^(\d{4})-W(\d{2})$/
+
+/** Monday of an ISO week bucket like `2026-W23`, as a UTC-date instant. */
+function isoWeekMonday(isoWeek: string): Date {
+  const match = ISO_WEEK_BUCKET.exec(isoWeek)
+  if (!match) return new Date(Number.NaN)
+  const year = Number(match[1])
+  const week = Number(match[2])
+  // ISO week 1 contains January 4; snap to its Monday, then advance by weeks.
+  const jan4 = Date.UTC(year, 0, 4)
+  const jan4Dow = (new Date(jan4).getUTCDay() + 6) % 7
+  const mondayOfWeek1 = jan4 - jan4Dow * 86_400_000
+  return new Date(mondayOfWeek1 + (week - 1) * 7 * 86_400_000)
+}
+
+function parseBucketDate(bucket: string): Date | null {
+  if (ISO_DAY_BUCKET.test(bucket)) return new Date(`${bucket}T12:00:00+08:00`)
+  if (ISO_MONTH_BUCKET.test(bucket)) return new Date(`${bucket}-01T12:00:00+08:00`)
+  if (ISO_WEEK_BUCKET.test(bucket)) return isoWeekMonday(bucket)
+  return null
+}
+
+function formatMonthCompact(date: Date, includeYear: boolean): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    ...(includeYear ? { year: '2-digit' } : {}),
+    timeZone: HEALTH_TIME_ZONE,
+  }).formatToParts(date)
+  const month = parts.find((part) => part.type === 'month')?.value ?? ''
+  const year = parts.find((part) => part.type === 'year')?.value ?? ''
+  return includeYear ? `${month} '${year}` : month
+}
+
+function formatMonthDayCompact(date: Date, includeYear: boolean): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    ...(includeYear ? { year: '2-digit' } : {}),
+    timeZone: HEALTH_TIME_ZONE,
+  }).formatToParts(date)
+  const month = parts.find((part) => part.type === 'month')?.value ?? ''
+  const day = parts.find((part) => part.type === 'day')?.value ?? ''
+  const year = parts.find((part) => part.type === 'year')?.value ?? ''
+  return includeYear ? `${month} ${day} '${year}` : `${month} ${day}`
+}
+
+/**
+ * Compact x-axis label for a trend bucket, e.g. `2026-08-23` → `Aug 23`,
+ * `2026-W23` → `Jun 1` (that week's Monday), `2026-06` → `Jun`. Set
+ * `includeYear` to disambiguate ranges that span calendar years.
+ */
+export function formatBucketLabel(bucket: string, options: { includeYear?: boolean } = {}): string {
+  const includeYear = options.includeYear ?? false
+  const date = parseBucketDate(bucket)
+  if (!date || Number.isNaN(date.getTime())) return bucket
+  if (ISO_MONTH_BUCKET.test(bucket)) return formatMonthCompact(date, includeYear)
+  return formatMonthDayCompact(date, includeYear)
+}
+
+/** Full readable date for a trend bucket, e.g. `2026-08-23` → `23 Aug 2026`. */
+export function formatChartBucketFullDate(bucket: string): string {
+  const date = parseBucketDate(bucket)
+  if (!date || Number.isNaN(date.getTime())) return bucket
+  return new Intl.DateTimeFormat(HEALTH_LOCALE, {
+    dateStyle: 'medium',
+    timeZone: HEALTH_TIME_ZONE,
+  }).format(date)
+}
