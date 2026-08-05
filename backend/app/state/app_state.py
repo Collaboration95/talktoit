@@ -23,7 +23,8 @@ CACHE_MAX_ENTRIES = 200
 CACHE_MAX_BYTES = 5 * 1024 * 1024
 
 
-def _default_state_path() -> Path:
+def default_state_path() -> Path:
+    """Return the configured local app-state database path."""
     configured = os.environ.get("TTI_APP_STATE_PATH")
     if configured:
         return Path(configured)
@@ -62,7 +63,7 @@ class AppStateRepository:
 
     def __init__(self, path: Path | None = None) -> None:
         """Open a repository at the configured local state database path."""
-        self.path = path or _default_state_path()
+        self.path = path or default_state_path()
 
     @contextmanager
     def _connection(self) -> Generator[sqlite3.Connection, None, None]:
@@ -163,6 +164,24 @@ class AppStateRepository:
                     PRAGMA user_version = 6;
                     """
                 )
+                version = 6
+            if version < 7:
+                conn.executescript(
+                    """
+                    CREATE TABLE IF NOT EXISTS diagnostics_events (
+                        id TEXT PRIMARY KEY,
+                        category TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        duration_ms REAL,
+                        counts_json TEXT NOT NULL,
+                        meta_json TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    );
+                    PRAGMA user_version = 7;
+                    """
+                )
+                version = 7
 
     def backup_before_destructive_migration(self) -> Path | None:
         """Create a recoverable snapshot when a future migration needs it."""

@@ -17,12 +17,14 @@ import logging
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from app.db.connection import connect, resolve_db_path
 from app.db.data_profile import get_data_profile
 from app.ingest.coordinator import resolve_worker_count
 from app.state.app_state import AppStateRepository
+from app.state.diagnostics import safe_record
 
 
 def main() -> None:
@@ -78,6 +80,7 @@ def main() -> None:
     resolved_workers = (
         1 if legacy_mode else resolve_worker_count(xml_path.stat().st_size, workers_override)
     )
+    started_at = time.perf_counter()
 
     if dry_run_report:
         print(
@@ -209,6 +212,18 @@ def main() -> None:
                 print(f"  Total: {stats['total_time_seconds']:.2f}s")
     except Exception:
         staging_path.unlink(missing_ok=True)
+        safe_record(
+            None,
+            "import",
+            "ingest",
+            duration_ms=round((time.perf_counter() - started_at) * 1000, 3),
+            status="error",
+            meta={
+                "parser_mode": parser_version,
+                "schema_version": "1",
+                "worker_count": str(resolved_workers),
+            },
+        )
         raise
     finally:
         db.close()
@@ -230,6 +245,19 @@ def main() -> None:
         coverage_end=profile.latest_date.isoformat() if profile.latest_date else None,
         counts={key: int(value) for key, value in stats.items() if isinstance(value, int)},
         warnings=manifest_warnings,
+    )
+    safe_record(
+        None,
+        "import",
+        "ingest",
+        duration_ms=round((time.perf_counter() - started_at) * 1000, 3),
+        status="ok",
+        meta={
+            "parser_mode": parser_version,
+            "schema_version": "1",
+            "worker_count": str(resolved_workers),
+        },
+        counts={key: int(value) for key, value in stats.items() if isinstance(value, int)},
     )
     if report_json:
         timing = {

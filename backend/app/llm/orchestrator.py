@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from datetime import date
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -24,6 +25,7 @@ from app.llm.provider_projection import narration_projection, planning_projectio
 from app.llm.tools import TOOL_NAMES, dispatch_tool, normalize_tool_name, render_tool_catalog
 from app.models.chat import ChatResponse, ResponseMetadata
 from app.models.templates import FallbackData
+from app.state.diagnostics import safe_record, timed_record
 
 if TYPE_CHECKING:
     import duckdb
@@ -232,8 +234,15 @@ class ChatOrchestrator:
         )
         if local_plan is not None:
             tool_name, args = local_plan
+            safe_record(
+                None,
+                "planner",
+                "local_plan",
+                duration_ms=0.0,
+                meta={"mode": "local", "model": "local", "error_class": ""},
+            )
             try:
-                template_id, data_dict = dispatch_tool(tool_name, args, self.conn, question)
+                template_id, data_dict = self._dispatch_tool(tool_name, args, question)
             except Exception:
                 logger.exception("Local tool dispatch failed for tool %r", tool_name)
                 return _make_fallback_response(question)
@@ -246,11 +255,26 @@ class ChatOrchestrator:
 
         # ── Stage 2: optional remote plan for unresolved wording ────────────
         plan: dict[str, Any] | None = None
+        plan_started = time.perf_counter()
         try:
             planner_content = await self._complete_provider("planning", planner_messages)
             plan = _parse_tool_plan(planner_content)
+            safe_record(
+                None,
+                "planner",
+                "remote_plan",
+                duration_ms=round((time.perf_counter() - plan_started) * 1000, 3),
+                meta={"mode": "remote", "model": self.model, "error_class": ""},
+            )
         except ProviderUnavailableError:
             logger.info("Remote planner unavailable or disabled")
+            safe_record(
+                None,
+                "planner",
+                "remote_plan",
+                duration_ms=round((time.perf_counter() - plan_started) * 1000, 3),
+                meta={"mode": "remote", "model": self.model, "error_class": "provider_unavailable"},
+            )
 
         resolved_plan = _validated_plan(plan)
         if resolved_plan is None:
@@ -259,7 +283,7 @@ class ChatOrchestrator:
 
         # ── Execute the tool ─────────────────────────────────────────────────
         try:
-            template_id, data_dict = dispatch_tool(tool_name, args, self.conn, question)
+            template_id, data_dict = self._dispatch_tool(tool_name, args, question)
         except Exception:
             logger.exception("Tool dispatch failed for tool %r", tool_name)
             return _make_fallback_response(question)
@@ -277,10 +301,25 @@ class ChatOrchestrator:
         ]
 
         # ── Turn 2: narrative ────────────────────────────────────────────────
+        narrative_started = time.perf_counter()
         try:
             narrative = await self._complete_provider("narration", narrative_messages)
+            safe_record(
+                None,
+                "narrator",
+                "narrative",
+                duration_ms=round((time.perf_counter() - narrative_started) * 1000, 3),
+                meta={"mode": "remote", "model": self.model, "error_class": ""},
+            )
         except ProviderUnavailableError:
             logger.info("Remote narrator unavailable or disabled")
+            safe_record(
+                None,
+                "narrator",
+                "narrative",
+                duration_ms=round((time.perf_counter() - narrative_started) * 1000, 3),
+                meta={"mode": "local", "model": "local", "error_class": "provider_unavailable"},
+            )
             narrative = _local_narrative(template_id, data_dict)
 
         return ChatResponse(
@@ -289,6 +328,38 @@ class ChatOrchestrator:
             narrative=narrative,
             metadata=ResponseMetadata(provenance="remote_planned"),
         )
+
+    def _dispatch_tool(
+        self, tool_name: str, args: dict[str, Any], question: str
+    ) -> tuple[str, dict[str, Any]]:
+        """Execute one validated local tool and record its query timing."""
+        started_at = time.perf_counter()
+        try:
+            template_id, data_dict = dispatch_tool(tool_name, args, self.conn, question)
+        except Exception:
+            timed_record(
+                None,
+                "query",
+                tool_name,
+                started_at,
+                status="error",
+                meta={"query_name": tool_name, "state": "error", "cache_outcome": "uncached"},
+            )
+            raise
+        payload = json.dumps(data_dict, default=str)
+        timed_record(
+            None,
+            "query",
+            tool_name,
+            started_at,
+            meta={
+                "query_name": tool_name,
+                "state": template_id,
+                "cache_outcome": "uncached",
+                "result_size_bytes": str(len(payload)),
+            },
+        )
+        return template_id, data_dict
 
     async def _complete_provider(
         self, stage: Literal["planning", "narration"], messages: list[dict[str, Any]]

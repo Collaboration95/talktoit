@@ -15,16 +15,35 @@ from fastapi.staticfiles import StaticFiles
 from app.api.chat import router as chat_router
 from app.api.conversations import router as conversations_router
 from app.api.dashboard import router as dashboard_router
+from app.api.diagnostics import router as diagnostics_router
 from app.api.saved_views import router as saved_views_router
 from app.api.status import router as status_router
-from app.db.migrate import migrate
+from app.db.migrate import SCHEMA_VERSION, migrate
 from app.llm.provider_gateway import make_provider_gateway
+from app.state.app_state import AppStateRepository
+from app.state.diagnostics import safe_record
+
+APP_VERSION = "0.1.0"
 
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.provider_gateway = make_provider_gateway()
     migrate()
+    AppStateRepository().migrate()
+    import duckdb
+
+    safe_record(
+        None,
+        "app",
+        "startup",
+        meta={
+            "app_version": APP_VERSION,
+            "duckdb_version": duckdb.__version__,
+            "schema_version": str(SCHEMA_VERSION),
+            "app_state_version": "7",
+        },
+    )
     try:
         yield
     finally:
@@ -53,6 +72,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard_router)
     app.include_router(status_router)
     app.include_router(saved_views_router)
+    app.include_router(diagnostics_router)
 
     # Serve built frontend if dist/ exists (production: make run).
     # API routes above take precedence; this catch-all handles SPA navigation.

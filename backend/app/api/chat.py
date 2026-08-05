@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import uuid
 from collections.abc import Generator
 
@@ -25,6 +26,7 @@ from app.llm.provider_gateway import (
 from app.models.chat import ChatRequest, ChatResponse, ResponseMetadata
 from app.models.errors import ErrorCode, ProblemDetail
 from app.state.app_state import AppStateRepository
+from app.state.diagnostics import timed_record
 
 router = APIRouter(prefix="/api")
 
@@ -85,6 +87,7 @@ async def chat(
     repository: AppStateRepository | None = None
     pending_turn_id: str | None = None
     request_id = request.request_id or f"req_{uuid.uuid4().hex[:12]}"
+    started_at = time.perf_counter()
     try:
         repository = AppStateRepository()
         if request.conversation_id:
@@ -178,14 +181,23 @@ async def chat(
                 cache_outcome=response.metadata.provenance,
                 canonical_plan=canonical_plan,
             )
+        _record_chat_event(
+            started_at,
+            response,
+            cached=cached is not None,
+            disambiguated=disambiguation is not None,
+            status="ok",
+        )
         return response
     except asyncio.CancelledError:
         if pending_turn_id and repository:
             repository.terminate_turn(
                 pending_turn_id, state="cancelled", message="Request cancelled by the client."
             )
+        _record_chat_error(started_at, "cancelled")
         raise
     except HTTPException:
+        _record_chat_error(started_at, "http")
         raise
     except ProviderUnavailableError as exc:
         if pending_turn_id and repository:
@@ -194,6 +206,7 @@ async def chat(
                 state="failed",
                 message="The optional provider is unavailable.",
             )
+        _record_chat_error(started_at, "provider_unavailable")
         raise _problem(
             503,
             "provider_unavailable",
@@ -205,6 +218,7 @@ async def chat(
             repository.terminate_turn(
                 pending_turn_id, state="failed", message="The request timed out."
             )
+        _record_chat_error(started_at, "timeout")
         raise _problem(
             504, "request_timeout", "The request timed out. Please try again.", request_id
         ) from exc
@@ -213,6 +227,7 @@ async def chat(
             repository.terminate_turn(
                 pending_turn_id, state="failed", message="Local health data is unavailable."
             )
+        _record_chat_error(started_at, "data_unavailable")
         raise _problem(
             503,
             "data_unavailable",
@@ -224,9 +239,65 @@ async def chat(
             repository.terminate_turn(
                 pending_turn_id, state="failed", message="The answer could not be completed."
             )
+        _record_chat_error(started_at, "internal")
         raise _problem(
             500,
             "internal_failure",
             "The answer could not be completed. Try again.",
             request_id,
         ) from exc
+
+
+def _plan_mode(response: ChatResponse, cached: bool, disambiguated: bool) -> str:
+    """Classify how this answer was produced without revealing its content."""
+    if cached:
+        return "cached"
+    if disambiguated:
+        return "disambiguation"
+    if response.metadata.provenance == "deterministic_local":
+        return "local"
+    if response.metadata.provenance == "remote_planned":
+        return "remote"
+    return "fallback"
+
+
+def _record_chat_error(started_at: float, error_class: str) -> None:
+    """Record a failed chat event; diagnostics never break the chat path."""
+    timed_record(
+        None,
+        "chat",
+        "chat_request",
+        started_at,
+        status=error_class,
+        meta={"plan_mode": "error", "cache_outcome": "error", "cache_mode": ""},
+        counts={"cache_hits": 0, "cache_misses": 0, "result_size_bytes": 0},
+    )
+
+
+def _record_chat_event(
+    started_at: float,
+    response: ChatResponse,
+    *,
+    cached: bool,
+    disambiguated: bool,
+    status: str,
+) -> None:
+    """Record one privacy-safe chat event with cache outcome and latency."""
+    payload = response.model_dump_json()
+    timed_record(
+        None,
+        "chat",
+        "chat_request",
+        started_at,
+        status=status,
+        meta={
+            "plan_mode": _plan_mode(response, cached, disambiguated),
+            "cache_outcome": response.metadata.provenance,
+            "cache_mode": "standard",
+        },
+        counts={
+            "cache_hits": 1 if cached else 0,
+            "cache_misses": 0 if cached else 1,
+            "result_size_bytes": len(payload),
+        },
+    )
