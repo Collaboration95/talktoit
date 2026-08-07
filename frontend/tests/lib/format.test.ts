@@ -50,4 +50,30 @@ describe('trend bucket labels', () => {
     expect(formatBucketLabel('2026-6-1')).toBe('2026-6-1')
     expect(formatChartBucketFullDate('not-a-bucket')).toBe('not-a-bucket')
   })
+
+  it('disambiguates week buckets across an ISO year boundary', () => {
+    // ISO 2026-W52 starts 2026-12-21; ISO 2027-W01 starts 2027-01-04.
+    expect(formatBucketLabel('2026-W52')).toBe('Dec 21')
+    expect(formatBucketLabel('2026-W52', { includeYear: true })).toBe("Dec 21 '26")
+    expect(formatBucketLabel('2027-W01')).toBe('Jan 4')
+    expect(formatBucketLabel('2027-W01', { includeYear: true })).toBe("Jan 4 '27")
+    expect(formatChartBucketFullDate('2026-W52')).toBe('21 Dec 2026')
+    expect(formatChartBucketFullDate('2027-W01')).toBe('4 Jan 2027')
+  })
+
+  it('disambiguates month and day buckets across a calendar year boundary', () => {
+    expect(formatBucketLabel('2026-12', { includeYear: true })).toBe("Dec '26")
+    expect(formatBucketLabel('2027-01', { includeYear: true })).toBe("Jan '27")
+    expect(formatBucketLabel('2026-12-31', { includeYear: true })).toBe("Dec 31 '26")
+    expect(formatBucketLabel('2027-01-01', { includeYear: true })).toBe("Jan 1 '27")
+  })
+
+  it('handles sparse and malformed buckets without throwing', () => {
+    expect(formatBucketLabel('')).toBe('')
+    expect(formatBucketLabel('2026-W')).toBe('2026-W')
+    expect(formatBucketLabel(' 2026-08-23')).toBe(' 2026-08-23')
+    expect(formatBucketLabel('2026-13-40')).toBe('2026-13-40')
+    expect(formatChartBucketFullDate('')).toBe('')
+    expect(formatChartBucketFullDate('2026-13-40')).toBe('2026-13-40')
+  })
 })

@@ -21,7 +21,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.state.app_state import default_state_path
+from app.state.app_state import SQLITE_BUSY_TIMEOUT_MS, default_state_path
 
 logger = logging.getLogger(__name__)
 
@@ -183,8 +183,14 @@ class DiagnosticsRepository:
     @contextmanager
     def _connection(self) -> Generator[sqlite3.Connection, None, None]:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self.path)
+        conn = sqlite3.connect(self.path, timeout=SQLITE_BUSY_TIMEOUT_MS / 1000)
         conn.row_factory = sqlite3.Row
+        # Diagnostics share the app-state file with concurrent dashboard-panel and
+        # chat writes; WAL + busy_timeout prevent ``database is locked`` failures.
+        # See ``app.state.app_state._connection`` for the same policy.
+        conn.execute(f"PRAGMA busy_timeout = {SQLITE_BUSY_TIMEOUT_MS}")
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = NORMAL")
         try:
             yield conn
             conn.commit()

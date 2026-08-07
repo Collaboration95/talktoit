@@ -24,6 +24,16 @@ from app.llm.semantic_candidates import normalize_question
 CACHE_MAX_ENTRIES = 200
 CACHE_MAX_BYTES = 5 * 1024 * 1024
 
+# The latest PRAGMA user_version applied by ``AppStateRepository.migrate``.
+# Bump alongside the last migration step; startup telemetry and contract tests
+# derive from this constant so the value cannot drift from the migrations.
+APP_STATE_SCHEMA_VERSION = 8
+
+# Milliseconds a writer waits for a busy lock before raising
+# ``sqlite3.OperationalError: database is locked``. The dashboard threadpool and
+# chat requests share one app-state file, so a bounded wait is required.
+SQLITE_BUSY_TIMEOUT_MS = 5000
+
 
 def default_state_path() -> Path:
     """Return the configured local app-state database path."""
@@ -70,13 +80,26 @@ class AppStateRepository:
     @contextmanager
     def _connection(self) -> Generator[sqlite3.Connection, None, None]:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self.path)
+        conn = sqlite3.connect(self.path, timeout=SQLITE_BUSY_TIMEOUT_MS / 1000)
         conn.row_factory = sqlite3.Row
+        # WAL allows concurrent readers with a single writer; busy_timeout turns
+        # transient writer contention into a bounded wait instead of a failure.
+        # journal_mode is a persistent per-database setting; both pragmas are
+        # safe to issue on every connection.
+        conn.execute(f"PRAGMA busy_timeout = {SQLITE_BUSY_TIMEOUT_MS}")
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = NORMAL")
         try:
             yield conn
             conn.commit()
         finally:
             conn.close()
+
+    def schema_version(self) -> int:
+        """Return the applied app-state schema version (after migrating)."""
+        self.migrate()
+        with self._connection() as conn:
+            return int(conn.execute("PRAGMA user_version").fetchone()[0])
 
     def migrate(self) -> None:
         """Apply the versioned schema; back up before a future destructive step."""

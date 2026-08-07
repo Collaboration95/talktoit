@@ -1,11 +1,33 @@
 const HEALTH_TIME_ZONE = 'Asia/Singapore'
 const HEALTH_LOCALE = 'en-SG'
 
+/** Return a cached value, building and caching it on first request. */
+function cached<K, T>(cache: Map<K, T>, key: K, make: () => T): T {
+  const hit = cache.get(key)
+  if (hit) return hit
+  const value = make()
+  cache.set(key, value)
+  return value
+}
+
+// Intl construction is comparatively expensive and chart label loops call these
+// once per bucket per render. Memoize by the exact options that change output.
+const _numberFormatCache = new Map<number, Intl.NumberFormat>()
+const _dateTimeCache = new Map<string, Intl.DateTimeFormat>()
+const _mediumDateCache = new Map<string, Intl.DateTimeFormat>()
+const _monthPartsCache = new Map<string, Intl.DateTimeFormat>()
+const _monthDayPartsCache = new Map<string, Intl.DateTimeFormat>()
+
 function createNumberFormatter(fractionDigits: number): Intl.NumberFormat {
-  return new Intl.NumberFormat(HEALTH_LOCALE, {
-    maximumFractionDigits: fractionDigits,
-    minimumFractionDigits: 0,
-  })
+  return cached(
+    _numberFormatCache,
+    fractionDigits,
+    () =>
+      new Intl.NumberFormat(HEALTH_LOCALE, {
+        maximumFractionDigits: fractionDigits,
+        minimumFractionDigits: 0,
+      }),
+  )
 }
 
 export function formatNumber(value: number, fractionDigits = 0): string {
@@ -34,19 +56,33 @@ export function formatDurationMinutes(minutes: number | null): string | null {
   return `${formatNumber(minutes, 0)} min`
 }
 
+function mediumDateFormatter(): Intl.DateTimeFormat {
+  return cached(
+    _mediumDateCache,
+    'medium',
+    () =>
+      new Intl.DateTimeFormat(HEALTH_LOCALE, {
+        dateStyle: 'medium',
+        timeZone: HEALTH_TIME_ZONE,
+      }),
+  )
+}
+
 export function formatDateTime(isoDateTime: string): string {
-  return new Intl.DateTimeFormat(HEALTH_LOCALE, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-    timeZone: HEALTH_TIME_ZONE,
-  }).format(new Date(isoDateTime))
+  return cached(
+    _dateTimeCache,
+    'medium+short',
+    () =>
+      new Intl.DateTimeFormat(HEALTH_LOCALE, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: HEALTH_TIME_ZONE,
+      }),
+  ).format(new Date(isoDateTime))
 }
 
 export function formatDateOnly(isoDate: string): string {
-  return new Intl.DateTimeFormat(HEALTH_LOCALE, {
-    dateStyle: 'medium',
-    timeZone: HEALTH_TIME_ZONE,
-  }).format(new Date(`${isoDate.slice(0, 10)}T12:00:00+08:00`))
+  return mediumDateFormatter().format(new Date(`${isoDate.slice(0, 10)}T12:00:00+08:00`))
 }
 
 export function formatDateRange(startDate: string, endDate: string): string {
@@ -77,24 +113,42 @@ function parseBucketDate(bucket: string): Date | null {
   return null
 }
 
+function monthPartsFormatter(includeYear: boolean): Intl.DateTimeFormat {
+  return cached(
+    _monthPartsCache,
+    includeYear ? 'yr' : 'no',
+    () =>
+      new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        ...(includeYear ? { year: '2-digit' } : {}),
+        timeZone: HEALTH_TIME_ZONE,
+      }),
+  )
+}
+
 function formatMonthCompact(date: Date, includeYear: boolean): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    ...(includeYear ? { year: '2-digit' } : {}),
-    timeZone: HEALTH_TIME_ZONE,
-  }).formatToParts(date)
+  const parts = monthPartsFormatter(includeYear).formatToParts(date)
   const month = parts.find((part) => part.type === 'month')?.value ?? ''
   const year = parts.find((part) => part.type === 'year')?.value ?? ''
   return includeYear ? `${month} '${year}` : month
 }
 
+function monthDayPartsFormatter(includeYear: boolean): Intl.DateTimeFormat {
+  return cached(
+    _monthDayPartsCache,
+    includeYear ? 'yr' : 'no',
+    () =>
+      new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+        ...(includeYear ? { year: '2-digit' } : {}),
+        timeZone: HEALTH_TIME_ZONE,
+      }),
+  )
+}
+
 function formatMonthDayCompact(date: Date, includeYear: boolean): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    ...(includeYear ? { year: '2-digit' } : {}),
-    timeZone: HEALTH_TIME_ZONE,
-  }).formatToParts(date)
+  const parts = monthDayPartsFormatter(includeYear).formatToParts(date)
   const month = parts.find((part) => part.type === 'month')?.value ?? ''
   const day = parts.find((part) => part.type === 'day')?.value ?? ''
   const year = parts.find((part) => part.type === 'year')?.value ?? ''
@@ -118,8 +172,5 @@ export function formatBucketLabel(bucket: string, options: { includeYear?: boole
 export function formatChartBucketFullDate(bucket: string): string {
   const date = parseBucketDate(bucket)
   if (!date || Number.isNaN(date.getTime())) return bucket
-  return new Intl.DateTimeFormat(HEALTH_LOCALE, {
-    dateStyle: 'medium',
-    timeZone: HEALTH_TIME_ZONE,
-  }).format(date)
+  return mediumDateFormatter().format(date)
 }

@@ -128,7 +128,19 @@ LEFT JOIN workout_statistics energy
 WHERE w.activity_type = ?
   AND w.start_date >= ?
   AND w.start_date < ?
+ORDER BY {order_col} DESC NULLS LAST, w.start_date DESC, w.id DESC
+LIMIT ?
 """
+
+# Fixed metric -> ranking column whitelist for _SQL_TOP_WORKOUTS. Only the
+# literal keys below are accepted (the ``metric`` argument is a closed Literal
+# type), so the ORDER BY column can never be attacker-controlled.
+_TOP_WORKOUTS_ORDER_COLUMNS = {
+    "distance": "dist.distance_m",
+    "duration": "w.duration",
+    "avg_hr": "hr.average",
+    "energy": "energy.sum",
+}
 
 _SQL_WORKOUT_COLLECTION = """
 SELECT w.id, w.activity_type, w.start_date, w.duration, w.duration_unit, w.source_name,
@@ -379,26 +391,14 @@ def get_top_workouts(
     else:
         utc_start, utc_end = _utc_bounds(start, end, tz)
 
-    rows = conn.execute(_SQL_TOP_WORKOUTS, [activity_type, utc_start, utc_end]).fetchall()
-
-    # Sort in Python; None values sort last
-    def _sort_key(r: tuple) -> float:  # type: ignore[type-arg]
-        _, _act, _start_utc, duration, _dur_unit, avg_hr, _max_hr, distance_m, energy_kj = r
-        val: float | None
-        if metric == "distance":
-            val = distance_m
-        elif metric == "duration":
-            val = duration
-        elif metric == "avg_hr":
-            val = avg_hr
-        else:  # energy
-            val = energy_kj
-        return val if val is not None else float("-inf")
-
-    rows_sorted = sorted(rows, key=_sort_key, reverse=True)[:n]
+    order_col = _TOP_WORKOUTS_ORDER_COLUMNS[metric]
+    rows = conn.execute(
+        _SQL_TOP_WORKOUTS.format(order_col=order_col),
+        [activity_type, utc_start, utc_end, n],
+    ).fetchall()
 
     ranked_rows: list[RankedListRow] = []
-    for row in rows_sorted:
+    for row in rows:
         (
             _,
             act_type,
