@@ -44,6 +44,7 @@ from app.models.dashboard import (
     WorkoutSummary,
 )
 from app.state.app_state import AppStateRepository
+from app.state.diagnostics import safe_record
 
 router = APIRouter(prefix="/api/dashboard")
 
@@ -271,19 +272,30 @@ def _resource_metadata(
     end_date: date | None,
     started_at: float,
     has_data: bool,
+    panel: str,
 ) -> DashboardResource:
     """Build safe panel metadata without exposing local health observations."""
     profile = get_data_profile(conn)
     active = AppStateRepository().get_active()
+    state = "success" if has_data else "empty"
+    duration_ms = round((time.perf_counter() - started_at) * 1000)
+    safe_record(
+        None,
+        "panel",
+        f"panel:{panel}",
+        duration_ms=duration_ms,
+        status=state,
+        meta={"panel_name": panel, "state": state},
+    )
     return DashboardResource(
-        state="success" if has_data else "empty",
+        state=state,
         dataset_version_id=active.id if active else None,
         effective_start=start_date.isoformat() if start_date else None,
         effective_end=end_date.isoformat() if end_date else None,
         coverage_start=profile.first_date.isoformat() if profile.first_date else None,
         coverage_end=profile.latest_date.isoformat() if profile.latest_date else None,
         generated_at=datetime.now(UTC).isoformat(),
-        duration_ms=round((time.perf_counter() - started_at) * 1000),
+        duration_ms=duration_ms,
     )
 
 
@@ -318,7 +330,7 @@ def get_summary(
     ]
     return ActivitySummaryResponse(
         days=days,
-        resource=_resource_metadata(conn, start_date, end_date, started_at, bool(days)),
+        resource=_resource_metadata(conn, start_date, end_date, started_at, bool(days), "summary"),
     )
 
 
@@ -392,7 +404,9 @@ def get_workouts(
         next_cursor=next_cursor,
         effective_start=start_date.isoformat(),
         effective_end=end_date.isoformat(),
-        resource=_resource_metadata(conn, start_date, end_date, started_at, bool(workouts)),
+        resource=_resource_metadata(
+            conn, start_date, end_date, started_at, bool(workouts), "workouts"
+        ),
     )
 
 
@@ -415,6 +429,7 @@ def get_steps(
         end_date,
         started_at,
         any(point.value is not None for point in response.series),
+        "steps",
     )
     return response
 
@@ -438,6 +453,7 @@ def get_heart(
         end_date,
         started_at,
         any(point.value is not None for point in response.series),
+        "heart",
     )
     return response
 
@@ -488,7 +504,9 @@ def get_sleep(
         metric_unit="hours",
         granularity=granularity,
         series=series,
-        resource=_resource_metadata(conn, start_date, end_date, started_at, bool(bucket_sums)),
+        resource=_resource_metadata(
+            conn, start_date, end_date, started_at, bool(bucket_sums), "sleep"
+        ),
     )
 
 
@@ -532,7 +550,9 @@ def get_sleep_stages(
             stages_hours={},
             stage_data_available=False,
             message="Sleep stage labels are not available in this imported data.",
-            resource=_resource_metadata(conn, start_date, end_date, started_at, bool(asleep)),
+            resource=_resource_metadata(
+                conn, start_date, end_date, started_at, bool(asleep), "sleep_stages"
+            ),
         )
     if sum(stages.values()) > total_asleep_hours:
         return SleepStagesResponse(
@@ -543,7 +563,9 @@ def get_sleep_stages(
                 "Sleep stage intervals overlap, so this import cannot provide a safe "
                 "stage-duration partition."
             ),
-            resource=_resource_metadata(conn, start_date, end_date, started_at, bool(asleep)),
+            resource=_resource_metadata(
+                conn, start_date, end_date, started_at, bool(asleep), "sleep_stages"
+            ),
         )
     return SleepStagesResponse(
         total_asleep_hours=total_asleep_hours,
@@ -553,7 +575,7 @@ def get_sleep_stages(
             "Stage durations are measured source observations; overlapping intervals are unioned "
             "locally."
         ),
-        resource=_resource_metadata(conn, start_date, end_date, started_at, True),
+        resource=_resource_metadata(conn, start_date, end_date, started_at, True, "sleep_stages"),
     )
 
 
@@ -665,6 +687,7 @@ def get_capabilities(
             resource_end,
             started_at,
             any(item.present for item in capabilities),
+            "capabilities",
         ),
     )
 
@@ -783,5 +806,5 @@ def get_workout_detail(
         gps_route=gps_route,
         metadata=metadata,
         route=route,
-        resource=_resource_metadata(conn, None, None, started_at, True),
+        resource=_resource_metadata(conn, None, None, started_at, True, "workout_detail"),
     )

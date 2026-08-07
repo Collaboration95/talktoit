@@ -42,3 +42,22 @@ def connect(
         path.parent.mkdir(parents=True, exist_ok=True)
     conn = duckdb.connect(str(path), read_only=read_only)
     return conn
+
+
+def health_database_size_bytes() -> int | None:
+    """Return the on-disk health database size, or None when no import exists."""
+    path = resolve_db_path()
+    return path.stat().st_size if path.exists() else None
+
+
+def delete_health_database() -> int:
+    """Delete the imported health database file after an explicit scoped request.
+
+    Returns the number of files removed (0 or 1). Callers must require explicit
+    confirmation; cache, history, saved views, and diagnostics are untouched.
+    """
+    path = resolve_db_path()
+    if not path.exists():
+        return 0
+    path.unlink()
+    return 1

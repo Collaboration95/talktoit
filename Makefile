@@ -47,6 +47,13 @@ endif
 test-bench:
 	uv run --directory backend pytest -m benchmark --no-cov
 
+# Privacy-safe local performance/event inspection without a server.
+diagnostics:
+	uv run --directory backend python -m app.cli.diagnostics summary
+
+bench:
+	uv run --directory backend pytest tests/bench -m benchmark --no-cov -q
+
 # ── Tests ────────────────────────────────────────────────────────────────────
 test: test-all   # alias
 test-all: test-backend test-frontend
@@ -72,7 +79,10 @@ verify-headless:
 		tests/unit/test_chat_cache.py \
 		tests/unit/test_provider_gateway.py \
 		tests/unit/test_provider_redaction.py \
+		tests/unit/test_diagnostics.py \
+		tests/integration/test_diagnostics_api.py \
 		-q --no-cov
+	uv run --directory backend python -m app.cli.diagnostics summary
 	npm --prefix frontend run test -- --run tests/api tests/components/template-dispatch.test.tsx
 
 # ── Typechecking ─────────────────────────────────────────────────────────────

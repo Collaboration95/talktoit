@@ -23,7 +23,8 @@ CACHE_MAX_ENTRIES = 200
 CACHE_MAX_BYTES = 5 * 1024 * 1024
 
 
-def _default_state_path() -> Path:
+def default_state_path() -> Path:
+    """Return the configured local app-state database path."""
     configured = os.environ.get("TTI_APP_STATE_PATH")
     if configured:
         return Path(configured)
@@ -62,7 +63,7 @@ class AppStateRepository:
 
     def __init__(self, path: Path | None = None) -> None:
         """Open a repository at the configured local state database path."""
-        self.path = path or _default_state_path()
+        self.path = path or default_state_path()
 
     @contextmanager
     def _connection(self) -> Generator[sqlite3.Connection, None, None]:
@@ -163,6 +164,24 @@ class AppStateRepository:
                     PRAGMA user_version = 6;
                     """
                 )
+                version = 6
+            if version < 7:
+                conn.executescript(
+                    """
+                    CREATE TABLE IF NOT EXISTS diagnostics_events (
+                        id TEXT PRIMARY KEY,
+                        category TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        duration_ms REAL,
+                        counts_json TEXT NOT NULL,
+                        meta_json TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    );
+                    PRAGMA user_version = 7;
+                    """
+                )
+                version = 7
 
     def backup_before_destructive_migration(self) -> Path | None:
         """Create a recoverable snapshot when a future migration needs it."""
@@ -447,6 +466,53 @@ class AppStateRepository:
             changed = conn.execute(
                 "DELETE FROM conversations WHERE id = ?", (conversation_id,)
             ).rowcount
+        return changed == 1
+
+    def count_conversations(self) -> int:
+        """Return the total number of stored local conversations."""
+        self.migrate()
+        with self._connection() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()
+        return int(row[0])
+
+    def delete_all_conversations(self) -> int:
+        """Delete all local history; cache, views, and health data remain."""
+        self.migrate()
+        with self._connection() as conn:
+            conn.execute("DELETE FROM turns")
+            deleted = conn.execute("DELETE FROM conversations").rowcount
+        return deleted
+
+    def cache_usage(self) -> dict[str, int]:
+        """Return the local response-cache size in entries and bytes."""
+        self.migrate()
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS entries, "
+                "COALESCE(SUM(length(CAST(response_json AS BLOB))), 0) AS bytes "
+                "FROM cache_entries"
+            ).fetchone()
+        return {"entries": int(row["entries"]), "bytes": int(row["bytes"])}
+
+    def clear_cache(self) -> int:
+        """Delete all local cached responses without touching history or health."""
+        self.migrate()
+        with self._connection() as conn:
+            deleted = conn.execute("DELETE FROM cache_entries").rowcount
+        return deleted
+
+    def saved_view_count(self) -> int:
+        """Return the number of stored local saved dashboard views."""
+        self.migrate()
+        with self._connection() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM saved_views").fetchone()
+        return int(row[0])
+
+    def deactivate_active_dataset(self) -> bool:
+        """Persistently clear the active-dataset reference (health data already deleted)."""
+        self.migrate()
+        with self._connection() as conn:
+            changed = conn.execute("DELETE FROM app_state WHERE key = 'active_dataset_id'").rowcount
         return changed == 1
 
     def create_saved_view(self, title: str, query: Mapping[str, object]) -> str:

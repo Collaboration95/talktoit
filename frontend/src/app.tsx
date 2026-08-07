@@ -1,24 +1,29 @@
 import { useState } from 'react'
 import { ChatView } from '@/components/chat-view'
 import { DashboardView } from '@/components/dashboard-view'
+import { DiagnosticsView } from '@/components/diagnostics-view'
+import { SettingsView } from '@/components/settings-view'
 
 /** Resolve the top-level view from the URL on first load (backwards compatible). */
-function initialTab(): 'chat' | 'dashboard' {
+function initialTab(): 'chat' | 'dashboard' | 'diagnostics' | 'settings' {
   const tab = new URLSearchParams(window.location.search).get('tab')
-  return tab === 'workouts' || tab === 'dashboard' ? 'dashboard' : 'chat'
+  if (tab === 'workouts' || tab === 'dashboard') return 'dashboard'
+  if (tab === 'diagnostics') return 'diagnostics'
+  if (tab === 'settings') return 'settings'
+  return 'chat'
 }
 
 /** Keep the URL tab in sync with the visible view without dropping dashboard state. */
-function pushTab(tab: 'chat' | 'dashboard') {
+function pushTab(tab: 'chat' | 'dashboard' | 'diagnostics' | 'settings') {
   const params = new URLSearchParams(window.location.search)
   params.set('tab', tab)
   window.history.pushState({}, '', `?${params.toString()}`)
 }
 
 export function App() {
-  const [tab, setTab] = useState<'chat' | 'dashboard'>(initialTab)
+  const [tab, setTab] = useState<'chat' | 'dashboard' | 'diagnostics' | 'settings'>(initialTab)
 
-  const selectTab = (next: 'chat' | 'dashboard') => {
+  const selectTab = (next: 'chat' | 'dashboard' | 'diagnostics' | 'settings') => {
     setTab(next)
     pushTab(next)
   }
@@ -39,9 +44,29 @@ export function App() {
           >
             Dashboard
           </button>
+          <button
+            onClick={() => selectTab('diagnostics')}
+            className={`text-sm font-medium ${tab === 'diagnostics' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            Diagnostics
+          </button>
+          <button
+            onClick={() => selectTab('settings')}
+            className={`text-sm font-medium ${tab === 'settings' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            Settings
+          </button>
         </div>
       </nav>
-      {tab === 'chat' ? <ChatView /> : <DashboardView />}
+      {tab === 'chat' ? (
+        <ChatView />
+      ) : tab === 'dashboard' ? (
+        <DashboardView />
+      ) : tab === 'diagnostics' ? (
+        <DiagnosticsView />
+      ) : (
+        <SettingsView />
+      )}
     </div>
   )
 }
