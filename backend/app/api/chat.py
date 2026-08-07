@@ -6,7 +6,7 @@ import asyncio
 import json
 import time
 import uuid
-from collections.abc import Generator
+from collections.abc import Generator, Mapping
 
 import duckdb
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -23,10 +23,11 @@ from app.llm.provider_gateway import (
     ProviderUnavailableError,
     make_provider_gateway,
 )
+from app.llm.semantic_candidates import candidates_enabled, evaluate
 from app.models.chat import ChatRequest, ChatResponse, ResponseMetadata
 from app.models.errors import ErrorCode, ProblemDetail
-from app.state.app_state import AppStateRepository
-from app.state.diagnostics import timed_record
+from app.state.app_state import AppStateRepository, DatasetVersion
+from app.state.diagnostics import safe_record, timed_record
 
 router = APIRouter(prefix="/api")
 
@@ -153,15 +154,32 @@ async def chat(
         if cached is not None:
             response = ChatResponse.model_validate_json(cached)
             response.metadata.provenance = "cached"
-        elif disambiguation is not None:
-            response = ChatResponse(
-                template_id="fallback",
-                data={"question": request.question, "table": None, "text": disambiguation},
-                narrative=disambiguation,
-                metadata=ResponseMetadata(provenance="deterministic_local"),
-            )
         else:
-            response = await orchestrator.answer(request.question, plan_override=followup_plan)
+            # Stage 2.5: local semantic candidates after exact/canonical miss.
+            # Reuse a prior answer only when its stored canonical intent is
+            # proven identical; anything weaker stays a miss. Fully local.
+            response = None
+            if (
+                active is not None
+                and request.cache_mode != "fresh"
+                and request.parent_turn_id is None
+                and canonical_plan is not None
+                and candidates_enabled()
+            ):
+                response = _semantic_cached_answer(
+                    repository, active, request.question, canonical_plan
+                )
+                if response is not None:
+                    cached = response.model_dump_json()  # cache-parity outcomes
+            if response is None and disambiguation is not None:
+                response = ChatResponse(
+                    template_id="fallback",
+                    data={"question": request.question, "table": None, "text": disambiguation},
+                    narrative=disambiguation,
+                    metadata=ResponseMetadata(provenance="deterministic_local"),
+                )
+            if response is None:
+                response = await orchestrator.answer(request.question, plan_override=followup_plan)
         if active is not None:
             response.metadata.dataset_version_id = active.id
             response.metadata.coverage_start = active.coverage_start
@@ -259,6 +277,53 @@ def _plan_mode(response: ChatResponse, cached: bool, disambiguated: bool) -> str
     if response.metadata.provenance == "remote_planned":
         return "remote"
     return "fallback"
+
+
+def _record_semantic_event(considered: int, outcome: str) -> None:
+    """Record one privacy-safe semantic-candidate event; never breaks chat."""
+    safe_record(
+        None,
+        "chat",
+        "semantic_candidates",
+        duration_ms=0.0,
+        status="ok",
+        meta={"outcome": outcome, "state": "ok"},
+        counts={"candidates_considered": considered},
+    )
+
+
+def _semantic_cached_answer(
+    repository: AppStateRepository,
+    active: DatasetVersion,
+    question: str,
+    canonical_plan: Mapping[str, object],
+) -> ChatResponse | None:
+    """Return a prior proven-identical answer, or None to keep the miss.
+
+    Fully local: ranks completed turns by question text and reuses one only
+    when its stored canonical intent exactly matches the current plan.
+    """
+    records = repository.semantic_turns(active.id)
+    if not records:
+        return None
+    arguments = canonical_plan.get("arguments")
+    if not isinstance(arguments, Mapping):
+        return None
+    verdict = evaluate(
+        records,
+        question,
+        (str(canonical_plan.get("tool_name", "")), arguments),
+    )
+    if (
+        not verdict.auto_servable
+        or verdict.identical is None
+        or not verdict.identical.response_json
+    ):
+        return None
+    prior = ChatResponse.model_validate_json(verdict.identical.response_json)
+    prior.metadata.provenance = "semantic_cached"
+    _record_semantic_event(verdict.considered, "identical")
+    return prior
 
 
 def _record_chat_error(started_at: float, error_class: str) -> None:
