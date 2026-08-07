@@ -21,7 +21,7 @@ from app.api.settings import router as settings_router
 from app.api.status import router as status_router
 from app.db.migrate import SCHEMA_VERSION, migrate
 from app.llm.provider_gateway import make_provider_gateway
-from app.state.app_state import AppStateRepository
+from app.state.app_state import APP_STATE_SCHEMA_VERSION, AppStateRepository
 from app.state.diagnostics import safe_record
 
 APP_VERSION = "0.1.0"
@@ -42,7 +42,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
             "app_version": APP_VERSION,
             "duckdb_version": duckdb.__version__,
             "schema_version": str(SCHEMA_VERSION),
-            "app_state_version": "7",
+            "app_state_version": str(APP_STATE_SCHEMA_VERSION),
         },
     )
     try:

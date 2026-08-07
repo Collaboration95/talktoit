@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChatView } from '@/components/chat-view'
 import { DashboardView } from '@/components/dashboard-view'
 import { DiagnosticsView } from '@/components/diagnostics-view'
@@ -22,6 +22,14 @@ function pushTab(tab: 'chat' | 'dashboard' | 'diagnostics' | 'settings') {
 
 export function App() {
   const [tab, setTab] = useState<'chat' | 'dashboard' | 'diagnostics' | 'settings'>(initialTab)
+
+  // Browser Back/Forward re-navigates the URL tab; re-derive the view from the
+  // query string so the address bar and the visible tab never diverge.
+  useEffect(() => {
+    const onPopState = () => setTab(initialTab())
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
 
   const selectTab = (next: 'chat' | 'dashboard' | 'diagnostics' | 'settings') => {
     setTab(next)

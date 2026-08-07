@@ -121,6 +121,87 @@ def test_get_top_workouts_empty(db: duckdb.DuckDBPyConnection) -> None:
     assert result.rows == []
 
 
+def _insert_run(
+    db: duckdb.DuckDBPyConnection,
+    workout_id: int,
+    *,
+    distance_m: float | None,
+    avg_hr: float | None = None,
+    energy_kj: float | None = None,
+    duration_min: float = 30.0,
+    start: str = "2026-06-01 01:00:00+00",
+) -> None:
+    """Insert a minimal Running workout with optional statistics."""
+    db.execute(
+        """
+        INSERT INTO workouts (id, activity_type, duration, duration_unit, source_name,
+            source_version, device, creation_date, start_date, end_date)
+        VALUES (?, 'Running', ?, 'min', 'Test', NULL, NULL, NULL, ?, '2026-06-01 02:00:00+00')
+        """,
+        (workout_id, duration_min, start),
+    )
+    if distance_m is not None:
+        db.execute(
+            """
+            INSERT INTO workout_statistics (workout_id, type, average, sum, unit)
+            VALUES (?, 'HKQuantityTypeIdentifierDistanceWalkingRunning', NULL, ?, 'm')
+            """,
+            (workout_id, distance_m),
+        )
+    if avg_hr is not None:
+        db.execute(
+            """
+            INSERT INTO workout_statistics (workout_id, type, average, sum, unit)
+            VALUES (?, 'HKQuantityTypeIdentifierHeartRate', ?, NULL, 'count/min')
+            """,
+            (workout_id, avg_hr),
+        )
+    if energy_kj is not None:
+        db.execute(
+            """
+            INSERT INTO workout_statistics (workout_id, type, average, sum, unit)
+            VALUES (?, 'HKQuantityTypeIdentifierActiveEnergyBurned', NULL, ?, 'kJ')
+            """,
+            (workout_id, energy_kj),
+        )
+
+
+def test_get_top_workouts_limits_rows_and_orders_in_sql(
+    db: duckdb.DuckDBPyConnection,
+) -> None:
+    """The top-N window is applied in SQL: only N rows are returned, ranked."""
+    _insert_run(db, 101, distance_m=1000.0, duration_min=20.0)
+    _insert_run(db, 102, distance_m=3000.0, duration_min=40.0)
+    _insert_run(db, 103, distance_m=2000.0, duration_min=35.0)
+    # Fixture's Running workout is 8.5 km.
+
+    result = get_top_workouts(db, "Running", "distance", n=2)
+    assert [row.value for row in result.rows] == pytest.approx([8.5, 3.0])
+    assert [row.rank for row in result.rows] == [1, 2]
+
+    by_duration = get_top_workouts(db, "Running", "duration", n=2)
+    assert [row.value for row in by_duration.rows] == pytest.approx([45.5, 40.0])
+
+
+def test_get_top_workouts_orders_by_energy_in_sql(db: duckdb.DuckDBPyConnection) -> None:
+    _insert_run(db, 101, distance_m=1000.0, energy_kj=1200.0)
+    _insert_run(db, 102, distance_m=3000.0, energy_kj=2600.0)
+    _insert_run(db, 103, distance_m=2000.0, energy_kj=400.0)
+
+    result = get_top_workouts(db, "Running", "energy", n=3)
+    # Fixture Running workout burns 2500 kJ; our seeded runs add 1200 and 2600.
+    assert [row.value for row in result.rows] == pytest.approx([2600.0, 2500.0, 1200.0])
+
+
+def test_get_top_workouts_nulls_sort_last(db: duckdb.DuckDBPyConnection) -> None:
+    """Workouts without a ranking value never crowd out scored workouts."""
+    _insert_run(db, 101, distance_m=1000.0, avg_hr=160.0)
+    _insert_run(db, 102, distance_m=2000.0, avg_hr=None)  # no heart-rate stats
+
+    result = get_top_workouts(db, "Running", "avg_hr", n=5)
+    assert [row.value for row in result.rows] == pytest.approx([160.0, 148.0])
+
+
 # ---------------------------------------------------------------------------
 # get_trend
 # ---------------------------------------------------------------------------
