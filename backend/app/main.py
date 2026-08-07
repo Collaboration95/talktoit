@@ -53,7 +53,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
-    app = FastAPI(title="tti", version="0.1.0", lifespan=_lifespan)
+    app = FastAPI(title="tti", version=APP_VERSION, lifespan=_lifespan)
 
     app.add_middleware(
         CORSMiddleware,

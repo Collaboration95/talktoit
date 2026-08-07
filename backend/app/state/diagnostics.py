@@ -127,6 +127,11 @@ FORBIDDEN_CONTENT_TOKENS = (
 MAX_EVENT_NAME_LENGTH = 120
 MAX_RECENT_LIMIT = 500
 
+# Retained diagnostics events: the table is pruned to this many newest rows on
+# ``record`` so a long-running local install never grows the store without
+# bound. Configurable on the repository so tests can exercise pruning cheaply.
+MAX_EVENTS = 5000
+
 
 @dataclass(frozen=True)
 class DiagnosticsEvent:
@@ -176,9 +181,17 @@ class DiagnosticsRepository:
     views, and health tables so it can be cleared without touching them.
     """
 
-    def __init__(self, path: Path | None = None) -> None:
-        """Open a repository at the configured local state database path."""
+    def __init__(self, path: Path | None = None, max_events: int = MAX_EVENTS) -> None:
+        """Open a repository at the configured local state database path.
+
+        Args:
+            path: The app-state SQLite file, or the configured default.
+            max_events: Retention cap; oldest events are evicted above this many.
+        """
         self.path = path or default_state_path()
+        self.max_events = max_events
+        if max_events < 1:
+            raise ValueError("max_events must be >= 1")
 
     @contextmanager
     def _connection(self) -> Generator[sqlite3.Connection, None, None]:
@@ -251,7 +264,24 @@ class DiagnosticsRepository:
                     _now(),
                 ),
             )
+            self._prune(conn)
         return event_id
+
+    def _prune(self, conn: sqlite3.Connection) -> None:
+        """Evict the oldest events once the store exceeds the retention cap."""
+        count = int(conn.execute("SELECT COUNT(*) FROM diagnostics_events").fetchone()[0])
+        if count <= self.max_events:
+            return
+        conn.execute(
+            """
+            DELETE FROM diagnostics_events WHERE id NOT IN (
+                SELECT id FROM diagnostics_events
+                ORDER BY created_at DESC, rowid DESC
+                LIMIT ?
+            )
+            """,
+            (self.max_events,),
+        )
 
     def recent(self, limit: int = 50, category: str | None = None) -> list[DiagnosticsEvent]:
         """Return the newest events, optionally filtered by category."""
@@ -284,29 +314,44 @@ class DiagnosticsRepository:
         return int(row[0])
 
     def aggregate(self) -> dict[str, object]:
-        """Return privacy-safe aggregates: counts, latency, and cache hit rate."""
+        """Return privacy-safe aggregates: counts, latency, and cache hit rate.
+
+        Computed in SQL (GROUP BY + an ordered duration scan) rather than loading
+        every stored event into memory, so cost is constant in stored history.
+        """
         self.migrate()
         with self._connection() as conn:
-            rows = conn.execute(
-                "SELECT category, status, duration_ms, meta_json, counts_json "
-                "FROM diagnostics_events"
-            ).fetchall()
+            counts_by_category: dict[str, int] = {}
+            status_counts: dict[str, int] = {}
+            for row in conn.execute(
+                "SELECT category, status, COUNT(*) AS cnt FROM diagnostics_events "
+                "GROUP BY category, status"
+            ).fetchall():
+                counts_by_category[str(row["category"])] = counts_by_category.get(
+                    str(row["category"]), 0
+                ) + int(row["cnt"])
+                status_counts[str(row["status"])] = status_counts.get(str(row["status"]), 0) + int(
+                    row["cnt"]
+                )
 
-        counts_by_category: dict[str, int] = {}
-        durations_by_category: dict[str, list[float]] = {}
-        status_counts: dict[str, int] = {}
-        cache_outcomes: dict[str, int] = {}
-        cache_hits = 0
-        cache_misses = 0
-        for row in rows:
-            category = str(row["category"])
-            status = str(row["status"])
-            status_counts[status] = status_counts.get(status, 0) + 1
-            counts_by_category[category] = counts_by_category.get(category, 0) + 1
-            duration = row["duration_ms"]
-            if duration is not None:
-                durations_by_category.setdefault(category, []).append(float(duration))
-            if category == "chat":
+            # Durations, ordered so p95 can read straight from the sorted list.
+            # Only the numeric column is pulled; no JSON metadata is materialized.
+            durations_by_category: dict[str, list[float]] = {}
+            for row in conn.execute(
+                "SELECT category, duration_ms FROM diagnostics_events "
+                "WHERE duration_ms IS NOT NULL ORDER BY category, duration_ms"
+            ).fetchall():
+                durations_by_category.setdefault(str(row["category"]), []).append(
+                    float(row["duration_ms"])
+                )
+
+            # Cache introspection touches only the chat category's JSON.
+            cache_outcomes: dict[str, int] = {}
+            cache_hits = 0
+            cache_misses = 0
+            for row in conn.execute(
+                "SELECT meta_json, counts_json FROM diagnostics_events WHERE category = 'chat'"
+            ).fetchall():
                 try:
                     meta = json.loads(row["meta_json"])
                 except json.JSONDecodeError:
@@ -323,7 +368,7 @@ class DiagnosticsRepository:
 
         summary: dict[str, dict[str, object]] = {}
         for category, count in counts_by_category.items():
-            durations = sorted(durations_by_category.get(category, []))
+            durations = durations_by_category.get(category, [])
             summary[category] = {
                 "count": count,
                 "mean_duration_ms": (

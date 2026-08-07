@@ -9,6 +9,7 @@ import pytest
 from app.state.diagnostics import (
     FORBIDDEN_CONTENT_TOKENS,
     FORBIDDEN_META_KEYS,
+    DiagnosticsEvent,
     DiagnosticsRepository,
     safe_record,
     timed_record,
@@ -175,8 +176,69 @@ def test_aggregate_empty_has_no_missing_keys(tmp_path) -> None:
     assert agg["by_category"] == {}
 
 
+def test_aggregate_matches_manual_computation(tmp_path) -> None:
+    """The SQL aggregation returns the same result as a manual fold over rows."""
+    repo = _repo(tmp_path)
+    recorded: list[DiagnosticsEvent] = []
+    for i in range(6):
+        recorded.append(
+            repo.record(
+                "query",
+                "get_trend",
+                duration_ms=10.0 * (i % 3),
+                meta={"query_name": "get_trend", "state": "ok", "cache_outcome": "uncached"},
+            )
+        )
+    recorded.append(
+        repo.record("chat", "run", meta={"plan_mode": "local", "cache_outcome": "local"})
+    )
+
+    agg = repo.aggregate()
+
+    assert agg["total_events"] == len(recorded)
+    # Durations across the 6 query events: [0, 10, 20, 0, 10, 20] -> mean 10, p95 20.
+    assert agg["by_category"]["query"]["count"] == 6
+    assert agg["by_category"]["query"]["mean_duration_ms"] == pytest.approx(10.0)
+    assert agg["by_category"]["query"]["p95_duration_ms"] == pytest.approx(20.0)
+    assert agg["by_category"]["chat"]["count"] == 1
+    assert agg["by_category"]["chat"]["mean_duration_ms"] is None
+    assert agg["status_counts"] == {"ok": 7}
+
+
 # ---------------------------------------------------------------------------
-# Privacy audit of the on-disk representation
+# Retention policy
+# ---------------------------------------------------------------------------
+
+
+def test_retention_evicts_oldest_beyond_cap(tmp_path) -> None:
+    repo = DiagnosticsRepository(tmp_path / "diag.sqlite", max_events=5)
+    for i in range(14):
+        repo.record(
+            "panel",
+            f"panel:{i}",
+            meta={"panel_name": f"panel{i}", "state": "success"},
+        )
+
+    assert repo.count() == 5
+    # The five newest are kept; recent() orders newest -> oldest.
+    names = [event.name for event in repo.recent()]
+    assert names == [f"panel:{i}" for i in range(13, 8, -1)]
+    # No evicted event remains.
+    assert "panel:0" not in names and "panel:1" not in names
+
+
+def test_retention_never_evicts_within_cap(tmp_path) -> None:
+    repo = DiagnosticsRepository(tmp_path / "diag.sqlite", max_events=50)
+    for i in range(30):
+        repo.record("query", f"q{i}", meta={"query_name": f"q{i}", "state": "ok"})
+    assert repo.count() == 30
+
+
+def test_retention_cap_must_be_positive(tmp_path) -> None:
+    with pytest.raises(ValueError):
+        DiagnosticsRepository(tmp_path / "diag.sqlite", max_events=0)
+
+
 # ---------------------------------------------------------------------------
 
 
