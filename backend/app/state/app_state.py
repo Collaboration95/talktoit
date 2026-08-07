@@ -19,6 +19,8 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from app.llm.semantic_candidates import normalize_question
+
 CACHE_MAX_ENTRIES = 200
 CACHE_MAX_BYTES = 5 * 1024 * 1024
 
@@ -182,6 +184,24 @@ class AppStateRepository:
                     """
                 )
                 version = 7
+            if version < 8:
+                conn.executescript(
+                    """
+                    ALTER TABLE turns ADD COLUMN normalized_question TEXT;
+                    PRAGMA user_version = 8;
+                    """
+                )
+                # Backfill normalized search text for completed turns so the
+                # semantic candidate index covers history imported pre-v8.
+                rows = conn.execute(
+                    "SELECT id, question FROM turns WHERE state = 'completed'"
+                ).fetchall()
+                for turn_id, question in rows:
+                    conn.execute(
+                        "UPDATE turns SET normalized_question = ? WHERE id = ?",
+                        (normalize_question(str(question)), turn_id),
+                    )
+                version = 8
 
     def backup_before_destructive_migration(self) -> Path | None:
         """Create a recoverable snapshot when a future migration needs it."""
@@ -295,6 +315,28 @@ class AppStateRepository:
             ).fetchone()
         return dict(row) if row else None
 
+    def semantic_turns(self, dataset_version_id: str) -> list[dict[str, object]]:
+        """Return completed turns scoped to one dataset for semantic matching.
+
+        Exposes only the fields the local candidate verifier needs; question
+        text stays on-device and is never sent to a remote service.
+        """
+        self.migrate()
+        with self._connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT t.id, t.conversation_id, t.question, t.response_json,
+                       t.created_at, t.canonical_plan_json, t.normalized_question
+                FROM turns t
+                JOIN conversations c ON c.id = t.conversation_id
+                WHERE c.dataset_version_id = ? AND t.state = 'completed'
+                  AND t.normalized_question IS NOT NULL
+                ORDER BY t.created_at ASC
+                """,
+                (dataset_version_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def list_conversations(self, search: str = "") -> list[dict[str, object]]:
         """List non-archived local conversation metadata."""
         self.migrate()
@@ -329,8 +371,9 @@ class AppStateRepository:
             conn.execute(
                 """
                 INSERT INTO turns (id, conversation_id, ordinal, question, state, response_json,
-                    cache_mode, cache_outcome, created_at, completed_at, canonical_plan_json)
-                VALUES (?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?)
+                    cache_mode, cache_outcome, created_at, completed_at, canonical_plan_json,
+                    normalized_question)
+                VALUES (?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     turn_id,
@@ -343,6 +386,7 @@ class AppStateRepository:
                     now,
                     now,
                     json.dumps(canonical_plan, sort_keys=True) if canonical_plan else None,
+                    normalize_question(question),
                 ),
             )
             conn.execute(
@@ -362,10 +406,18 @@ class AppStateRepository:
             conn.execute(
                 """
                 INSERT INTO turns (id, conversation_id, ordinal, question, state, cache_mode,
-                    cache_outcome, created_at)
-                VALUES (?, ?, ?, ?, 'pending', ?, 'pending', ?)
+                    cache_outcome, created_at, normalized_question)
+                VALUES (?, ?, ?, ?, 'pending', ?, 'pending', ?, ?)
                 """,
-                (turn_id, conversation_id, ordinal, question, cache_mode, now),
+                (
+                    turn_id,
+                    conversation_id,
+                    ordinal,
+                    question,
+                    cache_mode,
+                    now,
+                    normalize_question(question),
+                ),
             )
             conn.execute(
                 "UPDATE conversations SET updated_at = ? WHERE id = ?", (now, conversation_id)

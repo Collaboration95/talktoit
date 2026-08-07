@@ -47,7 +47,12 @@ class ResponseMetadata(BaseModel):
 
     api_version: Literal["v1"] = "v1"
     provenance: Literal[
-        "unknown", "deterministic_local", "remote_planned", "fallback", "cached"
+        "unknown",
+        "deterministic_local",
+        "remote_planned",
+        "fallback",
+        "cached",
+        "semantic_cached",
     ] = "unknown"
     dataset_version_id: str | None = None
     coverage_start: str | None = None
