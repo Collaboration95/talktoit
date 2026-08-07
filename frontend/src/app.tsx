@@ -2,26 +2,28 @@ import { useState } from 'react'
 import { ChatView } from '@/components/chat-view'
 import { DashboardView } from '@/components/dashboard-view'
 import { DiagnosticsView } from '@/components/diagnostics-view'
+import { SettingsView } from '@/components/settings-view'
 
 /** Resolve the top-level view from the URL on first load (backwards compatible). */
-function initialTab(): 'chat' | 'dashboard' | 'diagnostics' {
+function initialTab(): 'chat' | 'dashboard' | 'diagnostics' | 'settings' {
   const tab = new URLSearchParams(window.location.search).get('tab')
   if (tab === 'workouts' || tab === 'dashboard') return 'dashboard'
   if (tab === 'diagnostics') return 'diagnostics'
+  if (tab === 'settings') return 'settings'
   return 'chat'
 }
 
 /** Keep the URL tab in sync with the visible view without dropping dashboard state. */
-function pushTab(tab: 'chat' | 'dashboard' | 'diagnostics') {
+function pushTab(tab: 'chat' | 'dashboard' | 'diagnostics' | 'settings') {
   const params = new URLSearchParams(window.location.search)
   params.set('tab', tab)
   window.history.pushState({}, '', `?${params.toString()}`)
 }
 
 export function App() {
-  const [tab, setTab] = useState<'chat' | 'dashboard' | 'diagnostics'>(initialTab)
+  const [tab, setTab] = useState<'chat' | 'dashboard' | 'diagnostics' | 'settings'>(initialTab)
 
-  const selectTab = (next: 'chat' | 'dashboard' | 'diagnostics') => {
+  const selectTab = (next: 'chat' | 'dashboard' | 'diagnostics' | 'settings') => {
     setTab(next)
     pushTab(next)
   }
@@ -48,14 +50,22 @@ export function App() {
           >
             Diagnostics
           </button>
+          <button
+            onClick={() => selectTab('settings')}
+            className={`text-sm font-medium ${tab === 'settings' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            Settings
+          </button>
         </div>
       </nav>
       {tab === 'chat' ? (
         <ChatView />
       ) : tab === 'dashboard' ? (
         <DashboardView />
-      ) : (
+      ) : tab === 'diagnostics' ? (
         <DiagnosticsView />
+      ) : (
+        <SettingsView />
       )}
     </div>
   )
