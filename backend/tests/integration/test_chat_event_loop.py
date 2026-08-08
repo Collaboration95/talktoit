@@ -75,7 +75,7 @@ async def test_chat_offloads_db_work_and_keeps_the_event_loop_live(
             assert worker_thread_ids and worker_thread_ids[0] != loop_thread_id
             # While that chat request is still blocked in a thread, the event
             # loop keeps serving other requests — the actual regression check.
-            health = await asyncio.wait_for(client.get("/api/health"), timeout=5)
+            health = await asyncio.wait_for(client.get("/health"), timeout=5)
             assert health.status_code == 200
             release.set()
             response = await asyncio.wait_for(chat_task, timeout=30)
