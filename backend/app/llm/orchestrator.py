@@ -206,8 +206,13 @@ class ChatOrchestrator:
         Returns:
             A :class:`ChatResponse` envelope with ``template_id``, ``data``,
             and ``narrative``.
+
+        Note:
+            Local DuckDB work (the data-profile query and tool dispatch) runs
+            on worker threads via ``asyncio.to_thread``; only the optional
+            remote provider calls are awaited on the event loop.
         """
-        data_profile = get_data_profile(self.conn)
+        data_profile = await asyncio.to_thread(get_data_profile, self.conn)
         today = (data_profile.latest_date or date.today()).isoformat()
         planner_prompt = _PLANNER_PROMPT.format(
             today=today,
@@ -242,7 +247,9 @@ class ChatOrchestrator:
                 meta={"mode": "local", "model": "local", "error_class": ""},
             )
             try:
-                template_id, data_dict = self._dispatch_tool(tool_name, args, question)
+                template_id, data_dict = await asyncio.to_thread(
+                    self._dispatch_tool, tool_name, args, question
+                )
             except Exception:
                 logger.exception("Local tool dispatch failed for tool %r", tool_name)
                 return _make_fallback_response(question)
@@ -283,7 +290,9 @@ class ChatOrchestrator:
 
         # ── Execute the tool ─────────────────────────────────────────────────
         try:
-            template_id, data_dict = self._dispatch_tool(tool_name, args, question)
+            template_id, data_dict = await asyncio.to_thread(
+                self._dispatch_tool, tool_name, args, question
+            )
         except Exception:
             logger.exception("Tool dispatch failed for tool %r", tool_name)
             return _make_fallback_response(question)
