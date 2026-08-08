@@ -70,8 +70,8 @@ omit = ["app/ingest/run.py"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "--cov=app --cov-report=term-missing --cov-report=xml --cov-report=html --cov-fail-under=80 -n auto"
+addopts = "--cov=app --cov-report=term-missing --cov-report=xml --cov-report=html --cov-fail-under=80 -n auto -m \"not benchmark\""
 markers = [
     "ingest_contract: canonical ingest compatibility and typed-schema release gate",
-    "benchmark: lightweight deterministic performance-policy checks",
+    "benchmark: deterministic performance-policy checks; excluded from the default run (make test-bench / make bench)",
 ]

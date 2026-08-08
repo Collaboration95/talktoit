@@ -44,6 +44,9 @@ endif
 endif
 
 # ── Benchmark tests ─────────────────────────────────────────────────────────
+# Benchmark/long-running policy tests are excluded from the default pytest run
+# and CI via the `-m "not benchmark"` exclude in backend/pyproject.toml addopts.
+# Run them explicitly here; the CLI -m overrides the addopts exclude.
 test-bench:
 	uv run --directory backend pytest -m benchmark --no-cov
 
