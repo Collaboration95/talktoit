@@ -637,13 +637,22 @@ class AppStateRepository:
     def put_cached_response(
         self, cache_key: str, dataset_version_id: str, response_json: str
     ) -> None:
-        """Store a validated local envelope, replacing only the matching exact key."""
+        """Store a validated local envelope, replacing only the matching exact key.
+
+        The entry is re-associated with the dataset that produced this response:
+        when the same question is answered against a freshly re-imported dataset
+        (a new ``ds_*`` id), the conflict update must also replace
+        ``dataset_version_id`` — otherwise the row would stay tagged with the
+        dead dataset id and the cache could never serve the new dataset again.
+        """
         self.migrate()
         now = _now()
         with self._connection() as conn:
             conn.execute(
                 "INSERT INTO cache_entries VALUES (?, ?, ?, ?, ?, 0) "
-                "ON CONFLICT(cache_key) DO UPDATE SET response_json = excluded.response_json, "
+                "ON CONFLICT(cache_key) DO UPDATE SET "
+                "dataset_version_id = excluded.dataset_version_id, "
+                "response_json = excluded.response_json, "
                 "accessed_at = excluded.accessed_at",
                 (cache_key, dataset_version_id, response_json, now, now),
             )
