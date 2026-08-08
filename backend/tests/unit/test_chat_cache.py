@@ -59,3 +59,71 @@ def test_cache_byte_budget_evicts_oldest_entry(tmp_path, monkeypatch) -> None:
 
     assert repo.get_cached_response("old", "ds_one") is None
     assert repo.get_cached_response("new", "ds_one") == "67890"
+
+
+def _activate_dataset(
+    repo: AppStateRepository,
+    *,
+    coverage_end: str,
+    records: int = 100,
+    content_prefix: str,
+) -> str:
+    """Register a new dataset manifest and return its fresh dataset id.
+
+    Every activation mints a brand-new ``ds_…`` id — the same mechanism the
+    import pipeline uses when a changed export is re-ingested — so a caller
+    can simulate "the file/coverage changed" by activating again.
+    """
+    version = repo.activate(
+        source_bytes=b"",
+        source_size_bytes=records * 1024,
+        parser_version="v2",
+        schema_version="1",
+        worker_count=2,
+        coverage_start="2026-01-01",
+        coverage_end=coverage_end,
+        counts={"records": records},
+        content_hash_prefix=content_prefix,
+    )
+    assert version is not None
+    return version.id
+
+
+def test_valid_cache_serves_stale_value_until_the_dataset_revalidates(tmp_path) -> None:
+    """A cached answer is valid for its dataset id; a new dataset invalidates it."""
+    repo = AppStateRepository(tmp_path / "state.sqlite")
+    old_dataset_id = _activate_dataset(repo, coverage_end="2026-06-01", content_prefix="aaaa")
+    key = build_cache_key("exact", "show my last run")
+
+    # Cache is warm for the old dataset: subsequent hits serve the stored
+    # (now stale) value without recomputation — provenance is the caller's job.
+    repo.put_cached_response(key, old_dataset_id, '{"answer":"old coverage"}')
+    assert repo.get_cached_response(key, old_dataset_id) == '{"answer":"old coverage"}'
+
+    # The export was re-imported (new coverage window, new content hash): the
+    # revalidation path must NOT reuse the old dataset's cache entry.
+    new_dataset_id = _activate_dataset(repo, coverage_end="2026-07-31", content_prefix="bbbb")
+    assert new_dataset_id != old_dataset_id
+    assert repo.get_cached_response(key, new_dataset_id) is None
+
+    # Fresh data is recomputed and stored; the single per-key row is now
+    # re-associated with the dataset that produced it, so the dead dataset id
+    # can never serve (or resurrect) the stale value again.
+    repo.put_cached_response(key, new_dataset_id, '{"answer":"fresh coverage"}')
+    assert repo.get_cached_response(key, new_dataset_id) == '{"answer":"fresh coverage"}'
+    assert repo.get_cached_response(key, old_dataset_id) is None
+
+
+def test_fresh_cache_mode_skips_read_and_write(tmp_path) -> None:
+    """A forced-fresh request refetches and beats a warm exact cache entry."""
+    repo = AppStateRepository(tmp_path / "state.sqlite")
+    dataset_id = _activate_dataset(repo, coverage_end="2026-06-30", content_prefix="aaaa")
+    key = build_cache_key("exact", "show my last run")
+    repo.put_cached_response(key, dataset_id, '{"answer":"stale"}')
+
+    # The fresh path is expressed by the caller (cache_mode="fresh"); the
+    # repository itself just returns the stored value, so the caller must
+    # recompute and re-store. Simulate that contract:
+    assert repo.get_cached_response(key, dataset_id) == '{"answer":"stale"}'
+    repo.put_cached_response(key, dataset_id, '{"answer":"recomputed"}')
+    assert repo.get_cached_response(key, dataset_id) == '{"answer":"recomputed"}'

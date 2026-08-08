@@ -22,6 +22,11 @@ in `make check` and CI).
 
 ### Fixed
 
+- Chat cache entries are now re-associated with the producing dataset: after a
+  re-import mints a new `ds_*` id, re-pushing the same key updates the row's
+  `dataset_version_id`, so the refreshed dataset's answers become cacheable
+  again instead of missing forever (covered by new-unit and integration cache
+  revalidation tests).
 - Diagnostics aggregation now computes counts, statuses, and durations with
   SQL `GROUP BY` and a column-pruned ordered scan instead of materializing
   every row's JSON payloads.
