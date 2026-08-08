@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http, HttpResponse } from 'msw'
+import { http, HttpResponse, delay } from 'msw'
 import { setupServer } from 'msw/node'
 import { ChatView } from '@/components/chat-view'
 
@@ -75,15 +75,24 @@ describe('ChatView', () => {
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'end' })
   })
 
-  it('cancels an in-flight request while keeping a retryable visible turn', async () => {
-    server.use(http.post('/api/chat', () => new Promise(() => {})))
+  it('cancels an in-flight request via the real abort path without a flash of success', async () => {
+    // GH-19: MSW delays the response; clicking Cancel aborts the request and
+    // the turn must land in the cancelled-error state (holding in loading until
+    // the abort surfaces is illegal, and a success flash is forbidden).
+    server.use(http.post('/api/chat', async () => {
+      await delay('infinite')
+      return HttpResponse.json(WORKOUT_ENVELOPE)
+    }))
     const user = userEvent.setup()
     render(<ChatView />)
     await user.type(screen.getByRole('textbox'), 'last run')
     await user.click(screen.getByRole('button', { name: /ask/i }))
+    expect(screen.getByText(/thinking about/i)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(screen.getByText('This request was cancelled.')).toBeInTheDocument()
+    expect(await screen.findByText('This request was cancelled.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    // No success flash: the workout card must never appear.
+    expect(screen.queryByText('Your last run was on June 5.')).not.toBeInTheDocument()
   })
 
   it('renders a workout card template on success with the query shown above', async () => {
