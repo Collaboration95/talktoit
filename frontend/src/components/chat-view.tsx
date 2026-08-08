@@ -13,6 +13,7 @@ import type { ChatEnvelope } from '@/types/templates'
 import { TemplateDispatch } from '@/components/template-dispatch'
 import { ChatInput } from '@/components/chat-input'
 import { SeedPrompts } from '@/components/seed-prompts'
+import { useBackendHealth } from '@/lib/use-backend-health'
 
 type ChatTurn =
   | { id: string; status: 'loading'; question: string }
@@ -25,7 +26,7 @@ export function ChatView() {
   const [conversationId, setConversationId] = useState<string>()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [conversationSearch, setConversationSearch] = useState('')
-  const [backendDown, setBackendDown] = useState(false)
+  const backendDown = useBackendHealth()
   const activeRequest = useRef<AbortController | null>(null)
   const nextTurnId = useRef(0)
   const transcriptEnd = useRef<HTMLDivElement | null>(null)
@@ -36,17 +37,8 @@ export function ChatView() {
     return `local-turn-${nextTurnId.current}`
   }
 
-  // Health check on mount (R1-12): non-blocking, 3s timeout
-  useEffect(() => {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 3000)
-    fetch('/health', { signal: controller.signal })
-      .then((r) => {
-        if (!r.ok) setBackendDown(true)
-      })
-      .catch(() => setBackendDown(true))
-      .finally(() => clearTimeout(timer))
-  }, [])
+  // Health check on mount is shared with the dashboard view via
+  // useBackendHealth (R1-12).
 
   useEffect(() => {
     listConversations(conversationSearch)

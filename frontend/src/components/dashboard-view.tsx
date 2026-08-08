@@ -24,6 +24,7 @@ import type { DashboardQuery } from '@/lib/dashboard-query'
 import { createSavedView, listSavedViews } from '@/api/saved-views'
 import type { SavedView } from '@/api/saved-views'
 import { formatDateOnly, formatNumber } from '@/lib/format'
+import { useBackendHealth } from '@/lib/use-backend-health'
 
 type DashboardViewMode =
   | { view: 'list' }
@@ -57,8 +58,9 @@ function formatDate(isoDate: string): string {
 }
 
 function requestSignal(controller: AbortController): AbortSignal | undefined {
-  // jsdom supplies an AbortSignal that Node's fetch implementation cannot
-  // consume. Browsers use a compatible implementation and receive cancellation.
+  // jsdom supplies an AbortSignal that Node's fetch implementation (undici)
+  // cannot consume even when MSW intercepts the request. Browsers use a
+  // compatible implementation and receive cancellation.
   return typeof navigator !== 'undefined' && navigator.userAgent.includes('jsdom')
     ? undefined
     : controller.signal
@@ -379,7 +381,7 @@ export function DashboardView() {
       ...(initialQuery.source ? { source: initialQuery.source } : {}),
     }
   })
-  const [backendDown, setBackendDown] = useState(false)
+  const backendDown = useBackendHealth()
   const [savedViews, setSavedViews] = useState<SavedView[]>([])
   const [savedViewTitle, setSavedViewTitle] = useState('')
   const [reloadToken, setReloadToken] = useState(0)
@@ -390,17 +392,8 @@ export function DashboardView() {
       .catch(() => setSavedViews([]))
   }
 
-  // Health check on mount (R1-12)
-  useEffect(() => {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 3000)
-    fetch('/health', { signal: controller.signal })
-      .then((r) => {
-        if (!r.ok) setBackendDown(true)
-      })
-      .catch(() => setBackendDown(true))
-      .finally(() => clearTimeout(timer))
-  }, [])
+  // Health check on mount (R1-12) is shared with the chat view via
+  // useBackendHealth.
 
   useEffect(() => {
     reloadSavedViews()

@@ -141,6 +141,14 @@ status:
 build:
 	npm --prefix frontend run build
 
+# ── Version consistency (CI + local) ────────────────────────────────────────
+check-versions:
+	bash scripts/check-versions.sh
+
+# ── Distributable build (version-consistent + frontend dist) ────────────────
+dist: check-versions build
+	@echo "=== dist ready: frontend/dist (serve via make run) ==="
+
 # ── CI checks (run before pushing) ──────────────────────────────────────────
 # Fast path — everything except tests (same as CI lint/typecheck jobs)
 check:
@@ -152,6 +160,8 @@ check:
 	npm --prefix frontend run lint
 	npm --prefix frontend run typecheck
 	npm --prefix frontend run format:check
+	@echo "=== version consistency ==="
+	bash scripts/check-versions.sh
 	@echo "=== all checks passed ==="
 
 # Full CI simulation — everything including tests and coverage
