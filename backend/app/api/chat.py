@@ -7,6 +7,8 @@ import json
 import time
 import uuid
 from collections.abc import Generator, Mapping
+from dataclasses import dataclass
+from typing import Any
 
 import duckdb
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -62,6 +64,203 @@ def _problem(
     return HTTPException(status_code=status_code, detail=detail.model_dump(mode="json"))
 
 
+def _plan_mode(response: ChatResponse, cached: bool, disambiguated: bool) -> str:
+    """Classify how this answer was produced without revealing its content."""
+    if cached:
+        return "cached"
+    if disambiguated:
+        return "disambiguation"
+    if response.metadata.provenance == "deterministic_local":
+        return "local"
+    if response.metadata.provenance == "remote_planned":
+        return "remote"
+    return "fallback"
+
+
+@dataclass
+class _ChatPreparation:
+    """Everything one chat request needs, prepared off the event loop.
+
+    All fields are produced by :func:`_prepare_chat` on a worker thread and
+    then consumed by the handler (for the one optional provider await) and by
+    :func:`_finalize_chat`, still off the loop.
+    """
+
+    repository: AppStateRepository
+    pending_turn_id: str | None
+    active: DatasetVersion | None
+    cache_key: str
+    canonical_key: str | None
+    use_exact_cache: bool
+    followup_plan: dict[str, Any] | None
+    canonical_plan: dict[str, Any] | None
+    cache_hit: bool
+    disambiguated: bool
+    response: ChatResponse | None
+
+
+def _prepare_chat(
+    request: ChatRequest,
+    conn: duckdb.DuckDBPyConnection,
+) -> _ChatPreparation:
+    """Run every blocking local read/write for one request on a worker thread.
+
+    This covers the SQLite app-state writes and reads (pending turn, active
+    dataset, follow-up turns, cache lookups), the DuckDB data-profile query,
+    the deterministic local planner, and the semantic-candidate check. It is
+    invoked through ``asyncio.to_thread`` so a slow aggregate or a locked
+    store can never stall the event loop.
+
+    Args:
+        request: The incoming chat request.
+        conn: The request-lifetime DuckDB connection (used here only).
+
+    Returns:
+        The prepared state; ``response`` is set when no provider call is
+        needed (cache or disambiguation hit), otherwise ``None``.
+    """
+    repository = AppStateRepository()
+    pending_turn_id: str | None = None
+    if request.conversation_id:
+        pending_turn_id = repository.create_pending_turn(
+            request.conversation_id, request.question, request.cache_mode
+        )
+    active = repository.get_active()
+    cache_key = build_cache_key("exact", request.question)
+    local_plan = plan_local_question(request.question, get_data_profile(conn))
+    followup_plan: dict[str, Any] | None = None
+    disambiguation: str | None = None
+    if request.conversation_id and active is not None:
+        conversation = repository.get_conversation(request.conversation_id)
+        if conversation and conversation.get("dataset_version_id") == active.id:
+            turns = (
+                [repository.get_conversation_turn(request.conversation_id, request.parent_turn_id)]
+                if request.parent_turn_id
+                else repository.get_turns(request.conversation_id)
+            )
+            contexts: list[FollowupContext] = []
+            for turn in turns:
+                if turn is None:
+                    continue
+                raw_plan = turn.get("canonical_plan_json")
+                if not isinstance(raw_plan, str):
+                    continue
+                try:
+                    plan = json.loads(raw_plan)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(plan, dict) and isinstance(plan.get("arguments"), dict):
+                    contexts.append(
+                        FollowupContext(
+                            active.id,
+                            str(plan.get("tool_name", "")),
+                            dict(plan["arguments"]),
+                            str(turn.get("id")),
+                            str(turn.get("question", "")),
+                        )
+                    )
+            followup_plan = resolve_followup(request.question, contexts, active.id)
+            if followup_plan is None:
+                disambiguation = followup_disambiguation(request.question, contexts, active.id)
+    canonical_plan = local_plan or followup_plan
+    canonical_key = build_cache_key("canonical", canonical_plan) if canonical_plan else None
+    use_exact_cache = request.parent_turn_id is None
+    cached = (
+        repository.get_cached_response(cache_key, active.id)
+        if active is not None and request.cache_mode != "fresh" and use_exact_cache
+        else None
+    )
+    if cached is None and active is not None and canonical_key and request.cache_mode != "fresh":
+        cached = repository.get_cached_response(canonical_key, active.id)
+    response: ChatResponse | None = None
+    if cached is not None:
+        response = ChatResponse.model_validate_json(cached)
+        response.metadata.provenance = "cached"
+    else:
+        # Stage 2.5: local semantic candidates after exact/canonical miss.
+        # Reuse a prior answer only when its stored canonical intent is
+        # proven identical; anything weaker stays a miss. Fully local.
+        if (
+            active is not None
+            and request.cache_mode != "fresh"
+            and request.parent_turn_id is None
+            and canonical_plan is not None
+            and candidates_enabled()
+        ):
+            response = _semantic_cached_answer(repository, active, request.question, canonical_plan)
+            if response is not None:
+                cached = response.model_dump_json()  # cache-parity outcomes
+        if response is None and disambiguation is not None:
+            response = ChatResponse(
+                template_id="fallback",
+                data={"question": request.question, "table": None, "text": disambiguation},
+                narrative=disambiguation,
+                metadata=ResponseMetadata(provenance="deterministic_local"),
+            )
+    return _ChatPreparation(
+        repository=repository,
+        pending_turn_id=pending_turn_id,
+        active=active,
+        cache_key=cache_key,
+        canonical_key=canonical_key,
+        use_exact_cache=use_exact_cache,
+        followup_plan=followup_plan,
+        canonical_plan=canonical_plan,
+        cache_hit=cached is not None,
+        disambiguated=disambiguation is not None,
+        response=response,
+    )
+
+
+def _finalize_chat(
+    prepared: _ChatPreparation,
+    request: ChatRequest,
+    response: ChatResponse,
+    started_at: float,
+) -> None:
+    """Persist a completed answer off the event loop (worker thread).
+
+    Writes the metadata, cache entries, completed turn, and one diagnostics
+    event. All of this is SQLite work, so it joins the prephase on a worker
+    thread; diagnostics never break the chat path.
+
+    Args:
+        prepared: The prepared state from :func:`_prepare_chat`.
+        request: The original request (cache mode and conversation scope).
+        response: The completed envelope to serialize and record.
+        started_at: Monotonic start time for the diagnostics event.
+    """
+    active = prepared.active
+    if active is not None:
+        response.metadata.dataset_version_id = active.id
+        response.metadata.coverage_start = active.coverage_start
+        response.metadata.coverage_end = active.coverage_end
+        response.metadata.generated_at = active.activated_at
+        if request.cache_mode != "fresh":
+            if prepared.use_exact_cache:
+                prepared.repository.put_cached_response(
+                    prepared.cache_key, active.id, response.model_dump_json()
+                )
+            if prepared.canonical_key is not None:
+                prepared.repository.put_cached_response(
+                    prepared.canonical_key, active.id, response.model_dump_json()
+                )
+    if request.conversation_id:
+        prepared.repository.finish_turn(
+            prepared.pending_turn_id or "",
+            response_json=response.model_dump_json(),
+            cache_outcome=response.metadata.provenance,
+            canonical_plan=prepared.canonical_plan,
+        )
+    _record_chat_event(
+        started_at,
+        response,
+        cached=prepared.cache_hit,
+        disambiguated=prepared.disambiguated,
+        status="ok",
+    )
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
@@ -69,6 +268,11 @@ async def chat(
     gateway: ProviderGateway = Depends(_get_gateway),  # noqa: B008
 ) -> ChatResponse:
     """Answer a natural-language health question using the LLM tool chain.
+
+    Note:
+        Local DuckDB/SQLite work runs on worker threads via ``asyncio.to_thread``
+        so a slow aggregate cannot stall the event loop; only the optional
+        remote-provider call is awaited on the loop.
 
     Args:
         request: The incoming chat request with a ``question`` field.
@@ -82,135 +286,29 @@ async def chat(
     Raises:
         HTTPException: A stable, privacy-safe problem envelope for runtime failures.
     """
-    orchestrator = ChatOrchestrator(
-        client=gateway.client, conn=conn, model=get_model(), gateway=gateway
-    )
-    repository: AppStateRepository | None = None
-    pending_turn_id: str | None = None
+    prepared: _ChatPreparation | None = None
     request_id = request.request_id or f"req_{uuid.uuid4().hex[:12]}"
     started_at = time.perf_counter()
     try:
-        repository = AppStateRepository()
-        if request.conversation_id:
-            pending_turn_id = repository.create_pending_turn(
-                request.conversation_id, request.question, request.cache_mode
+        prepared = await asyncio.to_thread(_prepare_chat, request, conn)
+        response = prepared.response
+        if response is None:
+            orchestrator = ChatOrchestrator(
+                client=gateway.client, conn=conn, model=get_model(), gateway=gateway
             )
-        active = repository.get_active()
-        cache_key = build_cache_key("exact", request.question)
-        local_plan = plan_local_question(request.question, get_data_profile(conn))
-        followup_plan = None
-        disambiguation: str | None = None
-        if request.conversation_id and active is not None:
-            conversation = repository.get_conversation(request.conversation_id)
-            if conversation and conversation.get("dataset_version_id") == active.id:
-                turns = (
-                    [
-                        repository.get_conversation_turn(
-                            request.conversation_id, request.parent_turn_id
-                        )
-                    ]
-                    if request.parent_turn_id
-                    else repository.get_turns(request.conversation_id)
-                )
-                contexts: list[FollowupContext] = []
-                for turn in turns:
-                    if turn is None:
-                        continue
-                    raw_plan = turn.get("canonical_plan_json")
-                    if not isinstance(raw_plan, str):
-                        continue
-                    try:
-                        plan = json.loads(raw_plan)
-                    except json.JSONDecodeError:
-                        continue
-                    if isinstance(plan, dict) and isinstance(plan.get("arguments"), dict):
-                        contexts.append(
-                            FollowupContext(
-                                active.id,
-                                str(plan.get("tool_name", "")),
-                                dict(plan["arguments"]),
-                                str(turn.get("id")),
-                                str(turn.get("question", "")),
-                            )
-                        )
-                followup_plan = resolve_followup(request.question, contexts, active.id)
-                if followup_plan is None:
-                    disambiguation = followup_disambiguation(request.question, contexts, active.id)
-        canonical_plan = local_plan or followup_plan
-        canonical_key = build_cache_key("canonical", canonical_plan) if canonical_plan else None
-        use_exact_cache = request.parent_turn_id is None
-        cached = (
-            repository.get_cached_response(cache_key, active.id)
-            if active is not None and request.cache_mode != "fresh" and use_exact_cache
-            else None
-        )
-        if (
-            cached is None
-            and active is not None
-            and canonical_key
-            and request.cache_mode != "fresh"
-        ):
-            cached = repository.get_cached_response(canonical_key, active.id)
-        if cached is not None:
-            response = ChatResponse.model_validate_json(cached)
-            response.metadata.provenance = "cached"
-        else:
-            # Stage 2.5: local semantic candidates after exact/canonical miss.
-            # Reuse a prior answer only when its stored canonical intent is
-            # proven identical; anything weaker stays a miss. Fully local.
-            response = None
-            if (
-                active is not None
-                and request.cache_mode != "fresh"
-                and request.parent_turn_id is None
-                and canonical_plan is not None
-                and candidates_enabled()
-            ):
-                response = _semantic_cached_answer(
-                    repository, active, request.question, canonical_plan
-                )
-                if response is not None:
-                    cached = response.model_dump_json()  # cache-parity outcomes
-            if response is None and disambiguation is not None:
-                response = ChatResponse(
-                    template_id="fallback",
-                    data={"question": request.question, "table": None, "text": disambiguation},
-                    narrative=disambiguation,
-                    metadata=ResponseMetadata(provenance="deterministic_local"),
-                )
-            if response is None:
-                response = await orchestrator.answer(request.question, plan_override=followup_plan)
-        if active is not None:
-            response.metadata.dataset_version_id = active.id
-            response.metadata.coverage_start = active.coverage_start
-            response.metadata.coverage_end = active.coverage_end
-            response.metadata.generated_at = active.activated_at
-            if request.cache_mode != "fresh":
-                if use_exact_cache:
-                    repository.put_cached_response(cache_key, active.id, response.model_dump_json())
-                if canonical_key:
-                    repository.put_cached_response(
-                        canonical_key, active.id, response.model_dump_json()
-                    )
-        if request.conversation_id:
-            repository.finish_turn(
-                pending_turn_id or "",
-                response_json=response.model_dump_json(),
-                cache_outcome=response.metadata.provenance,
-                canonical_plan=canonical_plan,
+            # Only this await stays on the loop; the orchestrator offloads its
+            # DuckDB profile query and tool dispatch to worker threads.
+            response = await orchestrator.answer(
+                request.question, plan_override=prepared.followup_plan
             )
-        _record_chat_event(
-            started_at,
-            response,
-            cached=cached is not None,
-            disambiguated=disambiguation is not None,
-            status="ok",
-        )
+        await asyncio.to_thread(_finalize_chat, prepared, request, response, started_at)
         return response
     except asyncio.CancelledError:
-        if pending_turn_id and repository:
-            repository.terminate_turn(
-                pending_turn_id, state="cancelled", message="Request cancelled by the client."
+        if prepared is not None and prepared.pending_turn_id is not None:
+            prepared.repository.terminate_turn(
+                prepared.pending_turn_id,
+                state="cancelled",
+                message="Request cancelled by the client.",
             )
         _record_chat_error(started_at, "cancelled")
         raise
@@ -218,9 +316,9 @@ async def chat(
         _record_chat_error(started_at, "http")
         raise
     except ProviderUnavailableError as exc:
-        if pending_turn_id and repository:
-            repository.terminate_turn(
-                pending_turn_id,
+        if prepared is not None and prepared.pending_turn_id is not None:
+            prepared.repository.terminate_turn(
+                prepared.pending_turn_id,
                 state="failed",
                 message="The optional provider is unavailable.",
             )
@@ -232,18 +330,20 @@ async def chat(
             request_id,
         ) from exc
     except TimeoutError as exc:
-        if pending_turn_id and repository:
-            repository.terminate_turn(
-                pending_turn_id, state="failed", message="The request timed out."
+        if prepared is not None and prepared.pending_turn_id is not None:
+            prepared.repository.terminate_turn(
+                prepared.pending_turn_id, state="failed", message="The request timed out."
             )
         _record_chat_error(started_at, "timeout")
         raise _problem(
             504, "request_timeout", "The request timed out. Please try again.", request_id
         ) from exc
     except duckdb.Error as exc:
-        if pending_turn_id and repository:
-            repository.terminate_turn(
-                pending_turn_id, state="failed", message="Local health data is unavailable."
+        if prepared is not None and prepared.pending_turn_id is not None:
+            prepared.repository.terminate_turn(
+                prepared.pending_turn_id,
+                state="failed",
+                message="Local health data is unavailable.",
             )
         _record_chat_error(started_at, "data_unavailable")
         raise _problem(
@@ -253,9 +353,11 @@ async def chat(
             request_id,
         ) from exc
     except Exception as exc:
-        if pending_turn_id and repository:
-            repository.terminate_turn(
-                pending_turn_id, state="failed", message="The answer could not be completed."
+        if prepared is not None and prepared.pending_turn_id is not None:
+            prepared.repository.terminate_turn(
+                prepared.pending_turn_id,
+                state="failed",
+                message="The answer could not be completed.",
             )
         _record_chat_error(started_at, "internal")
         raise _problem(
@@ -264,19 +366,6 @@ async def chat(
             "The answer could not be completed. Try again.",
             request_id,
         ) from exc
-
-
-def _plan_mode(response: ChatResponse, cached: bool, disambiguated: bool) -> str:
-    """Classify how this answer was produced without revealing its content."""
-    if cached:
-        return "cached"
-    if disambiguated:
-        return "disambiguation"
-    if response.metadata.provenance == "deterministic_local":
-        return "local"
-    if response.metadata.provenance == "remote_planned":
-        return "remote"
-    return "fallback"
 
 
 def _record_semantic_event(considered: int, outcome: str) -> None:
