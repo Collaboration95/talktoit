@@ -167,20 +167,23 @@ def ingest(
         shutil.rmtree(shard_dir, ignore_errors=True)
     shard_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"Opening {xml_path} with mmap")
+    logger.info("ingest.open", extra={"payload": {"mode": "mmap"}})
     file_size = xml_path.stat().st_size
-    logger.info(f"File size: {file_size:,} bytes")
+    logger.info("ingest.open.file", extra={"payload": {"size_bytes": file_size}})
 
     # Open file and mmap
     with open(xml_path, "rb") as f:
         with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
             # Split into byte ranges
-            logger.info(f"Splitting into {n_workers} worker ranges")
+            logger.info("ingest.split", extra={"payload": {"workers": n_workers}})
             ranges = split_boundaries(mm, n_workers)
-            logger.info(f"Created {len(ranges)} ranges")
+            logger.info("ingest.ranges.created", extra={"payload": {"ranges": len(ranges)}})
 
             for i, (start, end) in enumerate(ranges):
-                logger.info(f"  Worker {i}: [{start:,}, {end:,}) = {end - start:,} bytes")
+                logger.info(
+                    "ingest.range",
+                    extra={"payload": {"worker": i, "start_byte": start, "bytes": end - start}},
+                )
 
             # Phase 2: Parallel execution using ProcessPoolExecutor. Some
             # restricted runtimes (including sandboxed CI) expose no named
@@ -190,7 +193,7 @@ def ingest(
                 if n_workers > 1:
                     logger.warning("Multiprocessing is unavailable; processing the import serially")
                 # Single worker - execute synchronously
-                logger.info("Processing with single worker...")
+                logger.info("ingest.worker.single")
                 results: list[WorkerResult] = []
                 for i, (start, end) in enumerate(ranges):
                     result = parse_byte_range(
@@ -201,10 +204,13 @@ def ingest(
                         shard_dir=str(shard_dir),
                     )
                     results.append(result)
-                    logger.info(f"Worker {i} complete: {result.records_count} records")
+                    logger.info(
+                        "ingest.worker.complete",
+                        extra={"payload": {"worker": i, "records": result.records_count}},
+                    )
             else:
                 # Multiple workers - execute in parallel
-                logger.info(f"Processing with {len(ranges)} parallel workers...")
+                logger.info("ingest.worker.parallel", extra={"payload": {"workers": len(ranges)}})
                 results: list[WorkerResult] = []
                 with ProcessPoolExecutor(max_workers=len(ranges)) as executor:
                     # Submit all worker tasks
@@ -227,10 +233,16 @@ def ingest(
                             result = future.result()
                             results.append(result)
                             logger.info(
-                                f"Worker {worker_idx} complete: {result.records_count} records"
+                                "ingest.worker.complete",
+                                extra={
+                                    "payload": {
+                                        "worker": worker_idx,
+                                        "records": result.records_count,
+                                    }
+                                },
                             )
                         except Exception as e:
-                            logger.error(f"Worker {worker_idx} failed: {e}")
+                            logger.error("ingest.worker.failed", exc_info=e)
                             raise
 
                 # Sort results by worker_idx to maintain consistent ordering
@@ -314,23 +326,30 @@ def ingest_v2(
     # exports never look like an empty, activatable dataset.
     require_well_formed_export(xml_path)
 
-    logger.info(f"Starting V2 ingestion of {xml_path}")
+    logger.info("ingest.start")
 
     # Phase 1: Parse XML to Parquet shards
     parse_start = time.time()
     result = ingest(xml_path, n_workers=n_workers)
     parse_time = time.time() - parse_start
 
-    logger.info(f"Parse phase complete: {parse_time:.2f}s")
-    logger.info(f"  Records: {result['records']:,}")
-    logger.info(f"  Record metadata: {result['record_metadata']:,}")
-    logger.info(f"  HRV beats: {result['hrv_beats']:,}")
-    logger.info(f"  Workouts: {result['workouts']:,}")
-    logger.info(f"  Workout events: {result['workout_events']:,}")
-    logger.info(f"  Workout statistics: {result['workout_statistics']:,}")
-    logger.info(f"  Workout routes: {result['workout_routes']:,}")
-    logger.info(f"  Workout metadata: {result['workout_metadata']:,}")
-    logger.info(f"  Activity summaries: {result['activity_summaries']:,}")
+    logger.info("ingest.parse.complete", extra={"payload": {"duration_s": round(parse_time, 3)}})
+    logger.info(
+        "ingest.counts",
+        extra={
+            "payload": {
+                "records": result["records"],
+                "record_metadata": result["record_metadata"],
+                "hrv_beats": result["hrv_beats"],
+                "workouts": result["workouts"],
+                "workout_events": result["workout_events"],
+                "workout_statistics": result["workout_statistics"],
+                "workout_routes": result["workout_routes"],
+                "workout_metadata": result["workout_metadata"],
+                "activity_summaries": result["activity_summaries"],
+            }
+        },
+    )
 
     # Phase 2: Load shards into DuckDB with reconciliation
     load_start = time.time()
@@ -339,16 +358,16 @@ def ingest_v2(
         load_shards_into_duckdb(db, shard_dir)
         load_time = time.time() - load_start
 
-        logger.info(f"Load phase complete: {load_time:.2f}s")
+        logger.info("ingest.load.complete", extra={"payload": {"seconds": round(load_time, 3)}})
 
         # Cleanup temporary shard directory after successful load
         if shard_dir and Path(shard_dir).exists():
             # Check if it's a temporary directory (starts with tti_shards_)
             if Path(shard_dir).name.startswith("tti_shards_"):
-                logger.info(f"Cleaning up temporary shard directory: {shard_dir}")
+                logger.info("ingest.cleanup.shards")
                 shutil.rmtree(shard_dir, ignore_errors=True)
     except Exception as e:
-        logger.error(f"Failed to load shards into DuckDB: {e}")
+        logger.error("ingest.load.failed")
         if isinstance(e, FileNotFoundError) and "No parquet files found" in str(e):
             raise V2CompatibilityError(
                 "V2 compatibility gate failed: scanner produced no canonical rows"
@@ -356,7 +375,7 @@ def ingest_v2(
         raise
 
     total_time = time.time() - overall_start
-    logger.info(f"Total ingestion time: {total_time:.2f}s")
+    logger.info("ingest.complete", extra={"payload": {"total_seconds": round(total_time, 3)}})
 
     # The active database is replaced only after this canonical compatibility
     # gate succeeds. It catches reconciliation and typed-value regressions that

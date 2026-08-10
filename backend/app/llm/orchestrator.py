@@ -251,7 +251,9 @@ class ChatOrchestrator:
                     self._dispatch_tool, tool_name, args, question
                 )
             except Exception:
-                logger.exception("Local tool dispatch failed for tool %r", tool_name)
+                logger.exception(
+                    "llm.local_tool_dispatch_failed", extra={"payload": {"tool": tool_name}}
+                )
                 return _make_fallback_response(question)
             return ChatResponse(
                 template_id=template_id,
@@ -294,7 +296,7 @@ class ChatOrchestrator:
                 self._dispatch_tool, tool_name, args, question
             )
         except Exception:
-            logger.exception("Tool dispatch failed for tool %r", tool_name)
+            logger.exception("llm.tool_dispatch_failed", extra={"payload": {"tool": tool_name}})
             return _make_fallback_response(question)
 
         narrative_prompt = _NARRATIVE_PROMPT.format(today=today)
