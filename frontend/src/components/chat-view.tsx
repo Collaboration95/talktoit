@@ -73,10 +73,9 @@ export function ChatView() {
       const controller = new AbortController()
       activeRequest.current = controller
       try {
-        const signal = navigator.userAgent.includes('jsdom') ? undefined : controller.signal
         const envelope = await askQuestion(question, {
           conversationId: activeConversation,
-          ...(signal ? { signal } : {}),
+          signal: controller.signal,
         })
         if (activeRequest.current !== controller) return
         setTurns((current) => [

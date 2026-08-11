@@ -52,7 +52,7 @@ def _build_load_sql(shard_dir: str) -> list[str]:
         List of SQL statements to execute in order.
     """
     tables_with_data = _find_tables_with_data(shard_dir)
-    logger.info(f"Tables with data: {sorted(tables_with_data)}")
+    logger.info("reconcile.tables", extra={"payload": {"count": len(tables_with_data)}})
 
     statements: list[str] = []
 
@@ -226,17 +226,17 @@ def load_shards_into_duckdb(db: duckdb.DuckDBPyConnection, shard_dir: str | Path
     logger.info("Creating schema (DROP + CREATE)")
     db.execute(SQL_CREATE_TABLES)
 
-    logger.info(f"Loading Parquet shards from {shard_dir}")
+    logger.info("reconcile.load_shards")
 
     # Verify parquet files exist before loading
     parquet_files = glob.glob(str(shard_dir / "*.parquet"))
     if not parquet_files:
-        logger.warning(f"No parquet files found in {shard_dir}")
+        logger.warning("reconcile.no_shard_dir")
         raise FileNotFoundError(f"No parquet files found in {shard_dir}")
 
-    logger.info(f"Found {len(parquet_files)} parquet files")
-    for pf in parquet_files[:5]:  # Log first 5 files
-        logger.debug(f"  - {pf}")
+    logger.info("reconcile.files", extra={"payload": {"count": len(parquet_files)}})
+    for _pf in parquet_files[:5]:  # first 5 files (names not logged)
+        logger.debug("reconcile.shard")
 
     # Convert path to string with forward slashes for DuckDB compatibility
     shard_dir_str = str(shard_dir).replace("\\", "/")
@@ -248,7 +248,7 @@ def load_shards_into_duckdb(db: duckdb.DuckDBPyConnection, shard_dir: str | Path
         logger.warning("No tables to load - no parquet files found with recognized prefixes")
         return
 
-    logger.info(f"Found {len(statements)} statements to execute")
+    logger.info("reconcile.statements", extra={"payload": {"count": len(statements)}})
 
     # Wrap everything in a single transaction for atomicity
     db.execute("BEGIN")
@@ -256,7 +256,10 @@ def load_shards_into_duckdb(db: duckdb.DuckDBPyConnection, shard_dir: str | Path
     try:
         for i, statement in enumerate(statements):
             if statement:
-                logger.info(f"Executing statement {i + 1}/{len(statements)}: {statement[:150]}...")
+                logger.info(
+                    "reconcile.executing",
+                    extra={"payload": {"index": i + 1, "total": len(statements)}},
+                )
                 try:
                     db.execute(statement)
                     # Check if this was an INSERT and log affected rows
@@ -270,18 +273,25 @@ def load_shards_into_duckdb(db: duckdb.DuckDBPyConnection, shard_dir: str | Path
                                 f"SELECT COUNT(*) FROM {table_name}"
                             ).fetchone()
                             count = count_result[0] if count_result else 0
-                            logger.info(f"\u2713 Inserted into {table_name}: {count} rows total")
+                            logger.info(
+                                "reconcile.inserted",
+                                extra={"payload": {"table": table_name, "rows": count}},
+                            )
                 except Exception as stmt_error:
                     logger.error(
-                        f"\u2717 Failed to execute statement {i + 1}: {statement[:150]}..."
+                        "reconcile.statement_failed",
+                        extra={"payload": {"index": i + 1, "total": len(statements)}},
                     )
-                    logger.error(f"Error: {stmt_error}")
+                    logger.error(
+                        "reconcile.error",
+                        extra={"payload": {"kind": type(stmt_error).__name__}},
+                    )
                     raise
 
         db.execute("COMMIT")
-        logger.info("Successfully loaded and reconciled all shards")
+        logger.info("reconcile.complete")
 
     except Exception as e:
         db.execute("ROLLBACK")
-        logger.error(f"Failed to load shards: {e}")
+        logger.error("reconcile.failed", extra={"payload": {"kind": type(e).__name__}})
         raise

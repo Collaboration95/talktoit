@@ -38,5 +38,14 @@ frontend/*.tsbuildinfo
 # Claude agent artifacts
 .claude/
 
+# Agent memory / scratch (local only)
+.pi/
+
+# July 2026 audit planning tree (superseded by AUDIT.md and issues/)
+audit-1/
+
+# Stray workspace-level build cache
+/node_modules/
+
 # Scratch / temp notes
 tmp/

@@ -57,15 +57,6 @@ function formatDate(isoDate: string): string {
   return formatDateOnly(isoDate)
 }
 
-function requestSignal(controller: AbortController): AbortSignal | undefined {
-  // jsdom supplies an AbortSignal that Node's fetch implementation (undici)
-  // cannot consume even when MSW intercepts the request. Browsers use a
-  // compatible implementation and receive cancellation.
-  return typeof navigator !== 'undefined' && navigator.userAgent.includes('jsdom')
-    ? undefined
-    : controller.signal
-}
-
 function ActivityRingsPanel({ days }: { days: ActivityRingDay[] }) {
   if (days.length === 0) return <NoData />
   const latest = days[0]!
@@ -401,17 +392,16 @@ export function DashboardView() {
 
   useEffect(() => {
     const controller = new AbortController()
-    const signal = requestSignal(controller)
     let active = true
     Promise.allSettled([
-      fetchSummary(scope, signal),
-      fetchWorkouts(scope, undefined, signal),
-      fetchTrend('steps', 'day', scope, signal),
-      fetchTrend('heart', 'week', scope, signal),
-      fetchTrend('sleep', 'day', scope, signal),
-      fetchSleepStages(scope, signal),
-      fetchCapabilities(scope, signal),
-      fetchDatasetStatus(signal),
+      fetchSummary(scope, controller.signal),
+      fetchWorkouts(scope, undefined, controller.signal),
+      fetchTrend('steps', 'day', scope, controller.signal),
+      fetchTrend('heart', 'week', scope, controller.signal),
+      fetchTrend('sleep', 'day', scope, controller.signal),
+      fetchSleepStages(scope, controller.signal),
+      fetchCapabilities(scope, controller.signal),
+      fetchDatasetStatus(controller.signal),
     ]).then((results) => {
       const [
         summaryResult,

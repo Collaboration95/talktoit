@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 import uuid
 from collections.abc import Generator, Mapping
@@ -30,6 +31,8 @@ from app.models.chat import ChatRequest, ChatResponse, ResponseMetadata
 from app.models.errors import ErrorCode, ProblemDetail
 from app.state.app_state import AppStateRepository, DatasetVersion
 from app.state.diagnostics import safe_record, timed_record
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api")
 
@@ -302,6 +305,15 @@ async def chat(
                 request.question, plan_override=prepared.followup_plan
             )
         await asyncio.to_thread(_finalize_chat, prepared, request, response, started_at)
+        logger.info(
+            "chat.completed",
+            extra={
+                "payload": {
+                    "duration_ms": round((time.perf_counter() - started_at) * 1000),
+                    "plan_mode": _plan_mode(response, prepared.cache_hit, prepared.disambiguated),
+                }
+            },
+        )
         return response
     except asyncio.CancelledError:
         if prepared is not None and prepared.pending_turn_id is not None:

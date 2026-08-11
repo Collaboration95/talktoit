@@ -23,17 +23,14 @@ from pathlib import Path
 from app.db.connection import connect, resolve_db_path
 from app.db.data_profile import get_data_profile
 from app.ingest.coordinator import resolve_worker_count
+from app.observability import configure_logging
 from app.state.app_state import AppStateRepository
 from app.state.diagnostics import safe_record
 
 
 def main() -> None:
     """Parse CLI args and run ingestion."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    configure_logging(level=logging.INFO)
 
     # Parse arguments
     legacy_mode = False
@@ -107,18 +104,24 @@ def main() -> None:
 
     # Display configuration
     logger = logging.getLogger(__name__)
-    logger.info("=" * 60)
-    logger.info("TTI Ingestion Configuration")
-    logger.info("=" * 60)
-    logger.info(f"Mode: {'Legacy (lxml)' if legacy_mode else 'V2 (parallel byte-scan)'}")
-    logger.info(f"Input: {xml_path}")
+    logger.info("ingest.config")
+    logger.info(
+        "ingest.config.mode",
+        extra={"payload": {"mode": "legacy" if legacy_mode else "v2"}},
+    )
     if not legacy_mode:
         workers = workers_override or int(os.environ.get("TTI_INGEST_WORKERS", "0")) or "auto"
-        logger.info(f"Workers: {workers}")
-        logger.info(f"Shard dir: {os.environ.get('TTI_INGEST_SHARDS', 'temp')}")
-        logger.info(f"Row group size: {os.environ.get('TTI_INGEST_ROWGROUP', '100000')}")
-        logger.info(f"Compression: {os.environ.get('TTI_INGEST_COMPRESSION', 'snappy')}")
-    logger.info("=" * 60)
+        logger.info("ingest.config.workers", extra={"payload": {"workers": workers}})
+        logger.info(
+            "ingest.config.options",
+            extra={
+                "payload": {
+                    "shards": os.environ.get("TTI_INGEST_SHARDS", "temp"),
+                    "row_group": os.environ.get("TTI_INGEST_ROWGROUP", "100000"),
+                    "compression": os.environ.get("TTI_INGEST_COMPRESSION", "snappy"),
+                }
+            },
+        )
 
     target_path = resolve_db_path()
     target_path.parent.mkdir(parents=True, exist_ok=True)

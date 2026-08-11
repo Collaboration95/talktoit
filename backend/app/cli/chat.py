@@ -19,6 +19,7 @@ from app.llm.local_planner import plan_local_question
 from app.llm.orchestrator import ChatOrchestrator
 from app.llm.provider_gateway import ProviderGateway
 from app.models.chat import ChatResponse
+from app.observability import configure_logging
 from app.state.app_state import AppStateRepository
 
 
@@ -196,7 +197,7 @@ def _print_response(response: ChatResponse, json_output: bool) -> None:
 def main(argv: list[str] | None = None) -> int:
     """Run the CLI and return a shell exit status."""
     args = _parse_args(argv)
-    logging.basicConfig(level=logging.INFO if args.verbose else logging.CRITICAL)
+    configure_logging(level=logging.INFO if args.verbose else logging.CRITICAL)
     question = _resolve_question(args.question)
     response = asyncio.run(
         _ask_question(
