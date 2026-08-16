@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+import json
+from datetime import date
+
+import duckdb
+
 import app.state.app_state as app_state
+from app.api.chat import _prepare_chat
+from app.db.data_profile import DataProfile
 from app.llm.cache_keys import CACHE_KEY_VERSION, build_cache_key
+from app.models.chat import ChatRequest
 from app.state.app_state import CACHE_MAX_ENTRIES, AppStateRepository
 
 
@@ -112,6 +120,71 @@ def test_valid_cache_serves_stale_value_until_the_dataset_revalidates(tmp_path) 
     repo.put_cached_response(key, new_dataset_id, '{"answer":"fresh coverage"}')
     assert repo.get_cached_response(key, new_dataset_id) == '{"answer":"fresh coverage"}'
     assert repo.get_cached_response(key, old_dataset_id) is None
+
+
+def _cached_envelope(text: str) -> str:
+    return json.dumps(
+        {
+            "template_id": "fallback",
+            "data": {"question": "show my last run", "table": None, "text": text},
+            "narrative": text,
+            "metadata": {"provenance": "deterministic_local"},
+        }
+    )
+
+
+def test_prepare_chat_cache_hit_skips_profile_scan(tmp_path, monkeypatch) -> None:
+    """GH-6: an exact cache hit never pays for the DuckDB profile scan."""
+    repo = AppStateRepository(tmp_path / "state.sqlite")
+    dataset_id = _activate_dataset(repo, coverage_end="2026-08-31", content_prefix="cccc")
+    key = build_cache_key("exact", "show my last run")
+    plan = {"tool_name": "get_last_workout", "arguments": {"activity_type": "Running"}}
+    repo.put_cached_response(
+        key, dataset_id, _cached_envelope("cached answer"), canonical_plan=plan
+    )
+
+    def _must_not_run(_conn):
+        raise AssertionError("profile scan must not run on a pure cache hit")
+
+    monkeypatch.setattr("app.api.chat.get_data_profile", _must_not_run)
+
+    conn = duckdb.connect(":memory:")
+    prepared = _prepare_chat(ChatRequest(question="show my last run"), conn, repo)
+    assert prepared.cache_hit is True
+    assert prepared.response is not None
+    assert prepared.response.metadata.provenance == "cached"
+    assert prepared.canonical_plan == plan
+    assert prepared.canonical_key == build_cache_key("canonical", plan)
+
+
+def test_prepare_chat_cache_miss_still_scans_and_recomputes(tmp_path, monkeypatch) -> None:
+    """GH-6: a cache miss keeps planning from the profile scan, as before."""
+    repo = AppStateRepository(tmp_path / "state.sqlite")
+    _activate_dataset(repo, coverage_end="2026-08-31", content_prefix="dddd")
+
+    scanned: list[object] = []
+    profile = DataProfile(
+        first_date=date(2026, 1, 1),
+        latest_date=date(2026, 8, 15),
+        workout_types=("Running",),
+        metrics=("HKQuantityTypeIdentifierStepCount",),
+    )
+
+    def _fake_scan(_conn):
+        scanned.append(_conn)
+        return profile
+
+    monkeypatch.setattr("app.api.chat.get_data_profile", _fake_scan)
+
+    conn = duckdb.connect(":memory:")
+    prepared = _prepare_chat(ChatRequest(question="show my last run"), conn, repo)
+    assert scanned  # the profile scan ran on the miss path
+    assert prepared.cache_hit is False
+    assert prepared.canonical_plan == {
+        "tool_name": "get_last_workout",
+        "arguments": {"activity_type": "Running"},
+    }
+    assert prepared.response is None
 
 
 def test_fresh_cache_mode_skips_read_and_write(tmp_path) -> None:

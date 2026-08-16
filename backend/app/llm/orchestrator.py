@@ -25,7 +25,12 @@ from app.llm.provider_projection import narration_projection, planning_projectio
 from app.llm.tools import TOOL_NAMES, dispatch_tool, normalize_tool_name, render_tool_catalog
 from app.models.chat import ChatResponse, ResponseMetadata
 from app.models.templates import FallbackData
-from app.state.diagnostics import safe_record, timed_record
+from app.state.diagnostics import (
+    DiagnosticsBuffer,
+    DiagnosticsRepository,
+    safe_record,
+    timed_record,
+)
 
 if TYPE_CHECKING:
     import duckdb
@@ -175,6 +180,7 @@ class ChatOrchestrator:
         conn: duckdb.DuckDBPyConnection,
         model: str = DEFAULT_MODEL,
         gateway: ProviderGateway | None = None,
+        diagnostics_repository: DiagnosticsRepository | DiagnosticsBuffer | None = None,
     ) -> None:
         """Initialise the orchestrator.
 
@@ -183,11 +189,14 @@ class ChatOrchestrator:
             conn: Open DuckDB connection.
             model: LLM model identifier.
             gateway: Optional app-owned provider lifecycle gateway.
+            diagnostics_repository: Optional diagnostics collector threaded
+                through the record calls so a request's events batch together.
         """
         self.client = client
         self.conn = conn
         self.model = model
         self.gateway = gateway
+        self.diagnostics_repository = diagnostics_repository
 
     async def answer(
         self, question: str, plan_override: dict[str, Any] | None = None
@@ -240,7 +249,7 @@ class ChatOrchestrator:
         if local_plan is not None:
             tool_name, args = local_plan
             safe_record(
-                None,
+                self.diagnostics_repository,
                 "planner",
                 "local_plan",
                 duration_ms=0.0,
@@ -269,7 +278,7 @@ class ChatOrchestrator:
             planner_content = await self._complete_provider("planning", planner_messages)
             plan = _parse_tool_plan(planner_content)
             safe_record(
-                None,
+                self.diagnostics_repository,
                 "planner",
                 "remote_plan",
                 duration_ms=round((time.perf_counter() - plan_started) * 1000, 3),
@@ -278,7 +287,7 @@ class ChatOrchestrator:
         except ProviderUnavailableError:
             logger.info("Remote planner unavailable or disabled")
             safe_record(
-                None,
+                self.diagnostics_repository,
                 "planner",
                 "remote_plan",
                 duration_ms=round((time.perf_counter() - plan_started) * 1000, 3),
@@ -316,7 +325,7 @@ class ChatOrchestrator:
         try:
             narrative = await self._complete_provider("narration", narrative_messages)
             safe_record(
-                None,
+                self.diagnostics_repository,
                 "narrator",
                 "narrative",
                 duration_ms=round((time.perf_counter() - narrative_started) * 1000, 3),
@@ -325,7 +334,7 @@ class ChatOrchestrator:
         except ProviderUnavailableError:
             logger.info("Remote narrator unavailable or disabled")
             safe_record(
-                None,
+                self.diagnostics_repository,
                 "narrator",
                 "narrative",
                 duration_ms=round((time.perf_counter() - narrative_started) * 1000, 3),
@@ -349,7 +358,7 @@ class ChatOrchestrator:
             template_id, data_dict = dispatch_tool(tool_name, args, self.conn, question)
         except Exception:
             timed_record(
-                None,
+                self.diagnostics_repository,
                 "query",
                 tool_name,
                 started_at,
@@ -359,7 +368,7 @@ class ChatOrchestrator:
             raise
         payload = json.dumps(data_dict, default=str)
         timed_record(
-            None,
+            self.diagnostics_repository,
             "query",
             tool_name,
             started_at,

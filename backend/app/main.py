@@ -23,7 +23,7 @@ from app.db.migrate import SCHEMA_VERSION, migrate
 from app.llm.provider_gateway import make_provider_gateway
 from app.observability import configure_logging
 from app.state.app_state import APP_STATE_SCHEMA_VERSION, AppStateRepository
-from app.state.diagnostics import safe_record
+from app.state.diagnostics import DiagnosticsRepository, safe_record
 
 APP_VERSION = "0.1.0"
 
@@ -33,11 +33,17 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     configure_logging()
     app.state.provider_gateway = make_provider_gateway()
     migrate()
-    AppStateRepository().migrate()
+    # Process-scoped app-state repositories: migrated exactly once here so
+    # per-request accessors never open a migration connection again, and every
+    # handler shares the same instance instead of constructing a fresh one.
+    app.state.app_state_repository = AppStateRepository()
+    app.state.app_state_repository.migrate()
+    app.state.diagnostics_repository = DiagnosticsRepository()
+    app.state.diagnostics_repository.migrate()
     import duckdb
 
     safe_record(
-        None,
+        app.state.diagnostics_repository,
         "app",
         "startup",
         meta={
