@@ -174,7 +174,10 @@ def test_semantic_turns_exposes_normalized_questions_per_dataset(tmp_path) -> No
     turns = repo.semantic_turns(active.id)
     assert len(turns) == 1
     assert turns[0]["normalized_question"] == "last run"
-    assert turns[0]["response_json"].startswith("{")
+    # Candidate rows carry no response envelope; the identical turn's response
+    # is fetched lazily via ``get_turn`` (GH-6).
+    assert "response_json" not in turns[0]
+    assert turns[0]["canonical_plan_json"].startswith("{")
 
     # A second dataset must not see the first dataset's turns.
     other = repo.activate(

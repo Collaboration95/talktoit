@@ -98,78 +98,109 @@ async def _ask_question(
     conn = connect(db_path, read_only=True)
     gateway = ProviderGateway(make_client(), model=get_model())
     repository = AppStateRepository()
-    turn_id = (
-        repository.create_pending_turn(conversation_id, question, cache_mode)
-        if conversation_id
-        else None
-    )
+    turn_id: str | None = None
     try:
-        active = repository.get_active()
-        exact_key = build_cache_key("exact", question)
-        local_plan = plan_local_question(question, get_data_profile(conn))
-        followup_plan = None
-        if conversation_id and parent_turn_id and active is not None:
-            conversation = repository.get_conversation(conversation_id)
-            parent = repository.get_conversation_turn(conversation_id, parent_turn_id)
-            raw_plan = parent.get("canonical_plan_json") if parent else None
-            if (
-                conversation
-                and conversation.get("dataset_version_id") == active.id
-                and isinstance(raw_plan, str)
-            ):
-                try:
-                    plan = json.loads(raw_plan)
-                    if isinstance(plan, dict) and isinstance(plan.get("arguments"), dict):
-                        followup_plan = resolve_followup(
-                            question,
-                            [
-                                FollowupContext(
+        # One session connection for the whole CLI call, mirroring the HTTP
+        # prephase/finalize batching so a question opens a bounded number of
+        # SQLite connections instead of one per accessor (GH-3).
+        with repository.session() as store:
+            if conversation_id:
+                turn_id = repository.create_pending_turn(
+                    conversation_id, question, cache_mode, conn=store
+                )
+            active = repository.get_active(conn=store)
+            exact_key = build_cache_key("exact", question)
+            use_exact_cache = parent_turn_id is None
+            cached: str | None = None
+            canonical_plan: dict[str, object] | None = None
+            if active is not None and cache_mode != "fresh" and use_exact_cache:
+                entry = repository.get_cached_entry(exact_key, active.id, conn=store)
+                if entry is not None:
+                    cached, canonical_plan = entry
+            canonical_key: str | None = None
+            followup_plan: dict[str, object] | None = None
+            if cached is None:
+                # ── Cache miss: only this path pays for the profile scan ────
+                local_plan = plan_local_question(question, get_data_profile(conn))
+                if conversation_id and parent_turn_id and active is not None:
+                    conversation = repository.get_conversation(conversation_id, conn=store)
+                    parent = repository.get_conversation_turn(
+                        conversation_id, parent_turn_id, conn=store
+                    )
+                    raw_plan = parent.get("canonical_plan_json") if parent else None
+                    if (
+                        conversation
+                        and conversation.get("dataset_version_id") == active.id
+                        and isinstance(raw_plan, str)
+                    ):
+                        try:
+                            plan = json.loads(raw_plan)
+                            if isinstance(plan, dict) and isinstance(plan.get("arguments"), dict):
+                                followup_plan = resolve_followup(
+                                    question,
+                                    [
+                                        FollowupContext(
+                                            active.id,
+                                            str(plan.get("tool_name", "")),
+                                            dict(plan["arguments"]),
+                                            parent_turn_id,
+                                        )
+                                    ],
                                     active.id,
-                                    str(plan.get("tool_name", "")),
-                                    dict(plan["arguments"]),
-                                    parent_turn_id,
                                 )
-                            ],
+                        except (TypeError, ValueError, json.JSONDecodeError):
+                            followup_plan = None
+                canonical_plan = local_plan or followup_plan
+                canonical_key = (
+                    build_cache_key("canonical", canonical_plan) if canonical_plan else None
+                )
+                if active is not None and canonical_key and cache_mode != "fresh":
+                    hit = repository.get_cached_entry(canonical_key, active.id, conn=store)
+                    if hit is not None:
+                        cached, canonical_plan = hit
+            else:
+                canonical_key = (
+                    build_cache_key("canonical", canonical_plan) if canonical_plan else None
+                )
+            if cached is not None:
+                response = ChatResponse.model_validate_json(cached)
+                response.metadata.provenance = "cached"
+            else:
+                orchestrator = ChatOrchestrator(
+                    client=gateway.client, conn=conn, model=get_model(), gateway=gateway
+                )
+                response = await orchestrator.answer(question, plan_override=followup_plan)
+            if active is not None:
+                response.metadata.dataset_version_id = active.id
+                response.metadata.coverage_start = active.coverage_start
+                response.metadata.coverage_end = active.coverage_end
+                response.metadata.generated_at = active.activated_at
+                if cache_mode != "fresh":
+                    encoded = response.model_dump_json()
+                    if use_exact_cache:
+                        repository.put_cached_response(
+                            exact_key,
                             active.id,
+                            encoded,
+                            canonical_plan=canonical_plan,
+                            conn=store,
                         )
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    followup_plan = None
-        canonical_plan = local_plan or followup_plan
-        canonical_key = build_cache_key("canonical", canonical_plan) if canonical_plan else None
-        use_exact_cache = parent_turn_id is None
-        cached = (
-            repository.get_cached_response(exact_key, active.id)
-            if active is not None and cache_mode != "fresh" and use_exact_cache
-            else None
-        )
-        if cached is None and active is not None and canonical_key and cache_mode != "fresh":
-            cached = repository.get_cached_response(canonical_key, active.id)
-        if cached is not None:
-            response = ChatResponse.model_validate_json(cached)
-            response.metadata.provenance = "cached"
-        else:
-            orchestrator = ChatOrchestrator(
-                client=gateway.client, conn=conn, model=get_model(), gateway=gateway
-            )
-            response = await orchestrator.answer(question, plan_override=followup_plan)
-        if active is not None:
-            response.metadata.dataset_version_id = active.id
-            response.metadata.coverage_start = active.coverage_start
-            response.metadata.coverage_end = active.coverage_end
-            response.metadata.generated_at = active.activated_at
-            if cache_mode != "fresh":
-                encoded = response.model_dump_json()
-                if use_exact_cache:
-                    repository.put_cached_response(exact_key, active.id, encoded)
-                if canonical_key:
-                    repository.put_cached_response(canonical_key, active.id, encoded)
-        if turn_id:
-            repository.finish_turn(
-                turn_id,
-                response_json=response.model_dump_json(),
-                cache_outcome=response.metadata.provenance,
-                canonical_plan=canonical_plan,
-            )
+                    if canonical_key:
+                        repository.put_cached_response(
+                            canonical_key,
+                            active.id,
+                            encoded,
+                            canonical_plan=canonical_plan,
+                            conn=store,
+                        )
+            if turn_id:
+                repository.finish_turn(
+                    turn_id,
+                    response_json=response.model_dump_json(),
+                    cache_outcome=response.metadata.provenance,
+                    canonical_plan=canonical_plan,
+                    conn=store,
+                )
         return response
     except Exception:
         if turn_id:

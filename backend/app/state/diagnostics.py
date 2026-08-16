@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import threading
 import time
 import uuid
 from collections.abc import Generator, Mapping, Sequence
@@ -192,10 +193,29 @@ class DiagnosticsRepository:
         self.max_events = max_events
         if max_events < 1:
             raise ValueError("max_events must be >= 1")
+        # The events table is created once per repository instance (the
+        # app-owned repository migrates at startup) rather than on every
+        # ``record`` call, so per-event writes no longer open a migration
+        # connection.
+        self._migrated = False
+        self._migrate_lock = threading.Lock()
+
+    def _ensure_ready(self) -> None:
+        """Create the events table once per repository instance (thread-safe)."""
+        if self._migrated:
+            return
+        with self._migrate_lock:
+            if not self._migrated:
+                self.migrate()
 
     @contextmanager
-    def _connection(self) -> Generator[sqlite3.Connection, None, None]:
+    def _connection(
+        self, conn: sqlite3.Connection | None = None
+    ) -> Generator[sqlite3.Connection, None, None]:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        if conn is not None:
+            yield conn
+            return
         conn = sqlite3.connect(self.path, timeout=SQLITE_BUSY_TIMEOUT_MS / 1000)
         conn.row_factory = sqlite3.Row
         # Diagnostics share the app-state file with concurrent dashboard-panel and
@@ -227,6 +247,11 @@ class DiagnosticsRepository:
                 )
                 """
             )
+        self._migrated = True
+
+    def buffer(self) -> DiagnosticsBuffer:
+        """Open a request-scoped collector flushed in one connection."""
+        return DiagnosticsBuffer(self)
 
     def record(
         self,
@@ -245,7 +270,7 @@ class DiagnosticsRepository:
         if duration_ms is not None:
             duration_ms = round(float(duration_ms), 3)
         event_id = f"de_{uuid.uuid4().hex}"
-        self.migrate()
+        self._ensure_ready()
         with self._connection() as conn:
             conn.execute(
                 """
@@ -267,6 +292,34 @@ class DiagnosticsRepository:
             self._prune(conn)
         return event_id
 
+    def insert_many(self, events: Sequence[Mapping[str, object]]) -> None:
+        """Flush a batch of validated events over one connection."""
+        if not events:
+            return
+        self._ensure_ready()
+        with self._connection() as conn:
+            conn.executemany(
+                """
+                INSERT INTO diagnostics_events
+                    (id, category, name, status, duration_ms, counts_json, meta_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        event["id"],
+                        event["category"],
+                        event["name"],
+                        event["status"],
+                        event["duration_ms"],
+                        event["counts_json"],
+                        event["meta_json"],
+                        event["created_at"],
+                    )
+                    for event in events
+                ],
+            )
+            self._prune(conn)
+
     def _prune(self, conn: sqlite3.Connection) -> None:
         """Evict the oldest events once the store exceeds the retention cap."""
         count = int(conn.execute("SELECT COUNT(*) FROM diagnostics_events").fetchone()[0])
@@ -286,7 +339,7 @@ class DiagnosticsRepository:
     def recent(self, limit: int = 50, category: str | None = None) -> list[DiagnosticsEvent]:
         """Return the newest events, optionally filtered by category."""
         limit = max(1, min(int(limit), MAX_RECENT_LIMIT))
-        self.migrate()
+        self._ensure_ready()
         with self._connection() as conn:
             if category:
                 rows = conn.execute(
@@ -303,7 +356,7 @@ class DiagnosticsRepository:
 
     def count(self, category: str | None = None) -> int:
         """Count stored events, optionally within one category."""
-        self.migrate()
+        self._ensure_ready()
         with self._connection() as conn:
             if category:
                 row = conn.execute(
@@ -319,7 +372,7 @@ class DiagnosticsRepository:
         Computed in SQL (GROUP BY + an ordered duration scan) rather than loading
         every stored event into memory, so cost is constant in stored history.
         """
-        self.migrate()
+        self._ensure_ready()
         with self._connection() as conn:
             counts_by_category: dict[str, int] = {}
             status_counts: dict[str, int] = {}
@@ -392,7 +445,7 @@ class DiagnosticsRepository:
 
     def clear(self) -> int:
         """Delete all local diagnostics events without touching other state."""
-        self.migrate()
+        self._ensure_ready()
         with self._connection() as conn:
             deleted = conn.execute("DELETE FROM diagnostics_events").rowcount
         return deleted
@@ -419,8 +472,71 @@ def _p95(durations: Sequence[float]) -> float | None:
     return round(durations[min(index, len(durations) - 1)], 3)
 
 
+class DiagnosticsBuffer:
+    """Request-scoped diagnostics collector flushed once per request.
+
+    Events are validated up front (so a bad event fails fast exactly as it
+    would on a direct write) but only persisted when ``flush`` is called,
+    batching an entire chat request's diagnostics into a single SQLite
+    connection instead of one connection per event. A buffer is owned by the
+    request that created it, so concurrent requests never share state.
+    """
+
+    def __init__(self, repository: DiagnosticsRepository) -> None:
+        """Collect events for one request against the app-owned repository."""
+        self._repository = repository
+        self._events: list[dict[str, object]] = []
+
+    def record(
+        self,
+        category: str,
+        name: str,
+        *,
+        status: str = "ok",
+        duration_ms: float | None = None,
+        counts: Mapping[str, int] | None = None,
+        meta: Mapping[str, str] | None = None,
+    ) -> str:
+        """Validate and stage one event without writing it yet."""
+        meta = dict(meta or {})
+        _validate_event(category, name, status, meta)
+        clean_counts = {str(k): int(v) for k, v in (counts or {}).items()}
+        if duration_ms is not None:
+            duration_ms = round(float(duration_ms), 3)
+        event_id = f"de_{uuid.uuid4().hex}"
+        self._events.append(
+            {
+                "id": event_id,
+                "category": category,
+                "name": name,
+                "status": status,
+                "duration_ms": duration_ms,
+                "counts_json": json.dumps(clean_counts, sort_keys=True),
+                "meta_json": json.dumps(meta, sort_keys=True),
+                "created_at": _now(),
+            }
+        )
+        return event_id
+
+    def flush(self) -> None:
+        """Write all staged events over one connection, then clear the buffer."""
+        if not self._events:
+            return
+        events = self._events
+        self._events = []
+        self._repository.insert_many(events)
+
+    def __enter__(self) -> DiagnosticsBuffer:
+        """Enter the context and return the collector."""
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        """Flush staged events once the request scope ends."""
+        self.flush()
+
+
 def safe_record(
-    repository: DiagnosticsRepository | None,
+    repository: DiagnosticsRepository | DiagnosticsBuffer | None,
     category: str,
     name: str,
     *,
@@ -432,7 +548,8 @@ def safe_record(
     """Record an event without ever failing the product path.
 
     Diagnostics are best-effort by design: a storage or validation error must
-    never break a chat answer, a dashboard panel, or an import.
+    never break a chat answer, a dashboard panel, or an import. A
+    :class:`DiagnosticsBuffer` stages the event for one batched flush.
     """
     try:
         (repository or DiagnosticsRepository()).record(
@@ -448,7 +565,7 @@ def safe_record(
 
 
 def timed_record(
-    repository: DiagnosticsRepository | None,
+    repository: DiagnosticsRepository | DiagnosticsBuffer | None,
     category: str,
     name: str,
     started_at: float,
