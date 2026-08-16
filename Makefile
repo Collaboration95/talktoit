@@ -122,11 +122,9 @@ coverage:
 	@echo "Backend: open backend/htmlcov/index.html"
 	@echo "Frontend: open frontend/coverage/index.html"
 
-# ── Run (production: build FE, serve from FastAPI) ──────────────────────────
+# ── Run (production: build FE, serve from FastAPI, live memory monitor) ─────
 run:
-	npm --prefix frontend run build
-	uv run --directory backend uvicorn app.main:app \
-	  --host 127.0.0.1 --port 8000
+	bash scripts/run_with_monitor.sh
 
 groq-smoke:
 	bash scripts/groq_smoke.sh "$(QUESTION)"
