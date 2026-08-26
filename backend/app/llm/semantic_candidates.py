@@ -184,17 +184,23 @@ def evaluate(
     *,
     limit: int = 5,
     min_score: float = 0.35,
+    require_response: bool = True,
 ) -> CandidateVerdict:
     """Rank prior turns and classify them against the current intent.
 
     Args:
         records: Completed turns scoped to the active dataset (id,
             conversation_id, question, response_json, created_at,
-            canonical_plan_json, normalized_question).
+            canonical_plan_json, normalized_question). ``response_json`` may
+            be omitted when ``require_response`` is False and the caller
+            fetches the identical turn's envelope lazily.
         question: The current user question (un-normalized).
         plan: The current validated (tool_name, arguments) plan, or None.
         limit: Maximum number of similar candidates to return.
         min_score: Minimum textual similarity to be considered at all.
+        require_response: Whether an inline response envelope is required
+            before a turn may be auto-served. Set False for lightweight
+            candidate rows whose response is fetched on demand.
 
     Returns:
         A :class:`CandidateVerdict` with at most one identical candidate and a
@@ -217,7 +223,11 @@ def evaluate(
         )
         stored_plan = _plan_of(by_id.get(candidate.turn_id, record))
         is_identical = False
-        if plan is not None and stored_plan is not None and candidate.response_json:
+        if (
+            plan is not None
+            and stored_plan is not None
+            and (candidate.response_json or not require_response)
+        ):
             current_tool, current_args = plan
             stored_tool, stored_args = stored_plan
             is_identical = current_tool == stored_tool and plan_fingerprint(

@@ -114,6 +114,68 @@ def test_cache_hit_chat_benchmark(seeded_db, isolated_state) -> None:
     assert duration_ms <= THRESHOLDS["cache_hit_chat"]
 
 
+def test_chat_request_sqlite_connection_budget(seeded_db, isolated_state, monkeypatch) -> None:
+    """A cache-hit chat request opens a small, bounded number of SQLite connections.
+
+    GH-3 acceptance: the request's SQLite syscalls drop from one migration
+    connection per accessor (twice, once for each accessor phase) to a single
+    session connection per phase plus one diagnostics flush. This is a
+    connection-count policy check rather than a wall-clock benchmark.
+    """
+    import sqlite3
+    import time
+
+    from app.api.chat import _finalize_chat, _prepare_chat
+    from app.models.chat import ChatRequest, ChatResponse, ResponseMetadata
+
+    calls = {"n": 0}
+    real_connect = sqlite3.connect
+
+    def counting(*args, **kwargs):
+        calls["n"] += 1
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr("app.state.app_state.sqlite3.connect", counting)
+    monkeypatch.setattr("app.state.diagnostics.sqlite3.connect", counting)
+
+    repository = AppStateRepository()
+    repository.migrate()
+    active = repository.activate(
+        source_bytes=b"",
+        source_size_bytes=1024,
+        parser_version="v2",
+        schema_version="1",
+        worker_count=2,
+        coverage_start="2024-01-01",
+        coverage_end="2024-12-31",
+        counts={"workouts": 3},
+    )
+    assert active is not None
+    conversation_id = repository.create_conversation("Bench", active.id)
+    request = ChatRequest(question="show my last run", conversation_id=conversation_id)
+
+    def _run_request() -> None:
+        diagnostics = DiagnosticsRepository()
+        with diagnostics.buffer() as buffer:
+            prepared = _prepare_chat(request, seeded_db, repository, buffer)
+            response = prepared.response or ChatResponse(
+                template_id="fallback",
+                data={"question": request.question, "table": None, "text": "local"},
+                narrative="local",
+                metadata=ResponseMetadata(provenance="deterministic_local"),
+            )
+            _finalize_chat(prepared, request, response, time.perf_counter(), buffer)
+
+    _run_request()  # warm the exact cache; both connection phases are measured below
+    before = calls["n"]
+    _run_request()  # cache hit: prepare, finalize, and one diagnostics flush
+    budget = calls["n"] - before
+
+    # One prepare session connection, one finalize session connection, and one
+    # diagnostics flush connection — never one per accessor.
+    assert budget <= 5, f"cache-hit chat request opened {budget} SQLite connections"
+
+
 def test_provider_timeout_chat_benchmark(seeded_db, isolated_state) -> None:
     """An unresolved question degrades to a local fallback when the provider is gone."""
     import asyncio

@@ -12,6 +12,7 @@ import json
 import os
 import shutil
 import sqlite3
+import threading
 import uuid
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
@@ -27,7 +28,7 @@ CACHE_MAX_BYTES = 5 * 1024 * 1024
 # The latest PRAGMA user_version applied by ``AppStateRepository.migrate``.
 # Bump alongside the last migration step; startup telemetry and contract tests
 # derive from this constant so the value cannot drift from the migrations.
-APP_STATE_SCHEMA_VERSION = 8
+APP_STATE_SCHEMA_VERSION = 9
 
 # Milliseconds a writer waits for a busy lock before raising
 # ``sqlite3.OperationalError: database is locked``. The dashboard threadpool and
@@ -76,10 +77,34 @@ class AppStateRepository:
     def __init__(self, path: Path | None = None) -> None:
         """Open a repository at the configured local state database path."""
         self.path = path or default_state_path()
+        # Migration runs at most once per repository instance (process-scoped
+        # app-owned repositories migrate once at startup), so per-request
+        # accessors no longer open a migration connection on every call.
+        self._migrated = False
+        self._migrate_lock = threading.Lock()
+
+    def _ensure_ready(self) -> None:
+        """Apply the versioned schema once per repository instance.
+
+        Thread-safe: the flag is set under a lock so concurrent first use
+        (startup + the request threadpool) never races the migration.
+        """
+        if self._migrated:
+            return
+        with self._migrate_lock:
+            if not self._migrated:
+                self.migrate()
 
     @contextmanager
-    def _connection(self) -> Generator[sqlite3.Connection, None, None]:
+    def _connection(
+        self, conn: sqlite3.Connection | None = None
+    ) -> Generator[sqlite3.Connection, None, None]:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        if conn is not None:
+            # A caller-provided session connection is owned by the caller;
+            # accessors share it but must never close it.
+            yield conn
+            return
         conn = sqlite3.connect(self.path, timeout=SQLITE_BUSY_TIMEOUT_MS / 1000)
         conn.row_factory = sqlite3.Row
         # WAL allows concurrent readers with a single writer; busy_timeout turns
@@ -95,9 +120,21 @@ class AppStateRepository:
         finally:
             conn.close()
 
+    @contextmanager
+    def session(self) -> Generator[sqlite3.Connection, None, None]:
+        """Run a batch of accessors over one shared connection.
+
+        The connection stays confined to the calling thread and is closed when
+        the block exits, so a whole chat prephase/finalize can touch the store
+        with a single connect/close pair instead of one per accessor.
+        """
+        self._ensure_ready()
+        with self._connection() as conn:
+            yield conn
+
     def schema_version(self) -> int:
         """Return the applied app-state schema version (after migrating)."""
-        self.migrate()
+        self._ensure_ready()
         with self._connection() as conn:
             return int(conn.execute("PRAGMA user_version").fetchone()[0])
 
@@ -225,6 +262,18 @@ class AppStateRepository:
                         (normalize_question(str(question)), turn_id),
                     )
                 version = 8
+            if version < 9:
+                # v9: cache entries optionally carry the canonical plan that
+                # produced them so an exact-cache hit can skip the DuckDB
+                # profile scan without losing the plan for follow-ups.
+                conn.executescript(
+                    """
+                    ALTER TABLE cache_entries ADD COLUMN canonical_plan_json TEXT;
+                    PRAGMA user_version = 9;
+                    """
+                )
+                version = 9
+        self._migrated = True
 
     def backup_before_destructive_migration(self) -> Path | None:
         """Create a recoverable snapshot when a future migration needs it."""
@@ -249,7 +298,7 @@ class AppStateRepository:
         content_hash_prefix: str | None = None,
     ) -> DatasetVersion:
         """Atomically write a validated manifest and set it as the active dataset."""
-        self.migrate()
+        self._ensure_ready()
         dataset_id = f"ds_{uuid.uuid4().hex}"
         imported_at = _now()
         content_hash_prefix = content_hash_prefix or hashlib.sha256(source_bytes).hexdigest()[:16]
@@ -299,11 +348,11 @@ class AppStateRepository:
             **manifest,  # type: ignore[arg-type]
         )
 
-    def get_active(self) -> DatasetVersion | None:
+    def get_active(self, conn: sqlite3.Connection | None = None) -> DatasetVersion | None:
         """Return the active manifest, or None while no validated import exists."""
-        self.migrate()
-        with self._connection() as conn:
-            row = conn.execute(
+        self._ensure_ready()
+        with self._connection(conn) as connection:
+            row = connection.execute(
                 """
                 SELECT d.* FROM dataset_versions d
                 JOIN app_state s ON s.value = d.id
@@ -314,7 +363,7 @@ class AppStateRepository:
 
     def create_conversation(self, title: str, dataset_version_id: str | None) -> str:
         """Create a local conversation scoped to its dataset version."""
-        self.migrate()
+        self._ensure_ready()
         conversation_id, now = f"cv_{uuid.uuid4().hex}", _now()
         with self._connection() as conn:
             conn.execute(
@@ -329,27 +378,33 @@ class AppStateRepository:
             )
         return conversation_id
 
-    def get_conversation(self, conversation_id: str) -> dict[str, object] | None:
+    def get_conversation(
+        self, conversation_id: str, conn: sqlite3.Connection | None = None
+    ) -> dict[str, object] | None:
         """Return one local conversation without exposing unrelated history."""
-        self.migrate()
-        with self._connection() as conn:
-            row = conn.execute(
+        self._ensure_ready()
+        with self._connection(conn) as connection:
+            row = connection.execute(
                 "SELECT * FROM conversations WHERE id = ?", (conversation_id,)
             ).fetchone()
         return dict(row) if row else None
 
-    def semantic_turns(self, dataset_version_id: str) -> list[dict[str, object]]:
+    def semantic_turns(
+        self, dataset_version_id: str, conn: sqlite3.Connection | None = None
+    ) -> list[dict[str, object]]:
         """Return completed turns scoped to one dataset for semantic matching.
 
         Exposes only the fields the local candidate verifier needs; question
-        text stays on-device and is never sent to a remote service.
+        text stays on-device and is never sent to a remote service. Full
+        response envelopes are deliberately excluded and fetched lazily for the
+        single identical candidate, so history is not materialised per request.
         """
-        self.migrate()
-        with self._connection() as conn:
-            rows = conn.execute(
+        self._ensure_ready()
+        with self._connection(conn) as connection:
+            rows = connection.execute(
                 """
-                SELECT t.id, t.conversation_id, t.question, t.response_json,
-                       t.created_at, t.canonical_plan_json, t.normalized_question
+                SELECT t.id, t.conversation_id, t.question, t.created_at,
+                       t.canonical_plan_json, t.normalized_question
                 FROM turns t
                 JOIN conversations c ON c.id = t.conversation_id
                 WHERE c.dataset_version_id = ? AND t.state = 'completed'
@@ -362,7 +417,7 @@ class AppStateRepository:
 
     def list_conversations(self, search: str = "") -> list[dict[str, object]]:
         """List non-archived local conversation metadata."""
-        self.migrate()
+        self._ensure_ready()
         pattern = f"%{search.strip()}%"
         with self._connection() as conn:
             rows = conn.execute(
@@ -417,16 +472,22 @@ class AppStateRepository:
             )
         return turn_id
 
-    def create_pending_turn(self, conversation_id: str, question: str, cache_mode: str) -> str:
+    def create_pending_turn(
+        self,
+        conversation_id: str,
+        question: str,
+        cache_mode: str,
+        conn: sqlite3.Connection | None = None,
+    ) -> str:
         """Append a visible pending turn before executing its answer."""
-        self.migrate()
+        self._ensure_ready()
         turn_id, now = f"tr_{uuid.uuid4().hex}", _now()
-        with self._connection() as conn:
-            ordinal = conn.execute(
+        with self._connection(conn) as connection:
+            ordinal = connection.execute(
                 "SELECT COALESCE(MAX(ordinal), 0) + 1 FROM turns WHERE conversation_id = ?",
                 (conversation_id,),
             ).fetchone()[0]
-            conn.execute(
+            connection.execute(
                 """
                 INSERT INTO turns (id, conversation_id, ordinal, question, state, cache_mode,
                     cache_outcome, created_at, normalized_question)
@@ -442,7 +503,7 @@ class AppStateRepository:
                     normalize_question(question),
                 ),
             )
-            conn.execute(
+            connection.execute(
                 "UPDATE conversations SET updated_at = ? WHERE id = ?", (now, conversation_id)
             )
         return turn_id
@@ -454,10 +515,11 @@ class AppStateRepository:
         response_json: str,
         cache_outcome: str,
         canonical_plan: Mapping[str, object] | None = None,
+        conn: sqlite3.Connection | None = None,
     ) -> bool:
         """Atomically promote one pending turn to an immutable completed result."""
-        with self._connection() as conn:
-            changed = conn.execute(
+        with self._connection(conn) as connection:
+            changed = connection.execute(
                 """
                 UPDATE turns SET state = 'completed', response_json = ?, cache_outcome = ?,
                     completed_at = ?, canonical_plan_json = ?
@@ -473,12 +535,19 @@ class AppStateRepository:
             ).rowcount
         return changed == 1
 
-    def terminate_turn(self, turn_id: str, *, state: str, message: str) -> bool:
+    def terminate_turn(
+        self,
+        turn_id: str,
+        *,
+        state: str,
+        message: str,
+        conn: sqlite3.Connection | None = None,
+    ) -> bool:
         """Persist a retryable terminal failure or cancellation; never leave a gap."""
         if state not in {"failed", "cancelled"}:
             raise ValueError("Terminal turn state must be failed or cancelled")
-        with self._connection() as conn:
-            changed = conn.execute(
+        with self._connection(conn) as connection:
+            changed = connection.execute(
                 """
                 UPDATE turns SET state = ?, cache_outcome = ?, error_message = ?, completed_at = ?
                 WHERE id = ? AND state = 'pending'
@@ -487,27 +556,37 @@ class AppStateRepository:
             ).rowcount
         return changed == 1
 
-    def get_turns(self, conversation_id: str) -> list[dict[str, object]]:
+    def get_turns(
+        self, conversation_id: str, conn: sqlite3.Connection | None = None
+    ) -> list[dict[str, object]]:
         """Return a local transcript in append-only ordinal order."""
-        self.migrate()
-        with self._connection() as conn:
-            rows = conn.execute(
-                "SELECT * FROM turns WHERE conversation_id = ? ORDER BY ordinal", (conversation_id,)
+        self._ensure_ready()
+        with self._connection(conn) as connection:
+            rows = connection.execute(
+                "SELECT * FROM turns WHERE conversation_id = ? ORDER BY ordinal",
+                (conversation_id,),
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def get_turn(self, turn_id: str) -> dict[str, object] | None:
+    def get_turn(
+        self, turn_id: str, conn: sqlite3.Connection | None = None
+    ) -> dict[str, object] | None:
         """Return one local transcript turn for an explicit follow-up reference."""
-        self.migrate()
-        with self._connection() as conn:
-            row = conn.execute("SELECT * FROM turns WHERE id = ?", (turn_id,)).fetchone()
+        self._ensure_ready()
+        with self._connection(conn) as connection:
+            row = connection.execute("SELECT * FROM turns WHERE id = ?", (turn_id,)).fetchone()
         return dict(row) if row else None
 
-    def get_conversation_turn(self, conversation_id: str, turn_id: str) -> dict[str, object] | None:
+    def get_conversation_turn(
+        self,
+        conversation_id: str,
+        turn_id: str,
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, object] | None:
         """Return a turn only when it belongs to the requested local conversation."""
-        self.migrate()
-        with self._connection() as conn:
-            row = conn.execute(
+        self._ensure_ready()
+        with self._connection(conn) as connection:
+            row = connection.execute(
                 "SELECT * FROM turns WHERE id = ? AND conversation_id = ?",
                 (turn_id, conversation_id),
             ).fetchone()
@@ -515,7 +594,7 @@ class AppStateRepository:
 
     def rename_conversation(self, conversation_id: str, title: str) -> bool:
         """Rename only the selected local conversation."""
-        self.migrate()
+        self._ensure_ready()
         with self._connection() as conn:
             changed = conn.execute(
                 "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?",
@@ -525,7 +604,7 @@ class AppStateRepository:
 
     def archive_conversation(self, conversation_id: str) -> bool:
         """Hide one local conversation while retaining its immutable turns."""
-        self.migrate()
+        self._ensure_ready()
         with self._connection() as conn:
             changed = conn.execute(
                 "UPDATE conversations SET archived = 1, updated_at = ? WHERE id = ?",
@@ -535,7 +614,7 @@ class AppStateRepository:
 
     def delete_conversation(self, conversation_id: str) -> bool:
         """Delete local history only; never delete cache entries or health data."""
-        self.migrate()
+        self._ensure_ready()
         with self._connection() as conn:
             conn.execute("DELETE FROM turns WHERE conversation_id = ?", (conversation_id,))
             changed = conn.execute(
@@ -545,14 +624,14 @@ class AppStateRepository:
 
     def count_conversations(self) -> int:
         """Return the total number of stored local conversations."""
-        self.migrate()
+        self._ensure_ready()
         with self._connection() as conn:
             row = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()
         return int(row[0])
 
     def delete_all_conversations(self) -> int:
         """Delete all local history; cache, views, and health data remain."""
-        self.migrate()
+        self._ensure_ready()
         with self._connection() as conn:
             conn.execute("DELETE FROM turns")
             deleted = conn.execute("DELETE FROM conversations").rowcount
@@ -560,7 +639,7 @@ class AppStateRepository:
 
     def cache_usage(self) -> dict[str, int]:
         """Return the local response-cache size in entries and bytes."""
-        self.migrate()
+        self._ensure_ready()
         with self._connection() as conn:
             row = conn.execute(
                 "SELECT COUNT(*) AS entries, "
@@ -571,28 +650,28 @@ class AppStateRepository:
 
     def clear_cache(self) -> int:
         """Delete all local cached responses without touching history or health."""
-        self.migrate()
+        self._ensure_ready()
         with self._connection() as conn:
             deleted = conn.execute("DELETE FROM cache_entries").rowcount
         return deleted
 
     def saved_view_count(self) -> int:
         """Return the number of stored local saved dashboard views."""
-        self.migrate()
+        self._ensure_ready()
         with self._connection() as conn:
             row = conn.execute("SELECT COUNT(*) FROM saved_views").fetchone()
         return int(row[0])
 
     def deactivate_active_dataset(self) -> bool:
         """Persistently clear the active-dataset reference (health data already deleted)."""
-        self.migrate()
+        self._ensure_ready()
         with self._connection() as conn:
             changed = conn.execute("DELETE FROM app_state WHERE key = 'active_dataset_id'").rowcount
         return changed == 1
 
     def create_saved_view(self, title: str, query: Mapping[str, object]) -> str:
         """Persist a validated dashboard scope locally for the active dataset."""
-        self.migrate()
+        self._ensure_ready()
         active = self.get_active()
         view_id, now = f"sv_{uuid.uuid4().hex}", _now()
         with self._connection() as conn:
@@ -611,31 +690,55 @@ class AppStateRepository:
 
     def list_saved_views(self) -> list[dict[str, object]]:
         """List safe local saved-dashboard scopes by newest update."""
-        self.migrate()
+        self._ensure_ready()
         with self._connection() as conn:
             rows = conn.execute("SELECT * FROM saved_views ORDER BY updated_at DESC").fetchall()
         return [{**dict(row), "query": json.loads(str(row["query_json"]))} for row in rows]
 
-    def get_cached_response(self, cache_key: str, dataset_version_id: str) -> str | None:
+    def get_cached_response(
+        self, cache_key: str, dataset_version_id: str, conn: sqlite3.Connection | None = None
+    ) -> str | None:
         """Read an exact dataset-scoped cached envelope and record its local hit."""
-        self.migrate()
-        with self._connection() as conn:
-            row = conn.execute(
-                "SELECT response_json FROM cache_entries WHERE cache_key = ? "
-                "AND dataset_version_id = ?",
+        entry = self.get_cached_entry(cache_key, dataset_version_id, conn=conn)
+        return entry[0] if entry is not None else None
+
+    def get_cached_entry(
+        self,
+        cache_key: str,
+        dataset_version_id: str,
+        conn: sqlite3.Connection | None = None,
+    ) -> tuple[str, dict[str, object] | None] | None:
+        """Read a cached envelope plus the canonical plan that produced it.
+
+        Returns ``(response_json, canonical_plan)`` or None. The plan lets a
+        cache hit skip the DuckDB profile scan without losing follow-up intent;
+        rows written before v9 have no stored plan and return ``None`` for it.
+        """
+        self._ensure_ready()
+        with self._connection(conn) as connection:
+            row = connection.execute(
+                "SELECT response_json, canonical_plan_json FROM cache_entries "
+                "WHERE cache_key = ? AND dataset_version_id = ?",
                 (cache_key, dataset_version_id),
             ).fetchone()
             if row is None:
                 return None
-            conn.execute(
+            connection.execute(
                 "UPDATE cache_entries SET accessed_at = ?, hit_count = hit_count + 1 "
                 "WHERE cache_key = ?",
                 (_now(), cache_key),
             )
-        return str(row["response_json"])
+        raw_plan = row["canonical_plan_json"]
+        plan = json.loads(raw_plan) if raw_plan else None
+        return str(row["response_json"]), plan
 
     def put_cached_response(
-        self, cache_key: str, dataset_version_id: str, response_json: str
+        self,
+        cache_key: str,
+        dataset_version_id: str,
+        response_json: str,
+        canonical_plan: Mapping[str, object] | None = None,
+        conn: sqlite3.Connection | None = None,
     ) -> None:
         """Store a validated local envelope, replacing only the matching exact key.
 
@@ -645,31 +748,36 @@ class AppStateRepository:
         ``dataset_version_id`` — otherwise the row would stay tagged with the
         dead dataset id and the cache could never serve the new dataset again.
         """
-        self.migrate()
+        self._ensure_ready()
         now = _now()
-        with self._connection() as conn:
-            conn.execute(
-                "INSERT INTO cache_entries VALUES (?, ?, ?, ?, ?, 0) "
+        plan_json = json.dumps(canonical_plan, sort_keys=True) if canonical_plan else None
+        with self._connection(conn) as connection:
+            connection.execute(
+                "INSERT INTO cache_entries "
+                "(cache_key, dataset_version_id, response_json, created_at, accessed_at, "
+                " hit_count, canonical_plan_json) "
+                "VALUES (?, ?, ?, ?, ?, 0, ?) "
                 "ON CONFLICT(cache_key) DO UPDATE SET "
                 "dataset_version_id = excluded.dataset_version_id, "
                 "response_json = excluded.response_json, "
-                "accessed_at = excluded.accessed_at",
-                (cache_key, dataset_version_id, response_json, now, now),
+                "accessed_at = excluded.accessed_at, "
+                "canonical_plan_json = excluded.canonical_plan_json",
+                (cache_key, dataset_version_id, response_json, now, now, plan_json),
             )
             while True:
-                count, byte_count = conn.execute(
+                count, byte_count = connection.execute(
                     "SELECT COUNT(*), COALESCE(SUM(length(CAST(response_json AS BLOB))), 0) "
                     "FROM cache_entries"
                 ).fetchone()
                 if count <= CACHE_MAX_ENTRIES and byte_count <= CACHE_MAX_BYTES:
                     break
-                expired = conn.execute(
+                expired = connection.execute(
                     "SELECT cache_key FROM cache_entries "
                     "ORDER BY accessed_at ASC, created_at ASC, cache_key ASC LIMIT 1"
                 ).fetchone()
                 if expired is None:
                     break
-                conn.execute("DELETE FROM cache_entries WHERE cache_key = ?", (expired[0],))
+                connection.execute("DELETE FROM cache_entries WHERE cache_key = ?", (expired[0],))
 
     @staticmethod
     def _dataset_from_row(row: sqlite3.Row) -> DatasetVersion:
