@@ -35,6 +35,63 @@ APP_STATE_SCHEMA_VERSION = 9
 # chat requests share one app-state file, so a bounded wait is required.
 SQLITE_BUSY_TIMEOUT_MS = 5000
 
+# ---------------------------------------------------------------------------
+# Provider config defaults (GH-42): persisted runtime provider selection
+# ---------------------------------------------------------------------------
+
+DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+DEFAULT_LITERT_BASE_URL = "http://127.0.0.1:9379/v1"
+DEFAULT_LITERT_MODEL = "gemma4-e2b"
+DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+
+_PROVIDER_TYPES = frozenset({"local", "groq"})
+_PROVIDER_MODES = frozenset({"local_only", "remote_planning", "remote_planning_and_narration"})
+
+
+def _provider_defaults() -> dict[str, str]:
+    """Return the first-run provider config derived from env vars."""
+    provider = (
+        os.environ.get("TTI_PROVIDER", os.environ.get("TTI_LLM_PROVIDER", "")).strip().lower()
+    )
+    if provider not in _PROVIDER_TYPES:
+        provider = "groq"
+    mode = os.environ.get("TTI_PROVIDER_MODE", "local_only").strip().lower()
+    if mode not in _PROVIDER_MODES:
+        mode = "local_only"
+    groq_model = (
+        os.environ.get("LLM_MODEL", os.environ.get("GROQ_MODEL", DEFAULT_GROQ_MODEL)).strip()
+        or DEFAULT_GROQ_MODEL
+    )
+    litert_model = (
+        os.environ.get("LITERT_MODEL", DEFAULT_LITERT_MODEL).strip() or DEFAULT_LITERT_MODEL
+    )
+    groq_base_url = (
+        os.environ.get(
+            "LLM_BASE_URL", os.environ.get("GROQ_BASE_URL", DEFAULT_GROQ_BASE_URL)
+        ).strip()
+        or DEFAULT_GROQ_BASE_URL
+    )
+    litert_base_url = (
+        os.environ.get("LITERT_BASE_URL", DEFAULT_LITERT_BASE_URL).strip()
+        or DEFAULT_LITERT_BASE_URL
+    )
+    if provider == "local":
+        model = litert_model
+        base_url = litert_base_url
+    else:
+        model = groq_model
+        base_url = groq_base_url
+    return {
+        "provider": provider,
+        "mode": mode,
+        "model": model,
+        "base_url": base_url,
+        "groq_model": groq_model,
+        "groq_base_url": groq_base_url,
+        "litert_model": litert_model,
+        "litert_base_url": litert_base_url,
+    }
+
 
 def default_state_path() -> Path:
     """Return the configured local app-state database path."""
@@ -778,6 +835,158 @@ class AppStateRepository:
                 if expired is None:
                     break
                 connection.execute("DELETE FROM cache_entries WHERE cache_key = ?", (expired[0],))
+
+    # ------------------------------------------------------------------
+    # Provider config (GH-42): persisted runtime provider selection
+    # ------------------------------------------------------------------
+
+    def get_provider_config(self, conn: sqlite3.Connection | None = None) -> dict[str, str]:
+        """Return the persisted provider config merged over env defaults.
+
+        The persisted JSON (key ``provider_config`` in ``app_state``) overrides
+        only the keys the user saved; everything else falls back to
+        ``_provider_defaults``. The returned dict always contains
+        ``provider, mode, model, base_url, groq_model, groq_base_url,
+        litert_model, litert_base_url``.
+        """
+        self._ensure_ready()
+        stored: dict[str, object] = {}
+        with self._connection(conn) as connection:
+            row = connection.execute(
+                "SELECT value FROM app_state WHERE key = 'provider_config'"
+            ).fetchone()
+            if row is not None:
+                try:
+                    loaded = json.loads(str(row["value"]))
+                    if isinstance(loaded, dict):
+                        stored = loaded
+                except (json.JSONDecodeError, ValueError):
+                    stored = {}
+        defaults = _provider_defaults()
+        merged: dict[str, str] = {**defaults}
+        for key, value in stored.items():
+            if isinstance(value, str) and value.strip():
+                merged[str(key)] = value.strip()
+            elif isinstance(value, str):
+                merged[str(key)] = value
+        # Validate provider / mode.
+        if merged.get("provider") not in _PROVIDER_TYPES:
+            merged["provider"] = defaults["provider"]
+        if merged.get("mode") not in _PROVIDER_MODES:
+            merged["mode"] = defaults["mode"]
+        # Backfill per-provider fields that may be missing on first save.
+        for field in ("groq_model", "groq_base_url", "litert_model", "litert_base_url"):
+            if not merged.get(field):
+                merged[field] = defaults[field]
+        # Derive effective model/base_url when the persisted row did not set them.
+        model_val = stored.get("model")
+        if "model" not in stored or not isinstance(model_val, str) or not model_val.strip():
+            merged["model"] = (
+                merged["litert_model"] if merged["provider"] == "local" else merged["groq_model"]
+            )
+        base_val = stored.get("base_url")
+        if "base_url" not in stored or not isinstance(base_val, str) or not base_val.strip():
+            merged["base_url"] = (
+                merged["litert_base_url"]
+                if merged["provider"] == "local"
+                else merged["groq_base_url"]
+            )
+        return merged
+
+    def set_provider_config(
+        self,
+        updates: Mapping[str, object],
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, str]:
+        """Persist a provider config update and return the merged result.
+
+        Only ``provider, mode, model, base_url, groq_model, groq_base_url,
+        litert_model, litert_base_url`` are accepted; unknown keys are ignored.
+        Empty strings clear the override so the env default returns.
+        """
+        allowed = {
+            "provider",
+            "mode",
+            "model",
+            "base_url",
+            "groq_model",
+            "groq_base_url",
+            "litert_model",
+            "litert_base_url",
+        }
+        # Normalise incoming values.
+        cleaned: dict[str, str] = {}
+        for key in allowed:
+            if key not in updates:
+                continue
+            value = updates[key]
+            if not isinstance(value, str):
+                continue
+            cleaned[key] = value.strip()
+        if "provider" in cleaned and cleaned["provider"] not in _PROVIDER_TYPES:
+            raise ValueError(f"Unknown provider: {cleaned['provider']}")
+        if "mode" in cleaned and cleaned["mode"] not in _PROVIDER_MODES:
+            raise ValueError(f"Unknown provider mode: {cleaned['mode']}")
+        # Start from current merged config, apply cleaned overrides.
+        current = self.get_provider_config(conn=conn)
+        next_config = dict(current)
+        for key, value in cleaned.items():
+            if value == "":
+                # Empty string clears the persisted override; env default will return on next get.
+                # We delete the key from the persisted row, not from the effective config.
+                continue
+            next_config[key] = value
+        # If provider switches without explicit model/base_url, derive effective ones
+        # from the per-provider fields so the stored effective fields stay consistent.
+        if "provider" in cleaned:
+            if "model" not in cleaned:
+                next_config["model"] = (
+                    next_config["litert_model"]
+                    if next_config["provider"] == "local"
+                    else next_config["groq_model"]
+                )
+            if "base_url" not in cleaned:
+                next_config["base_url"] = (
+                    next_config["litert_base_url"]
+                    if next_config["provider"] == "local"
+                    else next_config["groq_base_url"]
+                )
+        # Persist only touched keys (plus derived effective model/base_url).
+        # Read the raw stored row to avoid dropping unrelated defaults.
+        self._ensure_ready()
+        with self._connection(conn) as connection:
+            row = connection.execute(
+                "SELECT value FROM app_state WHERE key = 'provider_config'"
+            ).fetchone()
+            if row is not None:
+                try:
+                    raw = json.loads(str(row["value"]))
+                    if not isinstance(raw, dict):
+                        raw = {}
+                except (json.JSONDecodeError, ValueError):
+                    raw = {}
+            else:
+                raw = {}
+            # Apply cleaned overrides to the raw persisted dict; empty clears.
+            raw_cleaned: dict[str, str] = {}
+            for key, value in raw.items():
+                if key in allowed and isinstance(value, str):
+                    raw_cleaned[str(key)] = value
+            for key, value in cleaned.items():
+                if value == "":
+                    raw_cleaned.pop(key, None)
+                else:
+                    raw_cleaned[key] = value
+            # When provider changed, persist derived effective fields so get() is stable.
+            if "provider" in cleaned:
+                raw_cleaned["model"] = next_config["model"]
+                raw_cleaned["base_url"] = next_config["base_url"]
+            connection.execute(
+                "INSERT INTO app_state(key, value) VALUES ('provider_config', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (json.dumps(raw_cleaned, sort_keys=True),),
+            )
+        return self.get_provider_config(conn=conn)
 
     @staticmethod
     def _dataset_from_row(row: sqlite3.Row) -> DatasetVersion:
