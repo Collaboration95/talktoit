@@ -7,6 +7,7 @@ each require confirmation; none delete health data under a vague "clear" label.
 
 from __future__ import annotations
 
+import logging
 from typing import Literal
 
 import duckdb
@@ -20,14 +21,15 @@ from app.db.connection import (
     health_database_size_bytes,
     resolve_db_path,
 )
-from app.llm.client import get_model
-from app.llm.provider_gateway import provider_mode_from_env
 from app.state.app_state import AppStateRepository
 from app.state.diagnostics import DiagnosticsRepository
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api")
 
 ProviderMode = Literal["local_only", "remote_planning", "remote_planning_and_narration"]
+ProviderType = Literal["local", "groq"]
 
 _EGRESS_CATEGORIES: dict[str, tuple[str, ...]] = {
     "local_only": (),
@@ -46,8 +48,34 @@ class ScopedClearRequest(BaseModel):
     scope: Literal["cache", "history", "diagnostics", "health"]
 
 
+class ProviderUpdateRequest(BaseModel):
+    """Persisted provider selection for the next chat request.
+
+    ``provider`` chooses the execution target; ``mode`` gates Groq egress as
+    before (ignored for the local provider). ``model`` and ``base_url`` are
+    optional overrides — when omitted the env default for the chosen provider
+    is used. Per-provider fields let the UI keep both sets while switching.
+    """
+
+    provider: ProviderType
+    mode: ProviderMode | None = None
+    model: str | None = None
+    base_url: str | None = None
+    groq_model: str | None = None
+    groq_base_url: str | None = None
+    litert_model: str | None = None
+    litert_base_url: str | None = None
+
+
 def _egress_categories(mode: ProviderMode) -> list[str]:
     return list(_EGRESS_CATEGORIES.get(mode, ()))
+
+
+def _egress_for_config(config: dict[str, str]) -> list[str]:
+    """Return egress categories for a provider config (local = no egress)."""
+    if config.get("provider") == "local":
+        return []
+    return _egress_categories(config.get("mode", "local_only"))  # type: ignore[arg-type]
 
 
 def _row_count(conn: duckdb.DuckDBPyConnection, sql: str, params: list[str] | None = None) -> int:
@@ -98,16 +126,43 @@ async def get_settings() -> dict[str, object]:
     repo = AppStateRepository()
     diagnostics = DiagnosticsRepository()
     active = repo.get_active()
-    mode = provider_mode_from_env()
+    config = repo.get_provider_config()
+    litert_status: dict[str, object] = {}
+    try:
+        from app.llm.litert import status as litert_status_fn
+
+        litert_status = litert_status_fn()
+    except Exception:
+        logger.debug("litert status unavailable", exc_info=True)
+        litert_status = {"running": False, "error": "status unavailable"}
+    litert_health: dict[str, object] | None = None
+    if config.get("provider") == "local":
+        try:
+            from app.llm.litert import health as litert_health_fn
+
+            litert_health = litert_health_fn(timeout_seconds=1.0)
+        except Exception:
+            logger.debug("litert health unavailable", exc_info=True)
+            litert_health = {"ok": False, "error": "health unavailable"}
+    mode: ProviderMode = config.get("mode", "local_only")  # type: ignore[assignment]
+    provider: ProviderType = config.get("provider", "groq")  # type: ignore[assignment]
     storage_path = repo.path
     app_state_bytes = storage_path.stat().st_size if storage_path.exists() else 0
     cache = repo.cache_usage()
     return {
         "dataset": active.public_dict() if active else None,
         "provider": {
+            "provider": provider,
             "mode": mode,
-            "model": get_model() if mode != "local_only" else None,
-            "egress_categories": _egress_categories(mode),
+            "model": config.get("model"),
+            "base_url": config.get("base_url"),
+            "groq_model": config.get("groq_model"),
+            "groq_base_url": config.get("groq_base_url"),
+            "litert_model": config.get("litert_model"),
+            "litert_base_url": config.get("litert_base_url"),
+            "egress_categories": _egress_for_config(config),
+            "litert_status": litert_status,
+            "litert_health": litert_health,
         },
         "storage": {
             "app_state_bytes": app_state_bytes,
@@ -128,6 +183,111 @@ async def get_settings() -> dict[str, object]:
             "vocabulary": ["available", "unavailable", "out_of_range", "unsupported", "malformed"],
         },
     }
+
+
+@router.put("/settings/provider")
+async def update_provider(payload: ProviderUpdateRequest) -> dict[str, object]:
+    """Persist a provider selection; takes effect on the next chat request.
+
+    The chosen provider is stored in the app-state DB so it survives process
+    restarts. Env vars remain the first-run default when no persisted row
+    exists. Switching is live — no restart is required; the next chat request
+    reads the persisted config and uses the matching gateway/client.
+    """
+    repo = AppStateRepository()
+    updates: dict[str, object] = {"provider": payload.provider}
+    if payload.mode is not None:
+        updates["mode"] = payload.mode
+    if payload.model is not None:
+        updates["model"] = payload.model.strip()
+    if payload.base_url is not None:
+        updates["base_url"] = payload.base_url.strip()
+    if payload.groq_model is not None:
+        updates["groq_model"] = payload.groq_model.strip()
+    if payload.groq_base_url is not None:
+        updates["groq_base_url"] = payload.groq_base_url.strip()
+    if payload.litert_model is not None:
+        updates["litert_model"] = payload.litert_model.strip()
+    if payload.litert_base_url is not None:
+        updates["litert_base_url"] = payload.litert_base_url.strip()
+    try:
+        config = repo.set_provider_config(updates)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        from app.llm.provider_gateway import get_gateway_for_config
+
+        get_gateway_for_config(config)
+    except Exception:
+        logger.debug("update_provider: gateway warmup failed", exc_info=True)
+    return {
+        "provider": config.get("provider"),
+        "mode": config.get("mode"),
+        "model": config.get("model"),
+        "base_url": config.get("base_url"),
+        "groq_model": config.get("groq_model"),
+        "groq_base_url": config.get("groq_base_url"),
+        "litert_model": config.get("litert_model"),
+        "litert_base_url": config.get("litert_base_url"),
+        "egress_categories": _egress_for_config(config),
+    }
+
+
+@router.get("/settings/llm/health")
+async def llm_health() -> dict[str, object]:
+    """Return the health of the currently selected LLM provider.
+
+    For the local provider this probes ``GET {base_url}/models``; for Groq
+    it reports the configured model/base_url without a network probe so the
+    endpoint itself never triggers external egress.
+    """
+    repo = AppStateRepository()
+    config = repo.get_provider_config()
+    if config.get("provider") == "local":
+        try:
+            from app.llm.litert import health as litert_health_fn
+            from app.llm.litert import status as litert_status_fn
+
+            return {
+                "provider": "local",
+                "model": config.get("litert_model"),
+                "base_url": config.get("litert_base_url"),
+                "status": litert_status_fn(),
+                "health": litert_health_fn(),
+            }
+        except Exception as exc:
+            return {"provider": "local", "ok": False, "error": str(exc)}
+    return {
+        "provider": "groq",
+        "model": config.get("groq_model"),
+        "base_url": config.get("groq_base_url"),
+        "mode": config.get("mode"),
+        "egress_categories": _egress_for_config(config),
+        "ok": True,
+    }
+
+
+@router.post("/settings/llm/start")
+async def llm_start() -> dict[str, object]:
+    """Start the local LiteRT server (pid-owned, detached)."""
+    try:
+        from app.llm.litert import start as litert_start
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"LiteRT not available: {exc}") from exc
+    result = litert_start()
+    if result.get("error") and not result.get("running"):
+        raise HTTPException(status_code=500, detail=str(result.get("error")))
+    return result
+
+
+@router.post("/settings/llm/stop")
+async def llm_stop() -> dict[str, object]:
+    """Stop the locally owned LiteRT server (only the pid we spawned)."""
+    try:
+        from app.llm.litert import stop as litert_stop
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"LiteRT not available: {exc}") from exc
+    return litert_stop()
 
 
 @router.delete("/settings/cache")

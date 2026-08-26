@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -13,12 +14,23 @@ import openai
 from app.llm.client import DEFAULT_MODEL, make_client
 
 ProviderMode = Literal["local_only", "remote_planning", "remote_planning_and_narration"]
+Provider = Literal["local", "groq"]
 Sleep = Callable[[float], Awaitable[None]]
 Clock = Callable[[], float]
+
+logger = logging.getLogger(__name__)
 
 
 class ProviderUnavailableError(RuntimeError):
     """A remote provider is disabled or unavailable; details stay private."""
+
+
+def provider_from_env() -> Provider:
+    """Read the persisted provider choice, defaulting to Groq for backward compat."""
+    raw = os.environ.get("TTI_PROVIDER", os.environ.get("TTI_LLM_PROVIDER", "")).strip().lower()
+    if raw in {"local", "groq"}:
+        return raw  # type: ignore[return-value]
+    return "groq"
 
 
 def provider_mode_from_env() -> ProviderMode:
@@ -56,6 +68,7 @@ class ProviderGateway:
         *,
         mode: ProviderMode | None = None,
         model: str = DEFAULT_MODEL,
+        provider: Provider | None = None,
         timeout_seconds: float = 15.0,
         max_concurrency: int = 4,
         max_retries: int = 2,
@@ -73,6 +86,7 @@ class ProviderGateway:
         """
         self.client = client
         self.mode = mode or provider_mode_from_env()
+        self.provider: Provider = provider or provider_from_env()
         self.model = model
         self.timeout_seconds = timeout_seconds
         self._semaphore = asyncio.Semaphore(max_concurrency)
@@ -86,7 +100,14 @@ class ProviderGateway:
         self._circuit_open_until = 0.0
 
     def permits(self, stage: Literal["planning", "narration"]) -> bool:
-        """Return whether the configured egress mode permits this stage."""
+        """Return whether the configured egress mode permits this stage.
+
+        The local provider (LiteRT-LM) is on-device; both stages are permitted
+        without external egress. The Groq provider respects the explicit
+        ``TTI_PROVIDER_MODE`` gating as before.
+        """
+        if self.provider == "local":
+            return True
         return self.mode == "remote_planning_and_narration" or (
             self.mode == "remote_planning" and stage == "planning"
         )
@@ -167,10 +188,162 @@ class ProviderGateway:
         await self.client.close()
 
 
+def _make_client_for_provider(provider: Provider, base_url: str | None) -> openai.AsyncOpenAI:
+    """Create an AsyncOpenAI client for one provider.
+
+    The local provider needs no API key and points at the LiteRT endpoint.
+    The Groq provider reuses the existing env-driven ``make_client`` so
+    ``LLM_API_KEY`` / ``GROQ_API_KEY`` continue to work.
+    """
+    import httpx
+
+    timeout_seconds = _positive_float_from_env("TTI_PROVIDER_TIMEOUT_SECONDS", 15.0)
+    timeout = httpx.Timeout(
+        timeout_seconds,
+        connect=min(timeout_seconds, 5.0),
+        pool=min(timeout_seconds, 5.0),
+    )
+    if provider == "local":
+        resolved_base = base_url or os.environ.get("LITERT_BASE_URL", "http://127.0.0.1:9379/v1")
+        return openai.AsyncOpenAI(
+            base_url=resolved_base,
+            api_key="local",
+            timeout=timeout,
+            max_retries=0,
+        )
+    if base_url:
+        return make_client(base_url=base_url)
+    return make_client()
+
+
+def _gateway_cache_key(config: Mapping[str, object]) -> tuple[str, str, str, str]:
+    """Return a cache key that busts when the provider identity changes."""
+    return (
+        str(config.get("provider", "groq")),
+        str(config.get("mode", "local_only")),
+        str(config.get("model", DEFAULT_MODEL)),
+        str(config.get("base_url", "")),
+    )
+
+
+_gateway_cache: dict[tuple[str, str, str, str], ProviderGateway] = {}
+
+
+def get_gateway_for_config(
+    config: Mapping[str, object],
+    *,
+    sleep: Sleep | None = None,
+    clock: Clock | None = None,
+) -> ProviderGateway:
+    """Return a cached gateway for ``config`` (provider, mode, model, base_url)."""
+    key = _gateway_cache_key(config)
+    cached = _gateway_cache.get(key)
+    if cached is not None:
+        return cached
+    provider = str(config.get("provider", "groq"))  # type: ignore[assignment]
+    if provider not in {"local", "groq"}:
+        provider = "groq"
+    mode = str(config.get("mode", "local_only"))  # type: ignore[assignment]
+    if mode not in {"local_only", "remote_planning", "remote_planning_and_narration"}:
+        mode = "local_only"
+    model = str(config.get("model", DEFAULT_MODEL))
+    base_url = str(config.get("base_url", ""))
+    client = _make_client_for_provider(provider, base_url or None)  # type: ignore[arg-type]
+    gateway = ProviderGateway(
+        client,
+        provider=provider,  # type: ignore[arg-type]
+        mode=mode,  # type: ignore[arg-type]
+        model=model,
+        timeout_seconds=_positive_float_from_env("TTI_PROVIDER_TIMEOUT_SECONDS", 15.0),
+        max_concurrency=_positive_int_from_env("TTI_PROVIDER_MAX_CONCURRENCY", 4) or 1,
+        max_retries=_positive_int_from_env("TTI_PROVIDER_MAX_RETRIES", 2),
+        retry_backoff_seconds=_positive_float_from_env("TTI_PROVIDER_RETRY_BACKOFF_SECONDS", 0.25),
+        circuit_failure_threshold=_positive_int_from_env(
+            "TTI_PROVIDER_CIRCUIT_FAILURE_THRESHOLD", 3
+        )
+        or 1,
+        circuit_reset_seconds=_positive_float_from_env("TTI_PROVIDER_CIRCUIT_RESET_SECONDS", 30.0),
+        sleep=sleep,
+        clock=clock,
+    )
+    _gateway_cache[key] = gateway
+    return gateway
+
+
+def clear_gateway_cache() -> None:
+    """Clear the cached gateways (for tests)."""
+    _gateway_cache.clear()
+
+
+async def aclose_all_gateways() -> None:
+    """Close all cached gateways and clear the cache."""
+    for gateway in list(_gateway_cache.values()):
+        try:
+            await gateway.aclose()
+        except Exception:
+            logger.debug("aclose_all_gateways: close failed", exc_info=True)
+    _gateway_cache.clear()
+
+
+def resolve_provider_config(
+    repository: object | None = None,
+) -> dict[str, str]:
+    """Return the effective provider config from the persisted store or env.
+
+    When a repository is available, its persisted config is preferred; otherwise
+    env defaults are returned. Never raises; env fallbacks ensure a valid dict.
+    """
+    if repository is not None:
+        try:
+            get_cfg = getattr(repository, "get_provider_config", None)
+            if callable(get_cfg):
+                result = get_cfg()
+                if isinstance(result, dict):
+                    return dict(result)  # type: ignore[return-value]
+        except Exception:
+            logger.debug("resolve_provider_config: repository read failed", exc_info=True)
+    try:
+        from app.state.app_state import _provider_defaults  # type: ignore[reportPrivateUsage]
+
+        return dict(_provider_defaults())  # type: ignore[reportPrivateUsage]
+    except Exception:
+        logger.debug("resolve_provider_config: defaults failed", exc_info=True)
+        return {
+            "provider": provider_from_env(),
+            "mode": provider_mode_from_env(),
+            "model": DEFAULT_MODEL,
+            "base_url": "https://api.groq.com/openai/v1",
+            "groq_model": DEFAULT_MODEL,
+            "groq_base_url": "https://api.groq.com/openai/v1",
+            "litert_model": "gemma4-e2b",
+            "litert_base_url": "http://127.0.0.1:9379/v1",
+        }
+
+
 def make_provider_gateway() -> ProviderGateway:
-    """Build the one gateway owned by the application lifespan."""
+    """Build the one gateway owned by the application lifespan.
+
+    The lifespan gateway is seeded from the persisted provider config when the
+    store is available; otherwise it falls back to the env-based defaults so
+    tests, CLI, and first-run startup all behave.
+    """
+    config: Mapping[str, object] | None = None
+    try:
+        from app.state.app_state import AppStateRepository
+
+        repo = AppStateRepository()
+        repo.migrate()
+        config = repo.get_provider_config()
+    except Exception:
+        logger.debug("make_provider_gateway: repo read failed", exc_info=True)
+        config = None
+    if config is not None:
+        return get_gateway_for_config(config)
     return ProviderGateway(
         make_client(),
+        provider=provider_from_env(),
+        mode=provider_mode_from_env(),
+        model=os.environ.get("LLM_MODEL", DEFAULT_MODEL),
         timeout_seconds=_positive_float_from_env("TTI_PROVIDER_TIMEOUT_SECONDS", 15.0),
         max_concurrency=_positive_int_from_env("TTI_PROVIDER_MAX_CONCURRENCY", 4) or 1,
         max_retries=_positive_int_from_env("TTI_PROVIDER_MAX_RETRIES", 2),
