@@ -11,7 +11,7 @@ A self-hostable web app for Apple Health users. Drop in your export, ask questio
 
 - [uv](https://docs.astral.sh/uv/) (Python package manager)
 - Node 20 (via nvm: `nvm use 20`)
-- A Groq API key (free tier works) for hosted planning/narration, **or** LiteRT-LM for fully offline mode (zero egress — see Configuration)
+- LiteRT-LM for the default fully offline mode (zero egress — see Configuration), **or** a Groq API key (free tier works) for hosted planning/narration
 
 ## Quick start
 
@@ -72,7 +72,10 @@ contract checks.
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `EXPORT_PATH` | for ingest | — | Path to your `export.xml` |
-| `TTI_PROVIDER` | no | `groq` | LLM provider: `local` (LiteRT-LM) or `groq` (hosted). Persisted at runtime — env is the first-run default only. Switch at runtime via Settings → LLM Provider. |
+| `TTI_PROVIDER` | no | `local` | LLM provider: `local` (LiteRT-LM, default) or `groq` (hosted opt-in). Persisted at runtime — env is the first-run default only. Switch at runtime via Settings → LLM Provider. Existing app-state DBs keep their stored value. |
+| `TTI_LOCAL_AUTOSTART` | no | `1` | Start the owned `litert-lm serve` on backend startup when the effective provider is `local`. Set to `0` for manual Start/Stop only. |
+| `TTI_LOCAL_AUTOSTART_TIMEOUT_SECONDS` | no | `3` | Bounded wait for the local server to become healthy at startup. |
+| `TTI_LOCAL_STOP_ON_EXIT` | no | `0` | Set to `1` to stop the owned local server when the backend exits. Default leaves it running so restarts keep the model warm. |
 | `LLM_API_KEY` | only remote (groq) modes | — | API key for Groq / generic OpenAI-compatible provider |
 | `LLM_BASE_URL` | no | Groq | OpenAI-compatible base URL for Groq |
 | `LLM_MODEL` | no | `llama-3.3-70b-versatile` | Groq model name |
@@ -85,14 +88,25 @@ contract checks.
 | `TTI_PROVIDER_CIRCUIT_FAILURE_THRESHOLD` | no | `3` | Transient failures before temporary circuit open |
 | `TTI_DB_PATH` | no | `backend/data/health.duckdb` | Path to the DuckDB file |
 
-## Provider choice — Groq vs Local (LiteRT-LM)
+## Provider choice — Local (LiteRT-LM) vs Groq
 
-At runtime, open Settings → LLM Provider and choose where language work happens:
+Local is the default: fresh installs run fully offline with zero egress, and the
+backend starts the owned `litert-lm serve` automatically (see Local LLM lifecycle
+below). At runtime, open Settings → LLM Provider to switch:
 
-- **Local — LiteRT-LM (`gemma4-e2b`, ~2B active / 5.1B total)** — fully offline, zero egress. The app manages `litert-lm serve` via Start/Stop/Health (pidfile + log in `backend/data/`). First run requires `litert-lm import --from-huggingface-repo litert-community/gemma-4-E2B-it-litert-lm gemma-4-E2B-it.litertlm gemma4-e2b` (~2.4 GB). Local planning is solid for tool dispatch; narratives are shorter than Groq's.
-- **Groq — hosted** — uses `LLM_API_KEY`/`LLM_MODEL`. Gated by `TTI_PROVIDER_MODE` as below.
+- **Local — LiteRT-LM (`gemma4-e2b`, ~2B active / 5.1B total)** — fully offline, zero egress. First run requires `litert-lm import --from-huggingface-repo litert-community/gemma-4-E2B-it-litert-lm gemma-4-E2B-it.litertlm gemma4-e2b` (~2.4 GB). Local planning is solid for tool dispatch; narratives are shorter than Groq's.
+- **Groq — hosted (opt-in)** — uses `LLM_API_KEY`/`LLM_MODEL`. Gated by `TTI_PROVIDER_MODE` as below.
 
-The choice is persisted in SQLite (`app_state.provider_config`) and takes effect on the next chat without a restart. `.env` values are only the first-run defaults.
+The choice is persisted in SQLite (`app_state.provider_config`) and takes effect on the next chat without a restart. `.env` values are only the first-run defaults. If you upgrade from a version that defaulted to Groq, your stored choice is kept — switch once in Settings → LLM Provider.
+
+## Local LLM lifecycle
+
+The backend owns one `litert-lm serve` process per machine:
+
+- **Autostart**: when the effective provider is `local` (the default), backend startup ensures the server is running (pidfile + log in `backend/data/` as `litert.pid` / `litert.log`). Disable with `TTI_LOCAL_AUTOSTART=0` for manual control via Settings → LLM Provider → Start/Stop.
+- **Reload-safe**: an already-running owned server is a no-op — `uvicorn --reload` restarts never spawn a second process, and a stale pidfile from a dead process is reclaimed.
+- **Shutdown**: stopping the backend leaves the server running by default so the model stays warm across restarts. Set `TTI_LOCAL_STOP_ON_EXIT=1` for full teardown. Only the pid the app spawned is ever stopped.
+- **Missing binary/model**: startup never fails — it logs a warning and Settings shows the install hint (`pip install litert-lm`, import `gemma4-e2b`, or set `LITERT_SERVE_CMD`). Chat for recognized questions keeps working via deterministic local answers; open-ended wording returns a basic summary until the server is started.
 
 ## Privacy
 

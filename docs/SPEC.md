@@ -141,9 +141,13 @@ prompts, SQL, implementation details, or unapproved health records.
 - LLM provider is `local` (LiteRT-LM `gemma4-e2b` on `http://127.0.0.1:9379/v1`, zero egress) or `groq`
   (hosted OpenAI-compatible). The choice is persisted in `app_state.provider_config`
   (`PUT /api/settings/provider`) and takes effect on the next chat without a restart; `.env`
-  values (`TTI_PROVIDER`, `LITERT_*`, `LLM_*`) are first-run defaults only. Lifecycle:
+  values (`TTI_PROVIDER`, `LITERT_*`, `LLM_*`) are first-run defaults only. The first-run
+  default provider is `local`. Lifecycle:
   `GET /api/settings/llm/health`, `POST /api/settings/llm/start|stop` (pidfile + log in
   `backend/data/`, `LITERT_SERVE_CMD` override, `~/litert-lm/.venv/bin/litert-lm` fallback).
+  On backend startup the owned server is autostarted when the effective provider is `local`
+  (`TTI_LOCAL_AUTOSTART=1`, bounded by `TTI_LOCAL_AUTOSTART_TIMEOUT_SECONDS`);
+  `TTI_LOCAL_STOP_ON_EXIT=1` opts into stopping it on backend exit.
 - For the Groq provider, egress is additionally gated by `TTI_PROVIDER_MODE`:
   `local_only`, `remote_planning`, or `remote_planning_and_narration`. The local
   provider always permits both planning and narration with no external egress.

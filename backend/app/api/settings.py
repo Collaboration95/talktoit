@@ -145,7 +145,7 @@ async def get_settings() -> dict[str, object]:
             logger.debug("litert health unavailable", exc_info=True)
             litert_health = {"ok": False, "error": "health unavailable"}
     mode: ProviderMode = config.get("mode", "local_only")  # type: ignore[assignment]
-    provider: ProviderType = config.get("provider", "groq")  # type: ignore[assignment]
+    provider: ProviderType = config.get("provider", "local")  # type: ignore[assignment]
     storage_path = repo.path
     app_state_bytes = storage_path.stat().st_size if storage_path.exists() else 0
     cache = repo.cache_usage()

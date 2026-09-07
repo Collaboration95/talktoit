@@ -85,6 +85,45 @@ def _resolve_question(question: str | None) -> str:
             return resolved
 
 
+def _ensure_local_server(config: dict[str, str]) -> None:
+    """Best-effort autostart of the owned LiteRT server for headless runs.
+
+    Mirrors the web lifespan (GH-45): never raises, never installs anything.
+    When the server cannot be started, a one-line hint goes to stderr and the
+    caller continues on the existing deterministic/fallback path.
+    """
+    if config.get("provider") != "local":
+        return
+    try:
+        from app.llm import litert
+    except Exception:
+        return
+    try:
+        if litert.status().get("running"):
+            return
+        result = litert.ensure_running()
+        if result.get("running"):
+            return
+        if not result.get("binary_available", True):
+            reason = "litert-lm is not installed (pip install litert-lm, then import gemma4-e2b)"
+        elif result.get("reason") == "autostart disabled":
+            reason = "autostart is disabled (TTI_LOCAL_AUTOSTART=0)"
+        elif result.get("error"):
+            reason = "the local server could not be started"
+        else:
+            reason = "the local server is not running"
+        print(
+            f"tti: {reason}; continuing with on-device answers only. "
+            "Start it via POST /api/settings/llm/start or Settings → Start local server.",
+            file=sys.stderr,
+        )
+    except Exception:
+        print(
+            "tti: local LLM server unavailable; continuing with on-device answers only.",
+            file=sys.stderr,
+        )
+
+
 async def _ask_question(
     question: str,
     db_path: Path | None = None,
@@ -98,6 +137,7 @@ async def _ask_question(
     repository = AppStateRepository()
     repository.migrate()
     config = repository.get_provider_config()
+    _ensure_local_server(config)
     gateway = get_gateway_for_config(config)
     turn_id: str | None = None
     try:

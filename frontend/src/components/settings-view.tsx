@@ -66,7 +66,7 @@ export function SettingsView() {
   const [busyScope, setBusyScope] = useState<ClearScope | null>(null)
 
   // Provider form state — mirrors the persisted config for live editing.
-  const [provider, setProvider] = useState<ProviderType>('groq')
+  const [provider, setProvider] = useState<ProviderType>('local')
   const [mode, setMode] = useState<ProviderMode>('local_only')
   const [groqModel, setGroqModel] = useState('')
   const [groqBaseUrl, setGroqBaseUrl] = useState('')
@@ -87,8 +87,8 @@ export function SettingsView() {
       // Sync form from the newly loaded config; tolerate legacy responses that
       // only had { mode, model }.
       const p = (data.provider as unknown as Record<string, unknown>) ?? {}
-      const prov = (p['provider'] as ProviderType) ?? 'groq'
-      setProvider(prov === 'local' ? 'local' : 'groq')
+      const prov = (p['provider'] as ProviderType) ?? 'local'
+      setProvider(prov === 'groq' ? 'groq' : 'local')
       setMode((p['mode'] as ProviderMode) ?? 'local_only')
       setGroqModel((p['groq_model'] as string) ?? (p['model'] as string) ?? '')
       setGroqBaseUrl((p['groq_base_url'] as string) ?? (p['base_url'] as string) ?? '')
@@ -179,7 +179,7 @@ export function SettingsView() {
 
   const litertStatus = settings.provider.litert_status
   const litertHealth = settings.provider.litert_health
-  const activeProvider = (settings.provider.provider as ProviderType) ?? 'groq'
+  const activeProvider = (settings.provider.provider as ProviderType) ?? 'local'
 
   return (
     <div className="space-y-6">
@@ -316,6 +316,11 @@ export function SettingsView() {
           {litertStatus && (
             <div className="rounded-md bg-gray-50 p-3 text-xs text-gray-600">
               <p className="font-medium text-gray-700">Local server</p>
+              {!litertStatus.running && (
+                <p className="mb-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-amber-800">
+                  Stopped — chat uses on-device answers with basic summaries until you start it.
+                </p>
+              )}
               <p>
                 Status:{' '}
                 {litertStatus.running ? `running (pid ${litertStatus.pid ?? '—'})` : 'stopped'} ·{' '}

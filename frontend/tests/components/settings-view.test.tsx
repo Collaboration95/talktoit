@@ -139,4 +139,26 @@ describe('SettingsView', () => {
     ).toBeInTheDocument()
     await act(async () => {})
   })
+
+  it('shows a stopped-server notice when the local LLM is down', async () => {
+    seedSuccess()
+    render(<SettingsView />)
+    await waitFor(() => expect(screen.getByText('Settings & data controls')).toBeInTheDocument())
+    expect(screen.getByText(/chat uses on-device answers with basic summaries/i)).toBeInTheDocument()
+    await act(async () => {})
+  })
+
+  it('hides the stopped-server notice when the local LLM is running', async () => {
+    seedSuccess({
+      ...SETTINGS,
+      provider: {
+        ...SETTINGS.provider,
+        litert_status: { ...SETTINGS.provider.litert_status!, running: true, pid: 123 },
+      },
+    })
+    render(<SettingsView />)
+    await waitFor(() => expect(screen.getByText('Settings & data controls')).toBeInTheDocument())
+    expect(screen.queryByText(/chat uses on-device answers with basic summaries/i)).not.toBeInTheDocument()
+    await act(async () => {})
+  })
 })

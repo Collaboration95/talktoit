@@ -234,4 +234,35 @@ describe('ChatView', () => {
     expect(screen.queryByTestId('composer-bar')).not.toBeInTheDocument()
     expect(screen.getByText(/ask a question/i)).toBeInTheDocument()
   })
+
+  it('shows a dismissible degraded-answer notice for fallback responses', async () => {
+    const FALLBACK_ENVELOPE = {
+      template_id: 'fallback',
+      data: { question: 'blah', table: null, text: 'Try again.' },
+      narrative: 'Try again.',
+      metadata: {
+        api_version: 'v1' as const,
+        provenance: 'fallback' as const,
+        dataset_version_id: 'ds_fixture',
+      },
+    }
+    server.use(http.post('/api/chat', () => HttpResponse.json(FALLBACK_ENVELOPE)))
+    const user = userEvent.setup()
+    render(<ChatView />)
+    await user.type(screen.getByRole('textbox'), 'blah')
+    await user.click(screen.getByRole('button', { name: /ask/i }))
+    await screen.findByText(/showing a basic summary of your data/i)
+    await user.click(screen.getByRole('button', { name: /dismiss/i }))
+    expect(screen.queryByText(/showing a basic summary of your data/i)).not.toBeInTheDocument()
+  })
+
+  it('shows no degraded-answer notice for full answers', async () => {
+    server.use(http.post('/api/chat', () => HttpResponse.json(WORKOUT_ENVELOPE)))
+    const user = userEvent.setup()
+    render(<ChatView />)
+    await user.type(screen.getByRole('textbox'), 'last run')
+    await user.click(screen.getByRole('button', { name: /ask/i }))
+    await screen.findByText('Your last run was on June 5.')
+    expect(screen.queryByText(/showing a basic summary of your data/i)).not.toBeInTheDocument()
+  })
 })

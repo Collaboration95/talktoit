@@ -20,6 +20,31 @@ type ChatTurn =
   | { id: string; status: 'success'; question: string; envelope: ChatEnvelope; expanded: boolean }
   | { id: string; status: 'error'; question: string; message: string }
 
+/** Notice shown above degraded fallback answers (GH-47).
+
+The fallback envelope means the full answer was unavailable — most often
+because the local language model is stopped. The copy stays factual and
+names the remedy without leaking prompts, SQL, or internals. */
+function FallbackNotice() {
+  const [dismissed, setDismissed] = useState(false)
+  if (dismissed) return null
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+      <p>
+        Showing a basic summary of your data. If the local language model is stopped, start it in
+        Settings for richer answers.
+      </p>
+      <button
+        type="button"
+        className="mt-1 text-xs text-amber-700 underline"
+        onClick={() => setDismissed(true)}
+      >
+        Dismiss
+      </button>
+    </div>
+  )
+}
+
 /** Top-level chat page component: input → loading → template result. */
 export function ChatView() {
   const [turns, setTurns] = useState<ChatTurn[]>([])
@@ -296,6 +321,9 @@ export function ChatView() {
             </div>
             {turn.status === 'loading' ? (
               <p className="text-sm text-gray-500">Thinking about: {turn.question}</p>
+            ) : null}
+            {turn.status === 'success' && turn.envelope.template_id === 'fallback' ? (
+              <FallbackNotice />
             ) : null}
             {turn.status === 'success' ? (
               <button

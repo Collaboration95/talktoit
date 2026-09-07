@@ -177,3 +177,44 @@ def test_cli_migrates_database_before_read_only_open(monkeypatch) -> None:
         asyncio.run(chat_cli._ask_question("Show my last run"))
 
     assert events == ["migrate", "connect:True"]
+
+
+def test_ensure_local_server_ignores_non_local_provider(monkeypatch, capsys) -> None:
+    """Groq mode never touches the LiteRT lifecycle or stderr."""
+    from app.llm import litert
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("must not touch LiteRT for groq")
+
+    monkeypatch.setattr(litert, "status", forbidden)
+    chat_cli._ensure_local_server({"provider": "groq"})
+    assert capsys.readouterr().err == ""
+
+
+def test_ensure_local_server_noop_when_running(monkeypatch, capsys) -> None:
+    """A running server means silence — no spawn, no hint."""
+    from app.llm import litert
+
+    def forbidden(**_kwargs):
+        raise AssertionError("must not spawn when already running")
+
+    monkeypatch.setattr(litert, "status", lambda: {"running": True})
+    monkeypatch.setattr(litert, "ensure_running", forbidden)
+    chat_cli._ensure_local_server({"provider": "local"})
+    assert capsys.readouterr().err == ""
+
+
+def test_ensure_local_server_hints_when_binary_missing(monkeypatch, capsys) -> None:
+    """No binary is a stderr hint, never an exception."""
+    from app.llm import litert
+
+    monkeypatch.setattr(litert, "status", lambda: {"running": False})
+    monkeypatch.setattr(
+        litert,
+        "ensure_running",
+        lambda **_kwargs: {"started": False, "running": False, "binary_available": False},
+    )
+    chat_cli._ensure_local_server({"provider": "local"})
+    err = capsys.readouterr().err
+    assert "litert-lm is not installed" in err
+    assert "Settings" in err
