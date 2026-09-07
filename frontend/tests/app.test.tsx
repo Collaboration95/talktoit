@@ -70,6 +70,57 @@ describe('App', () => {
     await screen.findByText('Settings & data controls')
   })
 
+  it('shows a fallback while loading a code-split tab', async () => {
+    server.use(
+      http.get('/api/saved-views', () => HttpResponse.json([])),
+      http.get('/api/dashboard/summary', () => HttpResponse.json({ days: [] })),
+      http.get('/api/dashboard/workouts', () =>
+        HttpResponse.json({ workouts: [], next_cursor: null }),
+      ),
+      http.get('/api/dashboard/steps', () =>
+        HttpResponse.json({
+          metric_label: 'Steps',
+          metric_unit: 'count',
+          granularity: 'day',
+          series: [],
+        }),
+      ),
+      http.get('/api/dashboard/heart', () =>
+        HttpResponse.json({
+          metric_label: 'Heart rate',
+          metric_unit: 'bpm',
+          granularity: 'week',
+          series: [],
+        }),
+      ),
+      http.get('/api/dashboard/sleep', () =>
+        HttpResponse.json({
+          metric_label: 'Sleep',
+          metric_unit: 'hours',
+          granularity: 'day',
+          series: [],
+        }),
+      ),
+      http.get('/api/dashboard/sleep/stages', () =>
+        HttpResponse.json({
+          total_asleep_hours: 0,
+          stages_hours: {},
+          stage_data_available: false,
+          message: 'No stage data.',
+        }),
+      ),
+      http.get('/api/dashboard/capabilities', () => HttpResponse.json({ capabilities: [] })),
+      http.get('/api/status', () =>
+        HttpResponse.json({ readiness: 'no_active_import', dataset: null }),
+      ),
+    )
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }))
+    expect(await screen.findByTestId('tab-loading')).toBeInTheDocument()
+    await screen.findByText('Activity Rings (Latest available day)')
+  })
+
   it('restores the active tab from the URL on popstate (back/forward)', async () => {
     render(<App />)
     expect(screen.getByPlaceholderText('Search local conversations')).toBeInTheDocument()

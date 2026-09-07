@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { TrendLine } from '@/charts/trend-line'
 import { GaugeRings } from '@/charts/gauge-rings'
 import { WorkoutDetail } from '@/components/workout-detail'
@@ -30,6 +30,33 @@ type DashboardViewMode =
   | { view: 'list' }
   | { view: 'detail'; workoutId: number; fingerprint?: string }
 
+const PANEL_KEYS = [
+  'summary',
+  'workouts',
+  'steps',
+  'heart',
+  'sleep',
+  'sleepStages',
+  'capabilities',
+  'datasetStatus',
+] as const
+type PanelKey = (typeof PANEL_KEYS)[number]
+
+const PANEL_LABELS: Record<PanelKey, string> = {
+  summary: 'activity rings',
+  workouts: 'workouts',
+  steps: 'steps',
+  heart: 'heart rate',
+  sleep: 'sleep',
+  sleepStages: 'sleep stages',
+  capabilities: 'data sources',
+  datasetStatus: 'import status',
+}
+
+function createLoadingPanels(value: boolean): Record<PanelKey, boolean> {
+  return Object.fromEntries(PANEL_KEYS.map((key) => [key, value])) as Record<PanelKey, boolean>
+}
+
 interface DashboardState {
   summary: ActivityRingDay[]
   workouts: WorkoutSummary[]
@@ -40,13 +67,28 @@ interface DashboardState {
   capabilities: CapabilityFlag[]
   datasetStatus: DatasetStatus | null
   nextWorkoutCursor: string | null
-  loading: boolean
-  error: string | null
+  loadingPanels: Record<PanelKey, boolean>
   failedPanels: string[]
 }
 
 function NoData() {
   return <p className="text-sm text-gray-400 py-4">No data</p>
+}
+
+function PanelSkeleton({ panel }: { panel: PanelKey }) {
+  return (
+    <div
+      className="h-16 animate-pulse rounded bg-gray-100 py-5 text-center text-sm text-gray-400"
+      data-testid={`panel-loading-${panel}`}
+      role="status"
+    >
+      Loading {PANEL_LABELS[panel]}…
+    </div>
+  )
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError'
 }
 
 function displayActivityType(activityType: string): string {
@@ -117,6 +159,49 @@ function SavedViewsPanel({
   )
 }
 
+/** Memoized workout table row: skips re-render when the workout and handler are unchanged. */
+const WorkoutRow = memo(function WorkoutRow({
+  workout,
+  onSelect,
+}: {
+  workout: WorkoutSummary
+  onSelect: (workout: WorkoutSummary) => void
+}) {
+  const w = workout
+  return (
+    <tr
+      onClick={() => onSelect(w)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSelect(w)
+        }
+      }}
+      tabIndex={0}
+      role="button"
+      className="cursor-pointer border-b last:border-0 hover:bg-blue-50/60 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-400"
+    >
+      <td className="whitespace-nowrap px-3 py-3 text-gray-500">{formatDate(w.date)}</td>
+      <td className="px-3 py-3 font-medium text-gray-900" title={w.activity_type}>
+        {displayActivityType(w.activity_type)}
+      </td>
+      <td className="px-3 py-3 text-gray-500">{w.source_name}</td>
+      <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
+        {w.duration_minutes !== null ? `${formatNumber(w.duration_minutes, 0)} min` : '—'}
+      </td>
+      <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
+        {w.avg_heart_rate !== null ? `${w.avg_heart_rate} bpm` : '—'}
+      </td>
+      <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
+        {w.distance_meters !== null ? `${formatNumber(w.distance_meters / 1000, 1)} km` : '—'}
+      </td>
+      <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
+        {w.energy_burned_kj !== null ? `${formatNumber(w.energy_burned_kj, 0)} kJ` : '—'}
+      </td>
+    </tr>
+  )
+})
+
 function WorkoutsPanel({
   workouts,
   nextWorkoutCursor,
@@ -143,6 +228,14 @@ function WorkoutsPanel({
     () => [...new Set(workouts.map((workout) => workout.source_name))].sort(),
     [workouts],
   )
+  // Single-pass per-type counts (O(N)) instead of filtering per type per render.
+  const workoutCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const workout of workouts) {
+      counts.set(workout.activity_type, (counts.get(workout.activity_type) ?? 0) + 1)
+    }
+    return counts
+  }, [workouts])
   if (workouts.length === 0) return <NoData />
 
   return (
@@ -164,7 +257,7 @@ function WorkoutsPanel({
           All <span className="opacity-80">{workouts.length}</span>
         </button>
         {workoutTypes.map((type) => {
-          const count = workouts.filter((workout) => workout.activity_type === type).length
+          const count = workoutCounts.get(type) ?? 0
           const selected = scope.activityType === type
           return (
             <button
@@ -228,39 +321,7 @@ function WorkoutsPanel({
           </thead>
           <tbody>
             {workouts.map((w) => (
-              <tr
-                key={w.id}
-                onClick={() => onSelect(w)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    onSelect(w)
-                  }
-                }}
-                tabIndex={0}
-                role="button"
-                className="cursor-pointer border-b last:border-0 hover:bg-blue-50/60 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-400"
-              >
-                <td className="whitespace-nowrap px-3 py-3 text-gray-500">{formatDate(w.date)}</td>
-                <td className="px-3 py-3 font-medium text-gray-900" title={w.activity_type}>
-                  {displayActivityType(w.activity_type)}
-                </td>
-                <td className="px-3 py-3 text-gray-500">{w.source_name}</td>
-                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
-                  {w.duration_minutes !== null ? `${formatNumber(w.duration_minutes, 0)} min` : '—'}
-                </td>
-                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
-                  {w.avg_heart_rate !== null ? `${w.avg_heart_rate} bpm` : '—'}
-                </td>
-                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
-                  {w.distance_meters !== null
-                    ? `${formatNumber(w.distance_meters / 1000, 1)} km`
-                    : '—'}
-                </td>
-                <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
-                  {w.energy_burned_kj !== null ? `${formatNumber(w.energy_burned_kj, 0)} kJ` : '—'}
-                </td>
-              </tr>
+              <WorkoutRow key={w.id} workout={w} onSelect={onSelect} />
             ))}
           </tbody>
         </table>
@@ -348,8 +409,7 @@ export function DashboardView() {
     capabilities: [],
     datasetStatus: null,
     nextWorkoutCursor: null,
-    loading: true,
-    error: null,
+    loadingPanels: createLoadingPanels(true),
     failedPanels: [],
   })
   const [mode, setMode] = useState<DashboardViewMode>(() =>
@@ -376,6 +436,7 @@ export function DashboardView() {
   const [savedViews, setSavedViews] = useState<SavedView[]>([])
   const [savedViewTitle, setSavedViewTitle] = useState('')
   const [reloadToken, setReloadToken] = useState(0)
+  const scopeGeneration = useRef(0)
 
   const reloadSavedViews = () => {
     listSavedViews()
@@ -393,64 +454,79 @@ export function DashboardView() {
   useEffect(() => {
     const controller = new AbortController()
     let active = true
-    Promise.allSettled([
-      fetchSummary(scope, controller.signal),
+    const generation = scopeGeneration.current + 1
+    scopeGeneration.current = generation
+
+    setState((current) => ({
+      ...current,
+      loadingPanels: createLoadingPanels(true),
+      failedPanels: [],
+    }))
+
+    const isCurrent = () => active && scopeGeneration.current === generation
+    const loadPanel = <T,>(
+      panel: PanelKey,
+      request: Promise<T>,
+      apply: (current: DashboardState, value: T) => Partial<DashboardState>,
+    ) => {
+      void request.then(
+        (value) => {
+          if (!isCurrent()) return
+          setState((current) => ({
+            ...current,
+            ...apply(current, value),
+            loadingPanels: { ...current.loadingPanels, [panel]: false },
+            failedPanels: current.failedPanels.filter((label) => label !== PANEL_LABELS[panel]),
+          }))
+        },
+        (error: unknown) => {
+          if (!isCurrent() || isAbortError(error)) return
+          const label = PANEL_LABELS[panel]
+          setState((current) => ({
+            ...current,
+            loadingPanels: { ...current.loadingPanels, [panel]: false },
+            failedPanels: current.failedPanels.includes(label)
+              ? current.failedPanels
+              : [...current.failedPanels, label],
+          }))
+        },
+      )
+    }
+
+    loadPanel('summary', fetchSummary(scope, controller.signal), (_current, value) => ({
+      summary: value,
+    }))
+    loadPanel(
+      'workouts',
       fetchWorkouts(scope, undefined, controller.signal),
-      fetchTrend('steps', 'day', scope, controller.signal),
+      (_current, value) => ({
+        workouts: value.workouts,
+        nextWorkoutCursor: value.next_cursor,
+      }),
+    )
+    loadPanel('steps', fetchTrend('steps', 'day', scope, controller.signal), (_current, value) => ({
+      steps: value,
+    }))
+    loadPanel(
+      'heart',
       fetchTrend('heart', 'week', scope, controller.signal),
-      fetchTrend('sleep', 'day', scope, controller.signal),
-      fetchSleepStages(scope, controller.signal),
-      fetchCapabilities(scope, controller.signal),
-      fetchDatasetStatus(controller.signal),
-    ]).then((results) => {
-      const [
-        summaryResult,
-        workoutsResult,
-        stepsResult,
-        heartResult,
-        sleepResult,
-        stagesResult,
-        capsResult,
-        statusResult,
-      ] = results
-      if (
-        !active ||
-        !summaryResult ||
-        !workoutsResult ||
-        !stepsResult ||
-        !heartResult ||
-        !sleepResult ||
-        !stagesResult ||
-        !capsResult ||
-        !statusResult
-      ) {
-        return
-      }
-      setState({
-        summary: summaryResult.status === 'fulfilled' ? summaryResult.value : [],
-        workouts: workoutsResult.status === 'fulfilled' ? workoutsResult.value.workouts : [],
-        nextWorkoutCursor:
-          workoutsResult.status === 'fulfilled' ? workoutsResult.value.next_cursor : null,
-        steps: stepsResult.status === 'fulfilled' ? stepsResult.value : null,
-        heart: heartResult.status === 'fulfilled' ? heartResult.value : null,
-        sleep: sleepResult.status === 'fulfilled' ? sleepResult.value : null,
-        sleepStages: stagesResult.status === 'fulfilled' ? stagesResult.value : null,
-        capabilities: capsResult.status === 'fulfilled' ? capsResult.value : [],
-        datasetStatus: statusResult.status === 'fulfilled' ? statusResult.value : null,
-        loading: false,
-        error: null,
-        failedPanels: [
-          ...(summaryResult.status === 'rejected' ? ['activity rings'] : []),
-          ...(workoutsResult.status === 'rejected' ? ['workouts'] : []),
-          ...(stepsResult.status === 'rejected' ? ['steps'] : []),
-          ...(heartResult.status === 'rejected' ? ['heart rate'] : []),
-          ...(sleepResult.status === 'rejected' ? ['sleep'] : []),
-          ...(stagesResult.status === 'rejected' ? ['sleep stages'] : []),
-          ...(capsResult.status === 'rejected' ? ['data sources'] : []),
-          ...(statusResult.status === 'rejected' ? ['import status'] : []),
-        ],
-      })
-    })
+      (_current, value) => ({
+        heart: value,
+      }),
+    )
+    loadPanel('sleep', fetchTrend('sleep', 'day', scope, controller.signal), (_current, value) => ({
+      sleep: value,
+    }))
+    loadPanel('sleepStages', fetchSleepStages(scope, controller.signal), (_current, value) => ({
+      sleepStages: value,
+    }))
+    loadPanel('capabilities', fetchCapabilities(scope, controller.signal), (_current, value) => ({
+      capabilities: value,
+    }))
+    loadPanel('datasetStatus', fetchDatasetStatus(controller.signal), (_current, value) => ({
+      datasetStatus: value,
+    }))
+
     return () => {
       active = false
       controller.abort()
@@ -499,7 +575,7 @@ export function DashboardView() {
     setScope(normalized)
   }
 
-  const selectWorkout = (workout: WorkoutSummary) => {
+  const selectWorkout = useCallback((workout: WorkoutSummary) => {
     const query = decodeDashboardQuery(window.location.search)
     window.history.pushState(
       {},
@@ -512,7 +588,7 @@ export function DashboardView() {
       })}`,
     )
     setMode({ view: 'detail', workoutId: workout.id, fingerprint: workout.fingerprint })
-  }
+  }, [])
 
   const returnToWorkoutList = () => {
     const {
@@ -543,20 +619,6 @@ export function DashboardView() {
         reloadSavedViews()
       })
       .catch(() => undefined)
-  }
-
-  if (state.loading) {
-    return (
-      <div className="mx-auto max-w-4xl px-4 py-6 space-y-4">
-        <div
-          className="flex items-center justify-center min-h-64 text-gray-500"
-          data-testid="loading"
-        >
-          Loading dashboard…
-        </div>
-        <SavedViewsPanel views={savedViews} onApply={applySavedView} />
-      </div>
-    )
   }
 
   // Workout detail view (R1-09)
@@ -619,38 +681,66 @@ export function DashboardView() {
       ) : null}
 
       <Section title="Activity Rings (Latest available day)">
-        <ActivityRingsPanel days={state.summary} />
+        {state.loadingPanels.summary && state.summary.length === 0 ? (
+          <PanelSkeleton panel="summary" />
+        ) : (
+          <ActivityRingsPanel days={state.summary} />
+        )}
       </Section>
 
       <Section title="Recent Workouts (Latest 30 data days)">
-        <WorkoutsPanel
-          workouts={state.workouts}
-          nextWorkoutCursor={state.nextWorkoutCursor}
-          scope={scope}
-          onScopeChange={updateWorkoutScope}
-          onSelect={selectWorkout}
-          onLoadMore={loadMoreWorkouts}
-        />
+        {state.loadingPanels.workouts && state.workouts.length === 0 ? (
+          <PanelSkeleton panel="workouts" />
+        ) : (
+          <WorkoutsPanel
+            workouts={state.workouts}
+            nextWorkoutCursor={state.nextWorkoutCursor}
+            scope={scope}
+            onScopeChange={updateWorkoutScope}
+            onSelect={selectWorkout}
+            onLoadMore={loadMoreWorkouts}
+          />
+        )}
       </Section>
 
       <Section title="Daily Steps (Latest 30 data days)">
-        <TrendPanel trend={state.steps} title="Steps" />
+        {state.loadingPanels.steps && state.steps === null ? (
+          <PanelSkeleton panel="steps" />
+        ) : (
+          <TrendPanel trend={state.steps} title="Steps" />
+        )}
       </Section>
 
       <Section title="Resting Heart Rate (Latest 90 data days)">
-        <TrendPanel trend={state.heart} title="Resting HR" />
+        {state.loadingPanels.heart && state.heart === null ? (
+          <PanelSkeleton panel="heart" />
+        ) : (
+          <TrendPanel trend={state.heart} title="Resting HR" />
+        )}
       </Section>
 
       <Section title="Sleep Duration (Latest 30 data days)">
-        <TrendPanel trend={state.sleep} title="Sleep" />
+        {state.loadingPanels.sleep && state.sleep === null ? (
+          <PanelSkeleton panel="sleep" />
+        ) : (
+          <TrendPanel trend={state.sleep} title="Sleep" />
+        )}
       </Section>
 
       <Section title="Measured Sleep Stages">
-        <SleepStagesPanel stages={state.sleepStages} />
+        {state.loadingPanels.sleepStages && state.sleepStages === null ? (
+          <PanelSkeleton panel="sleepStages" />
+        ) : (
+          <SleepStagesPanel stages={state.sleepStages} />
+        )}
       </Section>
 
       <Section title="Data Sources">
-        <CapabilitiesPanel caps={state.capabilities} />
+        {state.loadingPanels.capabilities && state.capabilities.length === 0 ? (
+          <PanelSkeleton panel="capabilities" />
+        ) : (
+          <CapabilitiesPanel caps={state.capabilities} />
+        )}
       </Section>
     </div>
   )
