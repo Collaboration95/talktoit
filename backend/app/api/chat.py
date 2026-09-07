@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import sqlite3
@@ -19,13 +20,13 @@ from app.api.deps import get_app_state_repository, get_diagnostics_repository
 from app.db.connection import connect
 from app.db.data_profile import get_data_profile
 from app.llm.cache_keys import build_cache_key
-from app.llm.client import get_model
 from app.llm.followups import FollowupContext, followup_disambiguation, resolve_followup
 from app.llm.local_planner import plan_local_question
 from app.llm.orchestrator import ChatOrchestrator
 from app.llm.provider_gateway import (
     ProviderGateway,
     ProviderUnavailableError,
+    get_gateway_for_config,
     make_provider_gateway,
 )
 from app.llm.semantic_candidates import candidates_enabled, evaluate
@@ -58,9 +59,27 @@ def _get_conn() -> Generator[duckdb.DuckDBPyConnection, None, None]:
 
 
 def _get_gateway(request: Request) -> ProviderGateway:
-    """Get the lifespan-owned gateway, with a test/CLI compatibility fallback."""
-    gateway = getattr(request.app.state, "provider_gateway", None)
-    return gateway if gateway is not None else make_provider_gateway()
+    """Return a gateway matching the persisted provider config.
+
+    The provider choice is persisted in SQLite so a ``PUT /api/settings/provider``
+    takes effect on the next request without a process restart. The lifespan
+    still owns a single gateway for the ``/health``-probe fast path, but the
+    chat path always resolves the current config. Test overrides of this
+    dependency (``app.dependency_overrides[_get_gateway]``) bypass this
+    resolution so integrations can inject a stub.
+    """
+    try:
+        repo = getattr(request.app.state, "app_state_repository", None)
+        if repo is None:
+            repo = AppStateRepository()
+            with contextlib.suppress(Exception):
+                repo.migrate()
+        config = repo.get_provider_config()
+        return get_gateway_for_config(config)
+    except Exception:
+        logger.debug("_get_gateway: fallback to lifespan gateway", exc_info=True)
+        gateway = getattr(request.app.state, "provider_gateway", None)
+        return gateway if gateway is not None else make_provider_gateway()
 
 
 def _problem(
@@ -363,7 +382,7 @@ async def chat(
                 orchestrator = ChatOrchestrator(
                     client=gateway.client,
                     conn=conn,
-                    model=get_model(),
+                    model=gateway.model,
                     gateway=gateway,
                     diagnostics_repository=diagnostics,
                 )

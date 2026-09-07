@@ -13,11 +13,10 @@ from app.db.connection import connect
 from app.db.data_profile import get_data_profile
 from app.db.migrate import migrate
 from app.llm.cache_keys import build_cache_key
-from app.llm.client import get_model, make_client
 from app.llm.followups import FollowupContext, resolve_followup
 from app.llm.local_planner import plan_local_question
 from app.llm.orchestrator import ChatOrchestrator
-from app.llm.provider_gateway import ProviderGateway
+from app.llm.provider_gateway import get_gateway_for_config
 from app.models.chat import ChatResponse
 from app.observability import configure_logging
 from app.state.app_state import AppStateRepository
@@ -96,8 +95,10 @@ async def _ask_question(
     """Run one question through the same local cache and orchestration path as HTTP."""
     migrate(db_path)
     conn = connect(db_path, read_only=True)
-    gateway = ProviderGateway(make_client(), model=get_model())
     repository = AppStateRepository()
+    repository.migrate()
+    config = repository.get_provider_config()
+    gateway = get_gateway_for_config(config)
     turn_id: str | None = None
     try:
         # One session connection for the whole CLI call, mirroring the HTTP
@@ -167,7 +168,7 @@ async def _ask_question(
                 response.metadata.provenance = "cached"
             else:
                 orchestrator = ChatOrchestrator(
-                    client=gateway.client, conn=conn, model=get_model(), gateway=gateway
+                    client=gateway.client, conn=conn, model=gateway.model, gateway=gateway
                 )
                 response = await orchestrator.answer(question, plan_override=followup_plan)
             if active is not None:

@@ -56,7 +56,34 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     try:
         yield
     finally:
-        await app.state.provider_gateway.aclose()
+        try:
+            from app.llm.provider_gateway import aclose_all_gateways
+
+            await aclose_all_gateways()
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).debug(
+                "lifespan: cached gateway close failed", exc_info=True
+            )
+        try:
+            gateway = getattr(app.state, "provider_gateway", None)
+            if gateway is not None:
+                # The cached close already handled this gateway when it was
+                # created via the provider config cache; this is a fallback
+                # for the single lifespan gateway in tests that bypass the cache.
+                try:
+                    await gateway.aclose()
+                except Exception:
+                    import logging
+
+                    logging.getLogger(__name__).debug(
+                        "lifespan: fallback gateway close failed", exc_info=True
+                    )
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).debug("lifespan: gateway close failed", exc_info=True)
 
 
 def create_app() -> FastAPI:

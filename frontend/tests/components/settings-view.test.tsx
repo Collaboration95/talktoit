@@ -27,9 +27,26 @@ const SETTINGS: Settings = {
     status: 'active',
   },
   provider: {
+    provider: 'groq',
     mode: 'local_only',
     model: null,
+    base_url: 'https://api.groq.com/openai/v1',
+    groq_model: 'llama-3.3-70b-versatile',
+    groq_base_url: 'https://api.groq.com/openai/v1',
+    litert_model: 'gemma4-e2b',
+    litert_base_url: 'http://127.0.0.1:9379/v1',
     egress_categories: [],
+    litert_status: {
+      running: false,
+      pid: null,
+      base_url: 'http://127.0.0.1:9379/v1',
+      model: 'gemma4-e2b',
+      binary: null,
+      binary_available: false,
+      pidfile: '/tmp/litert.pid',
+      log_path: '/tmp/litert.log',
+    },
+    litert_health: null,
   },
   storage: {
     app_state_bytes: 0,
@@ -61,7 +78,9 @@ describe('SettingsView', () => {
     render(<SettingsView />)
     expect(screen.getByText(/loading settings/i)).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('Settings & data controls')).toBeInTheDocument())
-    expect(screen.getByText(/local only — no network egress/i)).toBeInTheDocument()
+    // Privacy mode appears once in the Privacy section and again in the
+    // provider selector's Groq mode dropdown; both are valid.
+    expect(screen.getAllByText(/local only — no network egress/i).length).toBeGreaterThan(0)
     expect(screen.getByText(/1,?234 records/)).toBeInTheDocument()
     expect(screen.getByText(/nothing stays on this device|everything stays on this device/i))
     await act(async () => {})

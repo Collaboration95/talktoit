@@ -138,9 +138,17 @@ prompts, SQL, implementation details, or unapproved health records.
 - Unknown templates use the fallback renderer and are treated as compatibility events.
 - Error responses use the versioned `ProblemDetail` envelope with a safe error code and request
   ID; they do not include provider exceptions, SQL, paths, prompts, or raw health data.
-- Provider egress is controlled by `TTI_PROVIDER_MODE`: `local_only`, `remote_planning`, or
-  `remote_planning_and_narration`. Raw records, GPS geometry, device blobs, and source paths
-  are never allowed in provider messages.
+- LLM provider is `local` (LiteRT-LM `gemma4-e2b` on `http://127.0.0.1:9379/v1`, zero egress) or `groq`
+  (hosted OpenAI-compatible). The choice is persisted in `app_state.provider_config`
+  (`PUT /api/settings/provider`) and takes effect on the next chat without a restart; `.env`
+  values (`TTI_PROVIDER`, `LITERT_*`, `LLM_*`) are first-run defaults only. Lifecycle:
+  `GET /api/settings/llm/health`, `POST /api/settings/llm/start|stop` (pidfile + log in
+  `backend/data/`, `LITERT_SERVE_CMD` override, `~/litert-lm/.venv/bin/litert-lm` fallback).
+- For the Groq provider, egress is additionally gated by `TTI_PROVIDER_MODE`:
+  `local_only`, `remote_planning`, or `remote_planning_and_narration`. The local
+  provider always permits both planning and narration with no external egress.
+  Raw records, GPS geometry, device blobs, and source paths are never allowed in provider
+  messages (enforced by `app.llm.provider_projection` and `app.llm.litert`/`provider_gateway`).
 
 The Pydantic models and TypeScript types are the executable form of this document. Contract
 changes require tests on both sides and an explicit API version decision.
