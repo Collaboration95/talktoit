@@ -162,9 +162,20 @@ describe('DashboardView', () => {
       http.get('/api/dashboard/capabilities', () => new Promise(() => {})),
     )
     render(<DashboardView />)
-    expect(screen.getByTestId('loading')).toBeInTheDocument()
-    expect(screen.getByText(/loading dashboard/i)).toBeInTheDocument()
+    expect(screen.getByTestId('panel-loading-summary')).toBeInTheDocument()
+    expect(screen.getByTestId('panel-loading-workouts')).toBeInTheDocument()
+    expect(screen.getByText(/loading activity rings/i)).toBeInTheDocument()
     await act(async () => {})
+  })
+
+  it('renders a panel as soon as its own request resolves', async () => {
+    setupHandlers()
+    server.use(http.get('/api/dashboard/summary', () => new Promise(() => {})))
+    render(<DashboardView />)
+
+    expect(screen.getByTestId('panel-loading-summary')).toBeInTheDocument()
+    expect(await screen.findByText('46 min')).toBeInTheDocument()
+    expect(screen.getByTestId('panel-loading-summary')).toBeInTheDocument()
   })
 
   it('renders workout list after load', async () => {
@@ -175,6 +186,35 @@ describe('DashboardView', () => {
     })
     // Check workout row details
     expect(screen.getByText('46 min')).toBeInTheDocument()
+  })
+
+  it('renders per-type workout counts from a single pass', async () => {
+    setupHandlers()
+    const base = {
+      date: '2026-06-05T07:00:00+08:00',
+      duration_minutes: 30,
+      avg_heart_rate: 140,
+      distance_meters: 5000,
+      energy_burned_kj: 1500,
+      source_name: 'Apple Watch',
+      fingerprint: '0123456789abcdef',
+    }
+    server.use(
+      http.get('/api/dashboard/workouts', () =>
+        HttpResponse.json({
+          workouts: [
+            { ...base, id: 1, activity_type: 'Running' },
+            { ...base, id: 2, activity_type: 'Running' },
+            { ...base, id: 3, activity_type: 'Cycling' },
+          ],
+          next_cursor: null,
+        }),
+      ),
+    )
+    render(<DashboardView />)
+    await screen.findByRole('button', { name: /All 3/ })
+    expect(screen.getByRole('button', { name: /Running 2/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Cycling 1/ })).toBeInTheDocument()
   })
 
   it('moves an activity filter into the shared URL and workout request scope', async () => {
@@ -412,11 +452,7 @@ describe('DashboardView', () => {
   })
 
   it('restores a workout detail deep link and returns to its scoped list', async () => {
-    window.history.replaceState(
-      {},
-      '',
-      '?tab=workouts&start=2024-01-01&end=2024-01-31&workout=1',
-    )
+    window.history.replaceState({}, '', '?tab=workouts&start=2024-01-01&end=2024-01-31&workout=1')
     setupHandlers()
     server.use(http.get('/api/dashboard/workouts/1', () => HttpResponse.json({}, { status: 404 })))
     const user = userEvent.setup()

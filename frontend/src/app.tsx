@@ -1,8 +1,27 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { ChatView } from '@/components/chat-view'
-import { DashboardView } from '@/components/dashboard-view'
-import { DiagnosticsView } from '@/components/diagnostics-view'
-import { SettingsView } from '@/components/settings-view'
+
+const DashboardView = lazy(() =>
+  import('@/components/dashboard-view').then(({ DashboardView: view }) => ({ default: view })),
+)
+const DiagnosticsView = lazy(() =>
+  import('@/components/diagnostics-view').then(({ DiagnosticsView: view }) => ({ default: view })),
+)
+const SettingsView = lazy(() =>
+  import('@/components/settings-view').then(({ SettingsView: view }) => ({ default: view })),
+)
+
+function TabFallback() {
+  return (
+    <div
+      className="mx-auto flex min-h-64 max-w-4xl items-center justify-center px-4 py-6 text-gray-500"
+      data-testid="tab-loading"
+      role="status"
+    >
+      Loading view…
+    </div>
+  )
+}
 
 /** Resolve the top-level view from the URL on first load (backwards compatible). */
 function initialTab(): 'chat' | 'dashboard' | 'diagnostics' | 'settings' {
@@ -66,15 +85,17 @@ export function App() {
           </button>
         </div>
       </nav>
-      {tab === 'chat' ? (
-        <ChatView />
-      ) : tab === 'dashboard' ? (
-        <DashboardView />
-      ) : tab === 'diagnostics' ? (
-        <DiagnosticsView />
-      ) : (
-        <SettingsView />
-      )}
+      <Suspense fallback={<TabFallback />}>
+        {tab === 'chat' ? (
+          <ChatView />
+        ) : tab === 'dashboard' ? (
+          <DashboardView />
+        ) : tab === 'diagnostics' ? (
+          <DiagnosticsView />
+        ) : (
+          <SettingsView />
+        )}
+      </Suspense>
     </div>
   )
 }

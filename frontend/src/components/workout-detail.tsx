@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { fetchWorkoutDetail } from '@/api/dashboard'
 import type { WorkoutDetail as WorkoutDetailType } from '@/api/dashboard'
 import ReactECharts from 'echarts-for-react'
@@ -31,6 +31,35 @@ export function WorkoutDetail({ workoutId, fingerprint, onBack }: WorkoutDetailP
       })
       .finally(() => setLoading(false))
   }, [fingerprint, workoutId])
+
+  // Memoized above the loading/error early-returns (hooks must run every render).
+  const gpsRoute = data?.gps_route
+  const gpsOption = useMemo(() => {
+    if (!gpsRoute || gpsRoute.coordinates.length === 0) return null
+    return {
+      tooltip: { trigger: 'item' },
+      xAxis: { type: 'value', name: 'Longitude', axisLabel: { fontSize: 10 } },
+      yAxis: { type: 'value', name: 'Latitude', axisLabel: { fontSize: 10 } },
+      series: [
+        {
+          type: 'line',
+          data: gpsRoute.coordinates,
+          showSymbol: false,
+          lineStyle: { width: 3, color: '#2563eb' },
+          markPoint: {
+            data: [
+              { name: 'Start', coord: gpsRoute.coordinates[0], symbol: 'circle' },
+              {
+                name: 'End',
+                coord: gpsRoute.coordinates[gpsRoute.coordinates.length - 1],
+                symbol: 'pin',
+              },
+            ],
+          },
+        },
+      ],
+    }
+  }, [gpsRoute])
 
   if (loading) {
     return (
@@ -96,35 +125,10 @@ export function WorkoutDetail({ workoutId, fingerprint, onBack }: WorkoutDetailP
       </div>
 
       {/* Ordered route line plus explicit start/end evidence markers. */}
-      {data.gps_route !== null && data.gps_route.coordinates.length > 0 ? (
+      {gpsOption !== null ? (
         <div className="mt-4">
           <p className="mb-2 text-xs font-medium text-gray-500">GPS Route</p>
-          <ReactECharts
-            option={{
-              tooltip: { trigger: 'item' },
-              xAxis: { type: 'value', name: 'Longitude', axisLabel: { fontSize: 10 } },
-              yAxis: { type: 'value', name: 'Latitude', axisLabel: { fontSize: 10 } },
-              series: [
-                {
-                  type: 'line',
-                  data: data.gps_route.coordinates,
-                  showSymbol: false,
-                  lineStyle: { width: 3, color: '#2563eb' },
-                  markPoint: {
-                    data: [
-                      { name: 'Start', coord: data.gps_route.coordinates[0], symbol: 'circle' },
-                      {
-                        name: 'End',
-                        coord: data.gps_route.coordinates[data.gps_route.coordinates.length - 1],
-                        symbol: 'pin',
-                      },
-                    ],
-                  },
-                },
-              ],
-            }}
-            style={{ height: 250 }}
-          />
+          <ReactECharts option={gpsOption} style={{ height: 250 }} />
         </div>
       ) : null}
 

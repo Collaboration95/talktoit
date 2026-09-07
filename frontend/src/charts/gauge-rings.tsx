@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react'
 import { Doughnut } from 'react-chartjs-2'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 
@@ -9,57 +10,54 @@ interface GaugeRingsProps {
   stand: { current: number | null; goal: number | null }
 }
 
-/** Concentric doughnut chart rendering Apple Fitness-style activity rings (R1-04). */
-export function GaugeRings({ energy, exercise, stand }: GaugeRingsProps) {
-  const energyPct = getPct(energy)
-  const exercisePct = getPct(exercise)
-  const standPct = getPct(stand)
+/** Static Chart.js options: hoisted so every render reuses one identity. */
+const RING_OPTIONS = {
+  responsive: true,
+  maintainAspectRatio: true,
+  plugins: {
+    legend: { display: false },
+    tooltip: { enabled: false },
+  },
+}
 
-  const data = {
-    labels: ['Energy (kJ)', 'Exercise (min)', 'Stand (hrs)'],
-    datasets: [
-      {
-        label: 'Energy',
-        data: [energyPct, 100 - energyPct],
-        backgroundColor: ['#ef4444', '#f3f4f6'],
-        borderWidth: 0,
-        circumference: 270,
-        rotation: 225,
-        cutout: '75%',
-      },
-      {
-        label: 'Exercise',
-        data: [exercisePct, 100 - exercisePct],
-        backgroundColor: ['#22c55e', '#f3f4f6'],
-        borderWidth: 0,
-        circumference: 270,
-        rotation: 225,
-        cutout: '60%',
-      },
-      {
-        label: 'Stand',
-        data: [standPct, 100 - standPct],
-        backgroundColor: ['#3b82f6', '#f3f4f6'],
-        borderWidth: 0,
-        circumference: 270,
-        rotation: 225,
-        cutout: '45%',
-      },
-    ],
-  }
+const RING_TRACK_COLOR = '#f3f4f6'
 
-  const options = {
-    responsive: true,
-    maintainAspectRatio: true,
-    plugins: {
-      legend: { display: false },
-      tooltip: { enabled: false },
-    },
+function ringDataset(label: string, pct: number, color: string, cutout: string) {
+  return {
+    label,
+    data: [pct, 100 - pct],
+    backgroundColor: [color, RING_TRACK_COLOR],
+    borderWidth: 0,
+    circumference: 270,
+    rotation: 225,
+    cutout,
   }
+}
+
+/** Concentric doughnut chart rendering Apple Fitness-style activity rings (R1-04).
+ * Memoized on the six ring primitives so fresh parent object literals don't
+ * force a Chart.js re-render. */
+export const GaugeRings = memo(function GaugeRings({ energy, exercise, stand }: GaugeRingsProps) {
+  const { current: energyCurrent, goal: energyGoal } = energy
+  const { current: exerciseCurrent, goal: exerciseGoal } = exercise
+  const { current: standCurrent, goal: standGoal } = stand
+  const data = useMemo(() => {
+    const energyPct = getPct({ current: energyCurrent, goal: energyGoal })
+    const exercisePct = getPct({ current: exerciseCurrent, goal: exerciseGoal })
+    const standPct = getPct({ current: standCurrent, goal: standGoal })
+    return {
+      labels: ['Energy (kJ)', 'Exercise (min)', 'Stand (hrs)'],
+      datasets: [
+        ringDataset('Energy', energyPct, '#ef4444', '75%'),
+        ringDataset('Exercise', exercisePct, '#22c55e', '60%'),
+        ringDataset('Stand', standPct, '#3b82f6', '45%'),
+      ],
+    }
+  }, [energyCurrent, energyGoal, exerciseCurrent, exerciseGoal, standCurrent, standGoal])
 
   return (
     <div className="mx-auto max-w-[200px]">
-      <Doughnut data={data} options={options} />
+      <Doughnut data={data} options={RING_OPTIONS} />
       <div className="mt-2 flex justify-center gap-4 text-xs">
         <RingLabel color="#ef4444" label="Energy" value={fmtValue(energy)} />
         <RingLabel color="#22c55e" label="Exercise" value={fmtValue(exercise)} />
@@ -67,7 +65,7 @@ export function GaugeRings({ energy, exercise, stand }: GaugeRingsProps) {
       </div>
     </div>
   )
-}
+})
 
 function RingLabel({ color, label, value }: { color: string; label: string; value: string }) {
   return (

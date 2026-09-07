@@ -17,6 +17,7 @@ from app.analytics.registry import (
     execute_metric_trend,
     execute_workout_collection,
 )
+from app.api.deps import get_app_state_repository
 from app.db.aggregations import (
     DEFAULT_TZ,
     bucket_key,
@@ -25,7 +26,14 @@ from app.db.aggregations import (
     utc_bounds,
 )
 from app.db.connection import connect
-from app.db.data_profile import get_data_profile
+from app.db.dashboard_cache import (
+    CapabilitiesGlobal,
+    DashboardContext,
+    get_cached_capabilities_global,
+    put_cached_capabilities_global,
+    resolve_dashboard_context,
+)
+from app.db.data_profile import DataProfile
 from app.db.migrate import table_has_column
 from app.ingest.gpx import parse_gpx_route
 from app.models.dashboard import (
@@ -110,17 +118,10 @@ WHERE type = 'HKCategoryTypeIdentifierSleepAnalysis'
 ORDER BY start_date
 """
 
-_SQL_CAPABILITIES_RECORDS = "SELECT DISTINCT type FROM records"
-
 _SQL_CAPABILITIES_RECORD_HEALTH = """
 SELECT type, COUNT(*) AS row_count, COUNT(value) AS numeric_count, COUNT(text_value) AS text_count
 FROM records
 GROUP BY type
-"""
-
-_SQL_CAPABILITIES_RECORDS_IN_WINDOW = """
-SELECT DISTINCT type FROM records
-WHERE start_date >= ? AND start_date < ?
 """
 
 _SQL_CAPABILITIES_RECORD_HEALTH_IN_WINDOW = """
@@ -231,7 +232,7 @@ def _get_conn() -> Generator[duckdb.DuckDBPyConnection, None, None]:
 
 
 def _resolve_window(
-    conn: duckdb.DuckDBPyConnection,
+    profile: DataProfile,
     start: date | None,
     end: date | None,
     days: int,
@@ -242,7 +243,7 @@ def _resolve_window(
     empty future buckets after an export becomes stale. Explicit dates still
     take precedence for API consumers and tests.
     """
-    end_date = end or get_data_profile(conn).latest_date
+    end_date = end or profile.latest_date
     end_date = end_date or date.today()
     start_date = start or end_date - timedelta(days=days - 1)
     if start_date > end_date:
@@ -267,7 +268,7 @@ def _workout_fingerprint(
 
 
 def _resource_metadata(
-    conn: duckdb.DuckDBPyConnection,
+    context: DashboardContext,
     start_date: date | None,
     end_date: date | None,
     started_at: float,
@@ -275,8 +276,7 @@ def _resource_metadata(
     panel: str,
 ) -> DashboardResource:
     """Build safe panel metadata without exposing local health observations."""
-    profile = get_data_profile(conn)
-    active = AppStateRepository().get_active()
+    active = context.active
     state = "success" if has_data else "empty"
     duration_ms = round((time.perf_counter() - started_at) * 1000)
     safe_record(
@@ -292,8 +292,12 @@ def _resource_metadata(
         dataset_version_id=active.id if active else None,
         effective_start=start_date.isoformat() if start_date else None,
         effective_end=end_date.isoformat() if end_date else None,
-        coverage_start=profile.first_date.isoformat() if profile.first_date else None,
-        coverage_end=profile.latest_date.isoformat() if profile.latest_date else None,
+        coverage_start=context.profile.first_date.isoformat()
+        if context.profile.first_date
+        else None,
+        coverage_end=context.profile.latest_date.isoformat()
+        if context.profile.latest_date
+        else None,
         generated_at=datetime.now(UTC).isoformat(),
         duration_ms=duration_ms,
     )
@@ -309,10 +313,12 @@ def get_summary(
     start: date | None = None,
     end: date | None = None,
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
+    repo: AppStateRepository | None = Depends(get_app_state_repository),  # noqa: B008
 ) -> ActivitySummaryResponse:
     """Return activity ring data for a date range (default: last 7 days)."""
     started_at = time.perf_counter()
-    start_date, end_date = _resolve_window(conn, start, end, days=7)
+    context = resolve_dashboard_context(conn, repo)
+    start_date, end_date = _resolve_window(context.profile, start, end, days=7)
 
     rows = execute_activity_summary(conn, {"start": start_date, "end": end_date})
 
@@ -330,7 +336,9 @@ def get_summary(
     ]
     return ActivitySummaryResponse(
         days=days,
-        resource=_resource_metadata(conn, start_date, end_date, started_at, bool(days), "summary"),
+        resource=_resource_metadata(
+            context, start_date, end_date, started_at, bool(days), "summary"
+        ),
     )
 
 
@@ -345,10 +353,12 @@ def get_workouts(
     cursor: str | None = Query(default=None, max_length=80),
     limit: int = Query(default=50, ge=1, le=100),
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
+    repo: AppStateRepository | None = Depends(get_app_state_repository),  # noqa: B008
 ) -> WorkoutsResponse:
     """Return workouts for a date range (default: latest 30 local-data days)."""
     started_at = time.perf_counter()
-    start_date, end_date = _resolve_window(conn, start, end, days=30)
+    context = resolve_dashboard_context(conn, repo)
+    start_date, end_date = _resolve_window(context.profile, start, end, days=30)
 
     try:
         rows = execute_workout_collection(
@@ -405,7 +415,7 @@ def get_workouts(
         effective_start=start_date.isoformat(),
         effective_end=end_date.isoformat(),
         resource=_resource_metadata(
-            conn, start_date, end_date, started_at, bool(workouts), "workouts"
+            context, start_date, end_date, started_at, bool(workouts), "workouts"
         ),
     )
 
@@ -416,15 +426,17 @@ def get_steps(
     start: date | None = None,
     end: date | None = None,
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
+    repo: AppStateRepository | None = Depends(get_app_state_repository),  # noqa: B008
 ) -> TrendResponse:
     """Return daily step count trend (default: latest 30 local-data days)."""
     started_at = time.perf_counter()
-    start_date, end_date = _resolve_window(conn, start, end, days=30)
+    context = resolve_dashboard_context(conn, repo)
+    start_date, end_date = _resolve_window(context.profile, start, end, days=30)
     response = _build_trend(
         conn, "HKQuantityTypeIdentifierStepCount", granularity, start_date, end_date, "sum"
     )
     response.resource = _resource_metadata(
-        conn,
+        context,
         start_date,
         end_date,
         started_at,
@@ -440,15 +452,17 @@ def get_heart(
     start: date | None = None,
     end: date | None = None,
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
+    repo: AppStateRepository | None = Depends(get_app_state_repository),  # noqa: B008
 ) -> TrendResponse:
     """Return weekly resting HR trend (default: latest 90 local-data days)."""
     started_at = time.perf_counter()
-    start_date, end_date = _resolve_window(conn, start, end, days=90)
+    context = resolve_dashboard_context(conn, repo)
+    start_date, end_date = _resolve_window(context.profile, start, end, days=90)
     response = _build_trend(
         conn, "HKQuantityTypeIdentifierRestingHeartRate", granularity, start_date, end_date, "avg"
     )
     response.resource = _resource_metadata(
-        conn,
+        context,
         start_date,
         end_date,
         started_at,
@@ -464,10 +478,12 @@ def get_sleep(
     start: date | None = None,
     end: date | None = None,
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
+    repo: AppStateRepository | None = Depends(get_app_state_repository),  # noqa: B008
 ) -> TrendResponse:
     """Return daily sleep duration trend (default: latest 30 local-data days)."""
     started_at = time.perf_counter()
-    start_date, end_date = _resolve_window(conn, start, end, days=30)
+    context = resolve_dashboard_context(conn, repo)
+    start_date, end_date = _resolve_window(context.profile, start, end, days=30)
 
     utc_start, utc_end = utc_bounds(start_date, end_date, DEFAULT_TZ)
     rows = conn.execute(_SQL_SLEEP_RECORDS, [utc_start, utc_end]).fetchall()
@@ -477,11 +493,10 @@ def get_sleep(
     # double-counts sleep. Merge intervals instead to report elapsed time.
     bucket_intervals: dict[str, list[tuple[datetime, datetime]]] = {}
     for start_dt_utc, end_dt_utc in rows:
-        local_dt = to_local_dt(start_dt_utc, DEFAULT_TZ)
-        key = bucket_key(local_dt.date(), granularity)  # type: ignore[arg-type]
-        bucket_intervals.setdefault(key, []).append(
-            (to_local_dt(start_dt_utc, DEFAULT_TZ), to_local_dt(end_dt_utc, DEFAULT_TZ))
-        )
+        local_start = to_local_dt(start_dt_utc, DEFAULT_TZ)
+        local_end = to_local_dt(end_dt_utc, DEFAULT_TZ)
+        key = bucket_key(local_start.date(), granularity)  # type: ignore[arg-type]
+        bucket_intervals.setdefault(key, []).append((local_start, local_end))
 
     bucket_sums: dict[str, float] = {}
     for key, intervals in bucket_intervals.items():
@@ -505,7 +520,7 @@ def get_sleep(
         granularity=granularity,
         series=series,
         resource=_resource_metadata(
-            conn, start_date, end_date, started_at, bool(bucket_sums), "sleep"
+            context, start_date, end_date, started_at, bool(bucket_sums), "sleep"
         ),
     )
 
@@ -515,10 +530,12 @@ def get_sleep_stages(
     start: date | None = None,
     end: date | None = None,
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
+    repo: AppStateRepository | None = Depends(get_app_state_repository),  # noqa: B008
 ) -> SleepStagesResponse:
     """Return local measured sleep stage durations without summing overlaps."""
     started_at = time.perf_counter()
-    start_date, end_date = _resolve_window(conn, start, end, days=30)
+    context = resolve_dashboard_context(conn, repo)
+    start_date, end_date = _resolve_window(context.profile, start, end, days=30)
     utc_start, utc_end = utc_bounds(start_date, end_date, DEFAULT_TZ)
     try:
         rows = conn.execute(_SQL_SLEEP_STAGE_RECORDS, [utc_start, utc_end]).fetchall()
@@ -551,7 +568,7 @@ def get_sleep_stages(
             stage_data_available=False,
             message="Sleep stage labels are not available in this imported data.",
             resource=_resource_metadata(
-                conn, start_date, end_date, started_at, bool(asleep), "sleep_stages"
+                context, start_date, end_date, started_at, bool(asleep), "sleep_stages"
             ),
         )
     if sum(stages.values()) > total_asleep_hours:
@@ -564,7 +581,7 @@ def get_sleep_stages(
                 "stage-duration partition."
             ),
             resource=_resource_metadata(
-                conn, start_date, end_date, started_at, bool(asleep), "sleep_stages"
+                context, start_date, end_date, started_at, bool(asleep), "sleep_stages"
             ),
         )
     return SleepStagesResponse(
@@ -575,7 +592,9 @@ def get_sleep_stages(
             "Stage durations are measured source observations; overlapping intervals are unioned "
             "locally."
         ),
-        resource=_resource_metadata(conn, start_date, end_date, started_at, True, "sleep_stages"),
+        resource=_resource_metadata(
+            context, start_date, end_date, started_at, True, "sleep_stages"
+        ),
     )
 
 
@@ -584,40 +603,46 @@ def get_capabilities(
     start: date | None = None,
     end: date | None = None,
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
+    repo: AppStateRepository | None = Depends(get_app_state_repository),  # noqa: B008
 ) -> CapabilitiesResponse:
     """Return catalog availability, including the requested dashboard range."""
     started_at = time.perf_counter()
-    rows = conn.execute(_SQL_CAPABILITIES_RECORDS).fetchall()
-    present_types = {row[0] for row in rows}
+    context = resolve_dashboard_context(conn, repo)
     text_values_available = table_has_column(conn, "records", "text_value")
-    record_health = {
-        row[0]: {"rows": row[1], "numeric": row[2], "text": row[3]}
-        for row in conn.execute(
-            _SQL_CAPABILITIES_RECORD_HEALTH
-            if text_values_available
-            else _SQL_CAPABILITIES_RECORD_HEALTH_LEGACY
-        ).fetchall()
-    }
-
-    counts = {
-        "workouts": (conn.execute(_SQL_CAPABILITIES_WORKOUTS).fetchone() or [0])[0],
-        "activity_summaries": (
-            conn.execute(_SQL_CAPABILITIES_ACTIVITY_SUMMARIES).fetchone() or [0]
-        )[0],
-    }
+    dataset_id = context.active.id if context.active else None
+    cached = get_cached_capabilities_global(dataset_id, text_values_available)
+    if cached is not None:
+        record_health = cached.record_health
+        counts = cached.counts
+    else:
+        record_health = {
+            row[0]: {"rows": row[1], "numeric": row[2], "text": row[3]}
+            for row in conn.execute(
+                _SQL_CAPABILITIES_RECORD_HEALTH
+                if text_values_available
+                else _SQL_CAPABILITIES_RECORD_HEALTH_LEGACY
+            ).fetchall()
+        }
+        counts = {
+            "workouts": (conn.execute(_SQL_CAPABILITIES_WORKOUTS).fetchone() or [0])[0],
+            "activity_summaries": (
+                conn.execute(_SQL_CAPABILITIES_ACTIVITY_SUMMARIES).fetchone() or [0]
+            )[0],
+        }
+        if dataset_id is not None:
+            put_cached_capabilities_global(
+                dataset_id,
+                text_values_available,
+                CapabilitiesGlobal(record_health=record_health, counts=counts),
+            )
+    present_types = set(record_health.keys())
     resource_start: date | None = None
     resource_end: date | None = None
 
     if start is not None or end is not None:
-        start_date, end_date = _resolve_window(conn, start, end, days=30)
+        start_date, end_date = _resolve_window(context.profile, start, end, days=30)
         resource_start, resource_end = start_date, end_date
         utc_start, utc_end = utc_bounds(start_date, end_date, DEFAULT_TZ)
-        scoped_record_types = {
-            row[0]
-            for row in conn.execute(
-                _SQL_CAPABILITIES_RECORDS_IN_WINDOW, [utc_start, utc_end]
-            ).fetchall()
-        }
         scoped_record_health = {
             row[0]: {"rows": row[1], "numeric": row[2], "text": row[3]}
             for row in conn.execute(
@@ -627,6 +652,7 @@ def get_capabilities(
                 [utc_start, utc_end],
             ).fetchall()
         }
+        scoped_record_types = set(scoped_record_health.keys())
         scoped_counts = {
             "workouts": (
                 conn.execute(_SQL_CAPABILITIES_WORKOUTS_IN_WINDOW, [utc_start, utc_end]).fetchone()
@@ -682,7 +708,7 @@ def get_capabilities(
     return CapabilitiesResponse(
         capabilities=capabilities,
         resource=_resource_metadata(
-            conn,
+            context,
             resource_start,
             resource_end,
             started_at,
@@ -744,9 +770,11 @@ def get_workout_detail(
     workout_id: int = Path(ge=1),
     fingerprint: str | None = Query(default=None, pattern="^[a-f0-9]{16}$"),
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
+    repo: AppStateRepository | None = Depends(get_app_state_repository),  # noqa: B008
 ) -> WorkoutDetail:
     """Return full detail for a single workout, including GPS and metadata."""
     started_at = time.perf_counter()
+    context = resolve_dashboard_context(conn, repo)
     row = conn.execute(_SQL_WORKOUT_DETAIL, [workout_id]).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Workout not found")
@@ -806,5 +834,5 @@ def get_workout_detail(
         gps_route=gps_route,
         metadata=metadata,
         route=route,
-        resource=_resource_metadata(conn, None, None, started_at, True, "workout_detail"),
+        resource=_resource_metadata(context, None, None, started_at, True, "workout_detail"),
     )

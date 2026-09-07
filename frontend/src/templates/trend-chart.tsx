@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { TrendChartData } from '@/types/templates'
 import { TrendLine } from '@/charts/trend-line'
 
@@ -7,7 +8,7 @@ interface TrendChartProps {
 }
 
 /** Renders a metric trend over time as a line chart. */
-export function TrendChart({ data, narrative }: TrendChartProps) {
+export const TrendChart = memo(function TrendChart({ data, narrative }: TrendChartProps) {
   if (data.series.length === 0) {
     return (
       <div className="rounded-xl border border-gray-200 bg-white p-6">
@@ -27,4 +28,4 @@ export function TrendChart({ data, narrative }: TrendChartProps) {
       />
     </div>
   )
-}
+})
