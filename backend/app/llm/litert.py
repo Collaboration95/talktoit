@@ -31,6 +31,16 @@ from app.state.app_state import (
 LITERT_DEFAULT_HOST = "127.0.0.1"
 LITERT_DEFAULT_PORT = 9379
 
+# Env flags for the managed local-LLM lifecycle (GH-44/45/46). Autostart is on
+# by default because `local` is the default provider; set TTI_LOCAL_AUTOSTART=0
+# for manual Start/Stop only. TTI_LOCAL_STOP_ON_EXIT=1 opts into stopping the
+# owned server when the backend exits (default leaves it warm across restarts).
+AUTOSTART_ENV_VAR = "TTI_LOCAL_AUTOSTART"
+AUTOSTART_TIMEOUT_ENV_VAR = "TTI_LOCAL_AUTOSTART_TIMEOUT_SECONDS"
+STOP_ON_EXIT_ENV_VAR = "TTI_LOCAL_STOP_ON_EXIT"
+AUTOSTART_TIMEOUT_DEFAULT_SECONDS = 3.0
+AUTOSTART_TIMEOUT_MAX_SECONDS = 30.0
+
 
 def _litert_base_url() -> str:
     """Return the LiteRT base URL (OpenAI-compatible ``/v1``)."""
@@ -167,21 +177,26 @@ def health(timeout_seconds: float = 2.0) -> dict[str, object]:
 
 
 def _build_serve_command(model: str | None = None) -> list[str]:
-    """Build the ``litert-lm serve`` command."""
+    """Build the ``litert-lm serve`` command.
+
+    ``litert-lm serve`` selects the model from its own config (the model
+    imported via ``litert-lm import``); it takes no ``--model`` flag, so the
+    default command only pins host/port. The ``model`` argument is kept for
+    backward compatibility and ignored. Use ``LITERT_SERVE_CMD`` (or
+    ``--config`` inside it) to serve a non-default model.
+    """
     override = _litert_serve_cmd()
     if override is not None:
         return override
     binary = resolve_litert_binary()
     if binary is None:
         return []
-    model = model or _litert_model()
-    # Default command: litert-lm serve --model <model> --host 127.0.0.1 --port 9379
+    del model  # model selection lives in the litert-lm config, not CLI flags
+    # Default command: litert-lm serve --host 127.0.0.1 --port 9379
     # If the LiteRT binary accepts different flags, the user can override via LITERT_SERVE_CMD.
     return [
         binary,
         "serve",
-        "--model",
-        model,
         "--host",
         LITERT_DEFAULT_HOST,
         "--port",
@@ -271,8 +286,14 @@ def start(
         last_health = health(timeout_seconds=1.0)
         if last_health.get("ok"):
             return {"started": True, **status(), "health": last_health}
-        # If the process died early, surface it.
+        # If the process died early, surface it and drop the pidfile we just
+        # wrote so the next caller is not misled by a stale pid.
         if proc.poll() is not None:
+            try:
+                if pidfile.read_text().strip() == str(proc.pid):
+                    pidfile.unlink()
+            except OSError:
+                pass
             return {
                 "started": False,
                 "error": f"litert-lm exited with code {proc.returncode}",
@@ -336,3 +357,48 @@ def stop(timeout_seconds: float = 5.0) -> dict[str, object]:
     except OSError:
         pass
     return {"stopped": True, **status()}
+
+
+def autostart_enabled() -> bool:
+    """Return whether backend startup may start the owned server (default on)."""
+    raw = os.environ.get(AUTOSTART_ENV_VAR, "1").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+def stop_on_exit() -> bool:
+    """Return whether backend shutdown should stop the owned server (default off)."""
+    raw = os.environ.get(STOP_ON_EXIT_ENV_VAR, "0").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def autostart_timeout_seconds() -> float:
+    """Return the bounded startup health-wait, clamped to a safe range."""
+    try:
+        value = float(
+            os.environ.get(AUTOSTART_TIMEOUT_ENV_VAR, str(AUTOSTART_TIMEOUT_DEFAULT_SECONDS))
+        )
+    except ValueError:
+        return AUTOSTART_TIMEOUT_DEFAULT_SECONDS
+    if value <= 0:
+        return AUTOSTART_TIMEOUT_DEFAULT_SECONDS
+    return min(value, AUTOSTART_TIMEOUT_MAX_SECONDS)
+
+
+def ensure_running(wait_seconds: float | None = None) -> dict[str, object]:
+    """Start the owned server unless it is already running or disabled.
+
+    Never raises: a missing binary, a disabled flag, or a spawn failure is
+    encoded in the returned dict so startup/CLI callers can log it and carry
+    on with degraded (deterministic-only) answers.
+    """
+    try:
+        current = status()
+        if current.get("running"):
+            return {"started": False, "already_running": True, **status()}
+        if not autostart_enabled():
+            return {"started": False, "reason": "autostart disabled", **status()}
+        return start(
+            wait_seconds=wait_seconds if wait_seconds is not None else autostart_timeout_seconds()
+        )
+    except Exception as exc:
+        return {"started": False, "error": str(exc), **status()}

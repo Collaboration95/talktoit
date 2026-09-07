@@ -26,11 +26,11 @@ class ProviderUnavailableError(RuntimeError):
 
 
 def provider_from_env() -> Provider:
-    """Read the persisted provider choice, defaulting to Groq for backward compat."""
+    """Read the persisted provider choice, defaulting to local (LiteRT-LM)."""
     raw = os.environ.get("TTI_PROVIDER", os.environ.get("TTI_LLM_PROVIDER", "")).strip().lower()
     if raw in {"local", "groq"}:
         return raw  # type: ignore[return-value]
-    return "groq"
+    return "local"
 
 
 def provider_mode_from_env() -> ProviderMode:
@@ -219,7 +219,7 @@ def _make_client_for_provider(provider: Provider, base_url: str | None) -> opena
 def _gateway_cache_key(config: Mapping[str, object]) -> tuple[str, str, str, str]:
     """Return a cache key that busts when the provider identity changes."""
     return (
-        str(config.get("provider", "groq")),
+        str(config.get("provider", "local")),
         str(config.get("mode", "local_only")),
         str(config.get("model", DEFAULT_MODEL)),
         str(config.get("base_url", "")),
@@ -240,9 +240,9 @@ def get_gateway_for_config(
     cached = _gateway_cache.get(key)
     if cached is not None:
         return cached
-    provider = str(config.get("provider", "groq"))  # type: ignore[assignment]
+    provider = str(config.get("provider", "local"))  # type: ignore[assignment]
     if provider not in {"local", "groq"}:
-        provider = "groq"
+        provider = "local"
     mode = str(config.get("mode", "local_only"))  # type: ignore[assignment]
     if mode not in {"local_only", "remote_planning", "remote_planning_and_narration"}:
         mode = "local_only"

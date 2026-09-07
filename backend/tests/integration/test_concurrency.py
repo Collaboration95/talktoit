@@ -67,6 +67,8 @@ async def test_parallel_chat_and_dashboard_shared_sqlite_no_lock(
 
     monkeypatch.setenv("TTI_DB_PATH", str(db_file))
     monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
+    # Hermetic lifespan: autostart is covered in test_litert_lifecycle.py.
+    monkeypatch.setenv("TTI_LOCAL_AUTOSTART", "0")
 
     async def run_dashboard() -> list[int]:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

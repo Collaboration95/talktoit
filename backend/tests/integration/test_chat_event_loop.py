@@ -44,6 +44,8 @@ async def test_chat_offloads_db_work_and_keeps_the_event_loop_live(
     monkeypatch.setenv("TTI_DB_PATH", str(db_file))
     monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
     monkeypatch.setenv("TTI_PROVIDER_MODE", "local_only")
+    # Hermetic lifespan: autostart is covered in test_litert_lifecycle.py.
+    monkeypatch.setenv("TTI_LOCAL_AUTOSTART", "0")
 
     loop_thread_id = threading.get_ident()
     real_dispatch = orchestrator_module.dispatch_tool

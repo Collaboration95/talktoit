@@ -3,6 +3,8 @@
 Exposes the health-check endpoint and mounts the API router.
 """
 
+import asyncio
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -26,6 +28,101 @@ from app.state.app_state import APP_STATE_SCHEMA_VERSION, AppStateRepository
 from app.state.diagnostics import DiagnosticsRepository, safe_record
 
 APP_VERSION = "0.1.0"
+
+_logger = logging.getLogger(__name__)
+
+
+def _bool_text(value: object) -> str:
+    """Render one diagnostics metadata boolean without leaking detail."""
+    return "true" if value else "false"
+
+
+async def _maybe_autostart_litert(app: FastAPI) -> None:
+    """Ensure the owned LiteRT server when the effective provider is local.
+
+    Best-effort and never fatal: a missing binary, a disabled flag, or a
+    spawn failure is logged and recorded as a diagnostics event, and startup
+    always succeeds. Recognized chat questions keep working through the
+    deterministic local planner either way.
+    """
+    try:
+        from app.llm import litert
+
+        repo = getattr(app.state, "app_state_repository", None)
+        provider: object = None
+        if repo is not None:
+            try:
+                provider = repo.get_provider_config().get("provider")
+            except Exception:
+                _logger.debug("lifespan: provider config read failed", exc_info=True)
+        if provider != "local":
+            return
+        if not litert.autostart_enabled():
+            _logger.info("lifespan: LiteRT autostart disabled via TTI_LOCAL_AUTOSTART")
+            safe_record(
+                app.state.diagnostics_repository,
+                "app",
+                "litert_autostart",
+                status="degraded",
+                meta={"started": "false", "running": "false", "error_class": "autostart_disabled"},
+            )
+            return
+        result = await asyncio.to_thread(litert.ensure_running)
+        running = bool(result.get("running"))
+        healthy = "false"
+        if running:
+            try:
+                health = await asyncio.to_thread(litert.health, 1.0)
+                healthy = _bool_text(health.get("ok"))
+            except Exception:
+                _logger.debug("lifespan: litert health probe failed", exc_info=True)
+        error_class = ""
+        if not running:
+            if result.get("reason") == "autostart disabled":
+                error_class = "autostart_disabled"
+            elif not result.get("binary_available", True):
+                error_class = "binary_missing"
+            elif result.get("error"):
+                error_class = "start_failed"
+            else:
+                error_class = "not_running"
+        safe_record(
+            getattr(app.state, "diagnostics_repository", None),
+            "app",
+            "litert_autostart",
+            status="ok" if running else "degraded",
+            meta={
+                "started": _bool_text(result.get("started")),
+                "already_running": _bool_text(result.get("already_running")),
+                "running": _bool_text(running),
+                "binary_available": _bool_text(result.get("binary_available")),
+                "healthy": healthy,
+                "error_class": error_class,
+            },
+        )
+        if running:
+            _logger.info("lifespan: LiteRT local server running")
+        else:
+            _logger.warning(
+                "lifespan: LiteRT local server not running (%s)", error_class or "unknown"
+            )
+    except Exception:
+        _logger.debug("lifespan: litert autostart failed", exc_info=True)
+
+
+def _maybe_stop_litert_on_exit() -> None:
+    """Stop the owned LiteRT server only when TTI_LOCAL_STOP_ON_EXIT is set.
+
+    The default leaves the detached server running so backend restarts keep
+    the model warm. Only the pid recorded in our own pidfile is ever stopped.
+    """
+    try:
+        from app.llm import litert
+
+        if litert.stop_on_exit():
+            litert.stop()
+    except Exception:
+        _logger.debug("lifespan: litert stop on exit failed", exc_info=True)
 
 
 @asynccontextmanager
@@ -53,9 +150,11 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
             "app_state_version": str(APP_STATE_SCHEMA_VERSION),
         },
     )
+    await _maybe_autostart_litert(app)
     try:
         yield
     finally:
+        _maybe_stop_litert_on_exit()
         try:
             from app.llm.provider_gateway import aclose_all_gateways
 

@@ -54,7 +54,7 @@ def _provider_defaults() -> dict[str, str]:
         os.environ.get("TTI_PROVIDER", os.environ.get("TTI_LLM_PROVIDER", "")).strip().lower()
     )
     if provider not in _PROVIDER_TYPES:
-        provider = "groq"
+        provider = "local"
     mode = os.environ.get("TTI_PROVIDER_MODE", "local_only").strip().lower()
     if mode not in _PROVIDER_MODES:
         mode = "local_only"

@@ -26,7 +26,7 @@ def _client(content: str = "planned") -> MagicMock:
 
 async def test_local_only_mode_never_calls_provider() -> None:
     client = _client()
-    gateway = ProviderGateway(client, mode="local_only")
+    gateway = ProviderGateway(client, mode="local_only", provider="groq")
     with pytest.raises(ProviderUnavailableError):
         await gateway.complete("planning", [{"role": "user", "content": "test"}])
     client.chat.completions.create.assert_not_awaited()
@@ -34,7 +34,7 @@ async def test_local_only_mode_never_calls_provider() -> None:
 
 async def test_planning_mode_allows_planning_but_not_narration() -> None:
     client = _client()
-    gateway = ProviderGateway(client, mode="remote_planning")
+    gateway = ProviderGateway(client, mode="remote_planning", provider="groq")
     assert await gateway.complete("planning", [{"role": "user", "content": "test"}]) == "planned"
     with pytest.raises(ProviderUnavailableError):
         await gateway.complete("narration", [{"role": "user", "content": "test"}])
@@ -54,6 +54,7 @@ async def test_gateway_retries_transient_failures_with_bounded_backoff() -> None
     gateway = ProviderGateway(
         client,
         mode="remote_planning",
+        provider="groq",
         max_retries=1,
         retry_backoff_seconds=0.1,
         sleep=record_sleep,
@@ -72,6 +73,7 @@ async def test_gateway_opens_circuit_after_repeated_transient_failures() -> None
     gateway = ProviderGateway(
         client,
         mode="remote_planning",
+        provider="groq",
         max_retries=0,
         circuit_failure_threshold=2,
         circuit_reset_seconds=10.0,
@@ -98,6 +100,19 @@ async def test_gateway_closes_its_owned_client() -> None:
     gateway = ProviderGateway(client)
     await gateway.aclose()
     client.close.assert_awaited_once()
+
+
+async def test_local_provider_permits_both_stages_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no env set, the gateway is local and both stages stay on-device."""
+    monkeypatch.delenv("TTI_PROVIDER", raising=False)
+    monkeypatch.delenv("TTI_LLM_PROVIDER", raising=False)
+    client = _client("answer")
+    gateway = ProviderGateway(client)
+    assert gateway.provider == "local"
+    assert await gateway.complete("planning", [{"role": "user", "content": "test"}]) == "answer"
+    assert await gateway.complete("narration", [{"role": "user", "content": "test"}]) == "answer"
 
 
 def test_invalid_provider_mode_falls_back_to_local_only(monkeypatch: pytest.MonkeyPatch) -> None:

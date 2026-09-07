@@ -15,12 +15,32 @@ def main(argv: list[str] | None = None) -> int:
         "--json", action="store_true", help="Emit JSON (the default output format)."
     )
     parser.parse_args(argv)
-    active = AppStateRepository().get_active()
+    repository = AppStateRepository()
+    active = repository.get_active()
+    try:
+        provider = repository.get_provider_config().get("provider")
+    except Exception:
+        provider = None
+    litert_status: dict[str, object] | None = None
+    if provider == "local":
+        try:
+            from app.llm.litert import status as litert_status_fn
+
+            current = litert_status_fn()
+            litert_status = {
+                "running": bool(current.get("running")),
+                "binary_available": bool(current.get("binary_available")),
+                "model": current.get("model"),
+            }
+        except Exception:
+            litert_status = {"running": False, "binary_available": False}
     print(
         json.dumps(
             {
                 "readiness": "ready" if active else "no_active_import",
                 "dataset": active.public_dict() if active else None,
+                "provider": provider,
+                "litert": litert_status,
             }
         )
     )

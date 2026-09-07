@@ -61,7 +61,20 @@ _ALLOWED_META_KEYS: Mapping[str, frozenset[str]] = {
     "planner": frozenset({"mode", "model", "error_class"}),
     "narrator": frozenset({"mode", "model", "error_class"}),
     "panel": frozenset({"panel_name", "state"}),
-    "app": frozenset({"app_version", "duckdb_version", "schema_version", "app_state_version"}),
+    "app": frozenset(
+        {
+            "app_version",
+            "duckdb_version",
+            "schema_version",
+            "app_state_version",
+            "started",
+            "already_running",
+            "running",
+            "binary_available",
+            "healthy",
+            "error_class",
+        }
+    ),
     "benchmark": frozenset({"benchmark_name", "baseline_ms", "threshold_ms"}),
 }
 

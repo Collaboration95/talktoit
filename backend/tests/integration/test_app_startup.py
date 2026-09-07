@@ -17,6 +17,9 @@ from app.state.diagnostics import DiagnosticsRepository
 async def _startup_event_meta(monkeypatch, tmp_path) -> dict[str, str]:
     """Run the real lifespan once against an isolated app-state store."""
     monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
+    # Keep contract tests hermetic: never spawn the owned LiteRT server here
+    # (covered explicitly in tests/unit/test_litert_lifecycle.py).
+    monkeypatch.setenv("TTI_LOCAL_AUTOSTART", "0")
     app = create_app()
     async with app.router.lifespan_context(app):
         for event in DiagnosticsRepository().recent(limit=100, category="app"):
