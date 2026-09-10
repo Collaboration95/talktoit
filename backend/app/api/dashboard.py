@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import time
 from collections.abc import Generator
 from datetime import UTC, date, datetime, timedelta
+from itertools import pairwise
 from typing import Annotated, Literal
 
 import duckdb
@@ -35,6 +37,7 @@ from app.db.dashboard_cache import (
 )
 from app.db.data_profile import DataProfile
 from app.db.migrate import table_has_column
+from app.db.queries import get_training_volume
 from app.ingest.gpx import parse_gpx_route
 from app.models.dashboard import (
     ActivityRingDay,
@@ -43,11 +46,17 @@ from app.models.dashboard import (
     CapabilityFlag,
     DashboardResource,
     KeyValuePair,
+    RouteBounds,
     SleepStagesResponse,
+    TrainingVolumeActivity,
+    TrainingVolumeBucket,
+    TrainingVolumeResponse,
+    TrainingVolumeTotals,
     TrendPoint,
     TrendResponse,
     WorkoutDetail,
     WorkoutRouteState,
+    WorkoutRouteSummary,
     WorkoutsResponse,
     WorkoutSummary,
 )
@@ -267,6 +276,43 @@ def _workout_fingerprint(
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
+def _route_summary(route: object) -> WorkoutRouteSummary | None:
+    """Derive local route facts without exposing the source file path."""
+    coordinates = getattr(route, "coordinates", None)
+    if not isinstance(coordinates, list) or not coordinates:
+        return None
+    points = [point for point in coordinates if isinstance(point, list) and len(point) >= 2]
+    if not points:
+        return None
+
+    def distance_meters(first: list[float], second: list[float]) -> float:
+        """Return great-circle distance between two [longitude, latitude] points."""
+        lon1, lat1 = map(math.radians, (float(first[0]), float(first[1])))
+        lon2, lat2 = map(math.radians, (float(second[0]), float(second[1])))
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        haversine = (
+            math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+        )
+        return 6_371_008.8 * 2 * math.asin(math.sqrt(haversine))
+
+    total = sum(distance_meters(previous, current) for previous, current in pairwise(points))
+    longitudes = [float(point[0]) for point in points]
+    latitudes = [float(point[1]) for point in points]
+    return WorkoutRouteSummary(
+        point_count=len(points),
+        distance_meters=round(total, 1),
+        start=[float(value) for value in points[0][:2]],
+        end=[float(value) for value in points[-1][:2]],
+        bounds=RouteBounds(
+            min_longitude=min(longitudes),
+            min_latitude=min(latitudes),
+            max_longitude=max(longitudes),
+            max_latitude=max(latitudes),
+        ),
+    )
+
+
 def _resource_metadata(
     context: DashboardContext,
     start_date: date | None,
@@ -416,6 +462,62 @@ def get_workouts(
         effective_end=end_date.isoformat(),
         resource=_resource_metadata(
             context, start_date, end_date, started_at, bool(workouts), "workouts"
+        ),
+    )
+
+
+@router.get("/volume", response_model=TrainingVolumeResponse)
+def get_volume(
+    granularity: Literal["week", "month"] = Query(default="week"),
+    start: date | None = None,
+    end: date | None = None,
+    activity_type: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
+    source: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
+    conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
+    repo: AppStateRepository | None = Depends(get_app_state_repository),  # noqa: B008
+) -> TrainingVolumeResponse:
+    """Return scoped training volume with weekly/monthly and activity breakdowns."""
+    started_at = time.perf_counter()
+    context = resolve_dashboard_context(conn, repo)
+    start_date, end_date = _resolve_window(context.profile, start, end, days=90)
+    result = get_training_volume(
+        conn,
+        start_date,
+        end_date,
+        granularity=granularity,
+        activity_type=activity_type,
+        source=source,
+    )
+    return TrainingVolumeResponse(
+        granularity=result.granularity,
+        totals=TrainingVolumeTotals(
+            sessions=result.totals.sessions,
+            duration_minutes=result.totals.duration_minutes,
+            distance_meters=result.totals.distance_meters,
+            energy_kj=result.totals.energy_kj,
+        ),
+        series=[
+            TrainingVolumeBucket(
+                bucket=item.bucket,
+                sessions=item.sessions,
+                duration_minutes=item.duration_minutes,
+                distance_meters=item.distance_meters,
+                energy_kj=item.energy_kj,
+            )
+            for item in result.series
+        ],
+        by_activity=[
+            TrainingVolumeActivity(
+                activity_type=item.activity_type,
+                sessions=item.sessions,
+                duration_minutes=item.duration_minutes,
+                distance_meters=item.distance_meters,
+                energy_kj=item.energy_kj,
+            )
+            for item in result.by_activity
+        ],
+        resource=_resource_metadata(
+            context, start_date, end_date, started_at, bool(result.series), "volume"
         ),
     )
 
@@ -809,6 +911,7 @@ def get_workout_detail(
 
     # Fetch GPS route if it exists
     gps_route = None
+    route_summary = None
     route = WorkoutRouteState(state="missing", message="No route is available for this workout.")
     route_path_row = conn.execute(_SQL_WORKOUT_ROUTE_PATH, [workout_id]).fetchone()
     if route_path_row is not None and route_path_row[0] is not None:
@@ -816,6 +919,7 @@ def get_workout_detail(
         if gps_route is None:
             route = WorkoutRouteState(state="invalid", message="The saved route could not be read.")
         else:
+            route_summary = _route_summary(gps_route)
             route = WorkoutRouteState(state="available", message="Route data is available.")
 
     return WorkoutDetail(
@@ -834,5 +938,6 @@ def get_workout_detail(
         gps_route=gps_route,
         metadata=metadata,
         route=route,
+        route_summary=route_summary,
         resource=_resource_metadata(context, None, None, started_at, True, "workout_detail"),
     )

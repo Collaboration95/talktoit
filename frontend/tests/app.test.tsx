@@ -77,6 +77,14 @@ describe('App', () => {
       http.get('/api/dashboard/workouts', () =>
         HttpResponse.json({ workouts: [], next_cursor: null }),
       ),
+      http.get('/api/dashboard/volume', () =>
+        HttpResponse.json({
+          granularity: 'week',
+          totals: { sessions: 0, duration_minutes: 0, distance_meters: 0, energy_kj: 0 },
+          series: [],
+          by_activity: [],
+        }),
+      ),
       http.get('/api/dashboard/steps', () =>
         HttpResponse.json({
           metric_label: 'Steps',

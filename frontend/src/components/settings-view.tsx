@@ -7,6 +7,8 @@ import {
   stopLocalLlm,
   updateProvider,
 } from '@/api/settings'
+import { fetchImport, startImport } from '@/api/imports'
+import type { ImportJob } from '@/api/imports'
 import type {
   ClearScope,
   DatasetVersion,
@@ -76,6 +78,10 @@ export function SettingsView() {
   const [providerError, setProviderError] = useState<string | null>(null)
   const [providerSaved, setProviderSaved] = useState(false)
   const [litertBusy, setLitertBusy] = useState<'start' | 'stop' | null>(null)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importJob, setImportJob] = useState<ImportJob | null>(null)
+  const [importBusy, setImportBusy] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
 
   async function load() {
     setState('loading')
@@ -169,6 +175,30 @@ export function SettingsView() {
     }
   }
 
+  async function handleImport() {
+    if (!importFile || importBusy) return
+    setImportBusy(true)
+    setImportError(null)
+    try {
+      let job = await startImport(importFile)
+      setImportJob(job)
+      while (job.state === 'queued' || job.state === 'running') {
+        await new Promise((resolve) => window.setTimeout(resolve, 750))
+        job = await fetchImport(job.id)
+        setImportJob(job)
+      }
+      if (job.state === 'failed') {
+        throw new Error(job.error ?? 'The import failed; your previous dataset was kept.')
+      }
+      setImportFile(null)
+      await load()
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Could not import the export')
+    } finally {
+      setImportBusy(false)
+    }
+  }
+
   if (state === 'loading') {
     return <p className="text-sm text-gray-400 py-4">Loading settings…</p>
   }
@@ -192,6 +222,60 @@ export function SettingsView() {
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
+
+      <Section title="Import Apple Health data">
+        <div className="space-y-3 text-sm text-gray-700">
+          <p className="text-xs text-gray-500">
+            Choose an <code className="rounded bg-gray-50 px-1">export.xml</code> file. It is staged
+            and validated locally before becoming the active dataset; a failed import keeps the
+            previous data available.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="file"
+              accept=".xml,application/xml,text/xml"
+              aria-label="Apple Health export file"
+              disabled={importBusy}
+              onChange={(event) => {
+                setImportFile(event.target.files?.[0] ?? null)
+                setImportError(null)
+              }}
+              className="block max-w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-700"
+            />
+            <button
+              type="button"
+              onClick={() => void handleImport()}
+              disabled={!importFile || importBusy}
+              className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {importBusy ? 'Importing…' : 'Import export'}
+            </button>
+          </div>
+          {importJob && (importBusy || importJob.state !== 'succeeded') ? (
+            <div className="rounded-md border border-gray-200 bg-gray-50 p-3" role="status">
+              <div className="flex items-center justify-between text-xs text-gray-600">
+                <span>{importJob.filename}</span>
+                <span className="capitalize">{importJob.state}</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded bg-gray-200">
+                <div
+                  className="h-full bg-blue-600 transition-all"
+                  style={{ width: `${importJob.progress}%` }}
+                />
+              </div>
+              {importJob.error && <p className="mt-2 text-xs text-red-600">{importJob.error}</p>}
+            </div>
+          ) : null}
+          {importJob?.state === 'succeeded' && importJob.report ? (
+            <p className="text-xs text-green-700">
+              Imported {importJob.report.counts?.['records'] ?? 0} records · coverage{' '}
+              {importJob.report.coverage_start ?? 'unknown'} to{' '}
+              {importJob.report.coverage_end ?? 'unknown'}.
+            </p>
+          ) : null}
+          {importError && <p className="text-xs text-red-600">{importError}</p>}
+        </div>
+      </Section>
 
       <Section title="Dataset">
         {settings.dataset ? (

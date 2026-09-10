@@ -12,6 +12,7 @@ therefore convert local dates to UTC bounds before querying.
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -24,6 +25,8 @@ from app.db.aggregations import (
     compute_direction,
     generate_buckets,
     minutes_from_duration,
+    to_iso_month,
+    to_iso_week,
     to_local_dt,
     utc_bounds,
 )
@@ -245,6 +248,69 @@ WHERE ws.type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
 AND w.start_date >= ? AND w.start_date < ? AND w.activity_type = ?
 """
 
+_SQL_TRAINING_VOLUME = """
+SELECT w.activity_type, w.start_date, w.duration, w.duration_unit, w.source_name,
+    dist.distance_m,
+    energy.energy_kj
+FROM workouts w
+LEFT JOIN (
+    SELECT workout_id,
+        SUM(CASE
+            WHEN LOWER(unit) = 'km' THEN sum * 1000.0
+            WHEN LOWER(unit) IN ('mi', 'mile', 'miles') THEN sum * 1609.344
+            ELSE sum
+        END) AS distance_m
+    FROM workout_statistics
+    WHERE type IN ('HKQuantityTypeIdentifierDistanceWalkingRunning',
+                   'HKQuantityTypeIdentifierDistanceCycling',
+                   'HKQuantityTypeIdentifierDistanceSwimming')
+    GROUP BY workout_id
+) dist ON dist.workout_id = w.id
+LEFT JOIN (
+    SELECT workout_id, SUM(sum) AS energy_kj
+    FROM workout_statistics
+    WHERE type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
+    GROUP BY workout_id
+) energy ON energy.workout_id = w.id
+WHERE w.start_date >= ? AND w.start_date < ?
+  AND (? IS NULL OR w.activity_type = ?)
+  AND (? IS NULL OR w.source_name = ?)
+ORDER BY w.start_date, w.id
+"""
+
+
+@dataclass(frozen=True)
+class TrainingVolumeBucket:
+    """Aggregated training facts for one time bucket."""
+
+    bucket: str
+    sessions: int
+    duration_minutes: float
+    distance_meters: float
+    energy_kj: float
+
+
+@dataclass(frozen=True)
+class TrainingVolumeActivity:
+    """Aggregated training facts for one activity type."""
+
+    activity_type: str
+    sessions: int
+    duration_minutes: float
+    distance_meters: float
+    energy_kj: float
+
+
+@dataclass(frozen=True)
+class TrainingVolumeResult:
+    """Complete training-volume result before API serialization."""
+
+    granularity: Literal["week", "month"]
+    totals: TrainingVolumeBucket
+    series: tuple[TrainingVolumeBucket, ...]
+    by_activity: tuple[TrainingVolumeActivity, ...]
+
+
 # ---------------------------------------------------------------------------
 # Private aliases for backward compat within this module
 # ---------------------------------------------------------------------------
@@ -355,6 +421,89 @@ def get_workout_collection(
         ],
     ).fetchall()
     return rows
+
+
+def get_training_volume(
+    conn: duckdb.DuckDBPyConnection,
+    start: date,
+    end: date,
+    granularity: Literal["week", "month"] = "week",
+    activity_type: str | None = None,
+    source: str | None = None,
+    tz: str = DEFAULT_TZ,
+) -> TrainingVolumeResult:
+    """Aggregate workout volume by time bucket and activity type.
+
+    Duration is normalized to minutes and workout statistics are normalized to
+    metres/kilojoules before aggregation.  Each workout contributes once to a
+    bucket, while distance and energy are sourced from their per-workout
+    aggregate subqueries.
+    """
+    utc_start, utc_end = _utc_bounds(start, end, tz)
+    rows = conn.execute(
+        _SQL_TRAINING_VOLUME,
+        [utc_start, utc_end, activity_type, activity_type, source, source],
+    ).fetchall()
+
+    bucket_values: dict[str, dict[str, float]] = {}
+    activity_values: dict[str, dict[str, float]] = {}
+    for row in rows:
+        act_type, start_date_utc, duration, duration_unit, _source_name, distance_m, energy_kj = row
+        local_date = to_local_dt(start_date_utc, tz).date()
+        bucket = to_iso_week(local_date) if granularity == "week" else to_iso_month(local_date)
+        duration_minutes = minutes_from_duration(duration, duration_unit) or 0.0
+        distance = float(distance_m or 0.0)
+        energy = float(energy_kj or 0.0)
+        for key, target in ((bucket, bucket_values), (str(act_type), activity_values)):
+            values = target.setdefault(
+                key,
+                {
+                    "sessions": 0.0,
+                    "duration_minutes": 0.0,
+                    "distance_meters": 0.0,
+                    "energy_kj": 0.0,
+                },
+            )
+            values["sessions"] += 1.0
+            values["duration_minutes"] += duration_minutes
+            values["distance_meters"] += distance
+            values["energy_kj"] += energy
+
+    def as_bucket(label: str, values: dict[str, float]) -> TrainingVolumeBucket:
+        return TrainingVolumeBucket(
+            bucket=label,
+            sessions=int(values["sessions"]),
+            duration_minutes=round(values["duration_minutes"], 2),
+            distance_meters=round(values["distance_meters"], 2),
+            energy_kj=round(values["energy_kj"], 2),
+        )
+
+    series = tuple(as_bucket(label, bucket_values[label]) for label in sorted(bucket_values))
+    activities = tuple(
+        TrainingVolumeActivity(
+            activity_type=label,
+            sessions=int(values["sessions"]),
+            duration_minutes=round(values["duration_minutes"], 2),
+            distance_meters=round(values["distance_meters"], 2),
+            energy_kj=round(values["energy_kj"], 2),
+        )
+        for label, values in sorted(
+            activity_values.items(), key=lambda item: (-item[1]["sessions"], item[0])
+        )
+    )
+    totals = TrainingVolumeBucket(
+        bucket="total",
+        sessions=sum(item.sessions for item in series),
+        duration_minutes=round(sum(item.duration_minutes for item in series), 2),
+        distance_meters=round(sum(item.distance_meters for item in series), 2),
+        energy_kj=round(sum(item.energy_kj for item in series), 2),
+    )
+    return TrainingVolumeResult(
+        granularity=granularity,
+        totals=totals,
+        series=series,
+        by_activity=activities,
+    )
 
 
 def get_top_workouts(

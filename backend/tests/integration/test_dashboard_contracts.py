@@ -48,6 +48,7 @@ async def client(db: duckdb.DuckDBPyConnection) -> AsyncClient:
     [
         "/api/dashboard/summary",
         "/api/dashboard/workouts",
+        "/api/dashboard/volume",
         "/api/dashboard/steps",
         "/api/dashboard/heart",
         "/api/dashboard/sleep",
@@ -79,6 +80,37 @@ async def test_workout_detail_contract_includes_normalized_distance_and_route_st
     assert body["distance_meters"] == pytest.approx(8_500)
     assert body["route"] == {"state": "invalid", "message": "The saved route could not be read."}
     assert body["resource"]["state"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_training_volume_returns_scope_totals_and_breakdowns(client: AsyncClient) -> None:
+    response = await client.get(
+        "/api/dashboard/volume", params={"start": "2026-06-01", "end": "2026-06-10"}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["granularity"] == "week"
+    assert body["totals"]["sessions"] == 3
+    assert body["totals"]["duration_minutes"] == pytest.approx(225.5)
+    assert {item["activity_type"] for item in body["by_activity"]} == {
+        "Running",
+        "Cycling",
+        "TraditionalStrengthTraining",
+    }
+    assert len(body["series"]) == 2
+
+
+def test_route_summary_is_local_and_ordered() -> None:
+    from app.api.dashboard import _route_summary
+    from app.models.templates import GpsRoute
+
+    summary = _route_summary(GpsRoute(coordinates=[[103.8, 1.3], [103.81, 1.31], [103.82, 1.3]]))
+    assert summary is not None
+    assert summary.point_count == 3
+    assert summary.start == [103.8, 1.3]
+    assert summary.end == [103.82, 1.3]
+    assert summary.distance_meters > 0
+    assert summary.bounds.min_longitude == pytest.approx(103.8)
 
 
 @pytest.mark.asyncio

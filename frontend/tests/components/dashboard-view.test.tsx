@@ -118,6 +118,36 @@ function setupHandlers() {
         ],
       }),
     ),
+    http.get('/api/dashboard/volume', () =>
+      HttpResponse.json({
+        granularity: 'week',
+        totals: {
+          bucket: 'total',
+          sessions: 1,
+          duration_minutes: 45.5,
+          distance_meters: 8500,
+          energy_kj: 2500,
+        },
+        series: [
+          {
+            bucket: '2026-W23',
+            sessions: 1,
+            duration_minutes: 45.5,
+            distance_meters: 8500,
+            energy_kj: 2500,
+          },
+        ],
+        by_activity: [
+          {
+            activity_type: 'Running',
+            sessions: 1,
+            duration_minutes: 45.5,
+            distance_meters: 8500,
+            energy_kj: 2500,
+          },
+        ],
+      }),
+    ),
     http.get('/api/dashboard/steps', () => HttpResponse.json(STEPS_TREND)),
     http.get('/api/dashboard/heart', () => HttpResponse.json(HEART_TREND)),
     http.get('/api/dashboard/sleep/stages', () =>
@@ -156,6 +186,7 @@ describe('DashboardView', () => {
     server.use(
       http.get('/api/dashboard/summary', () => new Promise(() => {})),
       http.get('/api/dashboard/workouts', () => new Promise(() => {})),
+      http.get('/api/dashboard/volume', () => new Promise(() => {})),
       http.get('/api/dashboard/steps', () => new Promise(() => {})),
       http.get('/api/dashboard/heart', () => new Promise(() => {})),
       http.get('/api/dashboard/sleep', () => new Promise(() => {})),
@@ -186,6 +217,44 @@ describe('DashboardView', () => {
     })
     // Check workout row details
     expect(screen.getByText('46 min')).toBeInTheDocument()
+  })
+
+  it('renders training volume totals and activity breakdown', async () => {
+    setupHandlers()
+    render(<DashboardView />)
+    expect(await screen.findByText('Training Volume (Latest 90 data days)')).toBeInTheDocument()
+    expect(screen.getAllByText('0.8 h').length).toBeGreaterThan(0)
+    expect(screen.getByText('Training volume by activity')).toBeInTheDocument()
+  })
+
+  it('switches training volume between weekly and monthly buckets', async () => {
+    setupHandlers()
+    let requestedGranularity = 'week'
+    server.use(
+      http.get('/api/dashboard/volume', ({ request }) => {
+        requestedGranularity = new URL(request.url).searchParams.get('granularity') ?? ''
+        return HttpResponse.json({
+          granularity: requestedGranularity,
+          totals: { sessions: 1, duration_minutes: 45.5, distance_meters: 8500, energy_kj: 2500 },
+          series: [
+            {
+              bucket: requestedGranularity === 'month' ? '2026-06' : '2026-W23',
+              sessions: 1,
+              duration_minutes: 45.5,
+              distance_meters: 8500,
+              energy_kj: 2500,
+            },
+          ],
+          by_activity: [],
+        })
+      }),
+    )
+    const user = userEvent.setup()
+    render(<DashboardView />)
+    await screen.findByRole('button', { name: 'month' })
+    await user.click(screen.getByRole('button', { name: 'month' }))
+    await waitFor(() => expect(requestedGranularity).toBe('month'))
+    expect(screen.getByRole('button', { name: 'month' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('renders per-type workout counts from a single pass', async () => {
@@ -309,6 +378,14 @@ describe('DashboardView', () => {
       http.get('/api/dashboard/steps', () => HttpResponse.json(EMPTY_TREND)),
       http.get('/api/dashboard/heart', () => HttpResponse.json({ ...HEART_TREND, series: [] })),
       http.get('/api/dashboard/sleep', () => HttpResponse.json({ ...SLEEP_TREND, series: [] })),
+      http.get('/api/dashboard/volume', () =>
+        HttpResponse.json({
+          granularity: 'week',
+          totals: { sessions: 0, duration_minutes: 0, distance_meters: 0, energy_kj: 0 },
+          series: [],
+          by_activity: [],
+        }),
+      ),
       http.get('/api/dashboard/capabilities', () => HttpResponse.json({ capabilities: [] })),
     )
     render(<DashboardView />)

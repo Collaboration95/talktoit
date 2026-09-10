@@ -86,6 +86,44 @@ class TrendResponse(DashboardResponse):
     series: list[TrendPoint]
 
 
+class TrainingVolumeTotals(BaseModel):
+    """Aggregate training facts for the selected dashboard scope."""
+
+    sessions: int
+    duration_minutes: float
+    distance_meters: float
+    energy_kj: float
+
+
+class TrainingVolumeBucket(BaseModel):
+    """One weekly or monthly training-volume bucket."""
+
+    bucket: str
+    sessions: int
+    duration_minutes: float
+    distance_meters: float
+    energy_kj: float
+
+
+class TrainingVolumeActivity(BaseModel):
+    """Training volume grouped by activity type."""
+
+    activity_type: str
+    sessions: int
+    duration_minutes: float
+    distance_meters: float
+    energy_kj: float
+
+
+class TrainingVolumeResponse(DashboardResponse):
+    """Response for the richer training-volume dashboard panel."""
+
+    granularity: Literal["week", "month"]
+    totals: TrainingVolumeTotals
+    series: list[TrainingVolumeBucket]
+    by_activity: list[TrainingVolumeActivity]
+
+
 class SleepStagesResponse(DashboardResponse):
     """Measured, overlap-safe sleep duration and available stage durations."""
 
@@ -128,6 +166,25 @@ class WorkoutRouteState(BaseModel):
     message: str
 
 
+class RouteBounds(BaseModel):
+    """Latitude/longitude bounds for a locally parsed route."""
+
+    min_longitude: float
+    min_latitude: float
+    max_longitude: float
+    max_latitude: float
+
+
+class WorkoutRouteSummary(BaseModel):
+    """Privacy-safe derived facts for exploring a workout route."""
+
+    point_count: int
+    distance_meters: float
+    start: list[float]
+    end: list[float]
+    bounds: RouteBounds
+
+
 class WorkoutDetail(DashboardResponse):
     """Full detail for a single workout (R1-01)."""
 
@@ -146,3 +203,4 @@ class WorkoutDetail(DashboardResponse):
     gps_route: GpsRoute | None = None
     metadata: list[KeyValuePair] = Field(default_factory=list)
     route: WorkoutRouteState
+    route_summary: WorkoutRouteSummary | None = None

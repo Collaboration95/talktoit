@@ -9,7 +9,7 @@ beforeAll(() => server.listen())
 afterEach(() => server.resetHandlers())
 afterAll(() => server.close())
 
-// Mock ECharts (used for GPS route scatter map)
+// Mock ECharts (used for the local GPS route explorer)
 vi.mock('echarts-for-react', () => ({ default: () => <div data-testid="echarts" /> }))
 
 const MOCK_WORKOUT = {
@@ -33,17 +33,13 @@ const MOCK_WORKOUT = {
 
 describe('WorkoutDetail', () => {
   it('shows loading state initially', () => {
-    server.use(
-      http.get('/api/dashboard/workouts/:id', () => new Promise(() => {})),
-    )
+    server.use(http.get('/api/dashboard/workouts/:id', () => new Promise(() => {})))
     render(<WorkoutDetail workoutId={1} onBack={vi.fn()} />)
     expect(screen.getByTestId('loading')).toBeInTheDocument()
   })
 
   it('renders workout metrics after load', async () => {
-    server.use(
-      http.get('/api/dashboard/workouts/1', () => HttpResponse.json(MOCK_WORKOUT)),
-    )
+    server.use(http.get('/api/dashboard/workouts/1', () => HttpResponse.json(MOCK_WORKOUT)))
     const onBack = vi.fn()
     render(<WorkoutDetail workoutId={1} onBack={onBack} />)
 
@@ -57,9 +53,7 @@ describe('WorkoutDetail', () => {
   })
 
   it('renders metadata table', async () => {
-    server.use(
-      http.get('/api/dashboard/workouts/1', () => HttpResponse.json(MOCK_WORKOUT)),
-    )
+    server.use(http.get('/api/dashboard/workouts/1', () => HttpResponse.json(MOCK_WORKOUT)))
     render(<WorkoutDetail workoutId={1} onBack={vi.fn()} />)
 
     await waitFor(() => {
@@ -70,9 +64,7 @@ describe('WorkoutDetail', () => {
   })
 
   it('does not render GPS map when gps_route is null', async () => {
-    server.use(
-      http.get('/api/dashboard/workouts/1', () => HttpResponse.json(MOCK_WORKOUT)),
-    )
+    server.use(http.get('/api/dashboard/workouts/1', () => HttpResponse.json(MOCK_WORKOUT)))
     render(<WorkoutDetail workoutId={1} onBack={vi.fn()} />)
 
     await waitFor(() => {
@@ -94,6 +86,18 @@ describe('WorkoutDetail', () => {
               [103.8204, 1.3532],
             ],
           },
+          route_summary: {
+            point_count: 2,
+            distance_meters: 1200,
+            start: [103.8198, 1.3521],
+            end: [103.8204, 1.3532],
+            bounds: {
+              min_longitude: 103.8198,
+              min_latitude: 1.3521,
+              max_longitude: 103.8204,
+              max_latitude: 1.3532,
+            },
+          },
         }),
       ),
     )
@@ -102,12 +106,13 @@ describe('WorkoutDetail', () => {
     await waitFor(() => {
       expect(screen.getByText('GPS Route')).toBeInTheDocument()
     })
+    expect(screen.getByText('Route points')).toBeInTheDocument()
+    expect(screen.getByText('1.2 km')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Download GeoJSON' })).toBeInTheDocument()
   })
 
   it('calls onBack when back button is clicked', async () => {
-    server.use(
-      http.get('/api/dashboard/workouts/1', () => HttpResponse.json(MOCK_WORKOUT)),
-    )
+    server.use(http.get('/api/dashboard/workouts/1', () => HttpResponse.json(MOCK_WORKOUT)))
     const onBack = vi.fn()
     const user = userEvent.setup()
     render(<WorkoutDetail workoutId={1} onBack={onBack} />)
@@ -120,9 +125,7 @@ describe('WorkoutDetail', () => {
   })
 
   it('shows error state on 404', async () => {
-    server.use(
-      http.get('/api/dashboard/workouts/1', () => new HttpResponse(null, { status: 404 })),
-    )
+    server.use(http.get('/api/dashboard/workouts/1', () => new HttpResponse(null, { status: 404 })))
     render(<WorkoutDetail workoutId={1} onBack={vi.fn()} />)
 
     await waitFor(() => {

@@ -5,7 +5,9 @@ A self-hostable web app for Apple Health users. Drop in your export, ask questio
 ## What it does
 
 - **Chat** — ask natural-language questions about your health data: "Show my last long run", "Compare my running this month vs last", "How was my resting heart rate this year?"
-- **Dashboard** — lightweight Apple Fitness-style panels: activity rings, workout history, steps, resting HR, sleep trends
+- **Dashboard** — Apple Fitness-style panels with scoped training volume, weekly/monthly rollups, activity breakdowns, workout history, steps, resting HR, and sleep trends
+- **Import manager** — upload or re-import an Apple Health `export.xml` from Settings with staged activation and safe failure retention
+- **Workout route explorer** — inspect an ordered local route with derived distance/bounds facts and download its GeoJSON geometry
 
 ## Requirements
 

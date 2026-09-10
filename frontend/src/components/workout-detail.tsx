@@ -7,6 +7,7 @@ import {
   formatDistanceKm,
   formatDurationMinutes,
   formatMetricValue,
+  formatNumber,
 } from '@/lib/format'
 
 interface WorkoutDetailProps {
@@ -36,10 +37,28 @@ export function WorkoutDetail({ workoutId, fingerprint, onBack }: WorkoutDetailP
   const gpsRoute = data?.gps_route
   const gpsOption = useMemo(() => {
     if (!gpsRoute || gpsRoute.coordinates.length === 0) return null
+    const longitudes = gpsRoute.coordinates.map(([longitude]) => longitude)
+    const latitudes = gpsRoute.coordinates.map(([, latitude]) => latitude)
+    const longitudeRange = Math.max(...longitudes) - Math.min(...longitudes) || 0.001
+    const latitudeRange = Math.max(...latitudes) - Math.min(...latitudes) || 0.001
+    const longitudePadding = longitudeRange * 0.08
+    const latitudePadding = latitudeRange * 0.08
     return {
       tooltip: { trigger: 'item' },
-      xAxis: { type: 'value', name: 'Longitude', axisLabel: { fontSize: 10 } },
-      yAxis: { type: 'value', name: 'Latitude', axisLabel: { fontSize: 10 } },
+      xAxis: {
+        type: 'value',
+        name: 'Longitude',
+        min: Math.min(...longitudes) - longitudePadding,
+        max: Math.max(...longitudes) + longitudePadding,
+        axisLabel: { fontSize: 10 },
+      },
+      yAxis: {
+        type: 'value',
+        name: 'Latitude',
+        min: Math.min(...latitudes) - latitudePadding,
+        max: Math.max(...latitudes) + latitudePadding,
+        axisLabel: { fontSize: 10 },
+      },
       series: [
         {
           type: 'line',
@@ -60,6 +79,19 @@ export function WorkoutDetail({ workoutId, fingerprint, onBack }: WorkoutDetailP
       ],
     }
   }, [gpsRoute])
+
+  function downloadRoute() {
+    if (!data?.gps_route) return
+    const blob = new Blob([JSON.stringify(data.gps_route, null, 2)], {
+      type: 'application/geo+json',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `workout-${data.id}-route.geojson`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
 
   if (loading) {
     return (
@@ -127,7 +159,32 @@ export function WorkoutDetail({ workoutId, fingerprint, onBack }: WorkoutDetailP
       {/* Ordered route line plus explicit start/end evidence markers. */}
       {gpsOption !== null ? (
         <div className="mt-4">
-          <p className="mb-2 text-xs font-medium text-gray-500">GPS Route</p>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-xs font-medium text-gray-500">GPS Route</p>
+            <button
+              type="button"
+              onClick={downloadRoute}
+              className="text-xs font-medium text-blue-600 hover:underline"
+            >
+              Download GeoJSON
+            </button>
+          </div>
+          {data.route_summary ? (
+            <div className="mb-2 grid grid-cols-2 gap-2 text-xs text-gray-600 sm:grid-cols-3">
+              <RouteFact
+                label="Route points"
+                value={formatNumber(data.route_summary.point_count)}
+              />
+              <RouteFact
+                label="Approx. route"
+                value={formatDistanceKm(data.route_summary.distance_meters)}
+              />
+              <RouteFact
+                label="Bounds"
+                value={`${formatNumber(data.route_summary.bounds.max_latitude - data.route_summary.bounds.min_latitude, 3)}° latitude`}
+              />
+            </div>
+          ) : null}
           <ReactECharts option={gpsOption} style={{ height: 250 }} />
         </div>
       ) : null}
@@ -148,6 +205,15 @@ export function WorkoutDetail({ workoutId, fingerprint, onBack }: WorkoutDetailP
           </table>
         </div>
       ) : null}
+    </div>
+  )
+}
+
+function RouteFact({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="rounded bg-gray-50 px-2 py-1.5">
+      <span className="block text-gray-400">{label}</span>
+      <span className="font-medium text-gray-700">{value ?? '—'}</span>
     </div>
   )
 }

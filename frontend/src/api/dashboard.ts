@@ -32,6 +32,36 @@ export interface TrendResponse {
   series: TrendPoint[]
 }
 
+export interface TrainingVolumeBucket {
+  bucket: string
+  sessions: number
+  duration_minutes: number
+  distance_meters: number
+  energy_kj: number
+}
+
+export interface TrainingVolumeTotals {
+  sessions: number
+  duration_minutes: number
+  distance_meters: number
+  energy_kj: number
+}
+
+export interface TrainingVolumeActivity {
+  activity_type: string
+  sessions: number
+  duration_minutes: number
+  distance_meters: number
+  energy_kj: number
+}
+
+export interface TrainingVolumeResponse {
+  granularity: 'week' | 'month'
+  totals: TrainingVolumeTotals
+  series: TrainingVolumeBucket[]
+  by_activity: TrainingVolumeActivity[]
+}
+
 export interface SleepStagesResponse {
   total_asleep_hours: number
   stages_hours: Record<string, number>
@@ -87,6 +117,18 @@ export interface WorkoutDetail {
   source_name: string
   gps_route: GpsRoute | null
   metadata: KeyValuePair[]
+  route_summary?: {
+    point_count: number
+    distance_meters: number
+    start: [number, number]
+    end: [number, number]
+    bounds: {
+      min_longitude: number
+      min_latitude: number
+      max_longitude: number
+      max_latitude: number
+    }
+  } | null
 }
 
 function withScope(path: string, scope: DashboardScope = {}): string {
@@ -138,6 +180,17 @@ export async function fetchTrend(
   const separator = scoped.includes('?') ? '&' : '?'
   const r = await checkedFetch(`${scoped}${separator}granularity=${granularity}`, signal)
   return r.json() as Promise<TrendResponse>
+}
+
+export async function fetchTrainingVolume(
+  scope?: DashboardScope,
+  granularity: 'week' | 'month' = 'week',
+  signal?: AbortSignal,
+): Promise<TrainingVolumeResponse> {
+  const scoped = withScope('/api/dashboard/volume', scope)
+  const separator = scoped.includes('?') ? '&' : '?'
+  const r = await checkedFetch(`${scoped}${separator}granularity=${granularity}`, signal)
+  return r.json() as Promise<TrainingVolumeResponse>
 }
 
 export async function fetchSleepStages(

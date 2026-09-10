@@ -7,6 +7,7 @@ import type {
   CapabilityFlag,
   DatasetStatus,
   SleepStagesResponse,
+  TrainingVolumeResponse,
   TrendResponse,
   WorkoutSummary,
 } from '@/api/dashboard'
@@ -15,6 +16,7 @@ import {
   fetchDatasetStatus,
   fetchSleepStages,
   fetchSummary,
+  fetchTrainingVolume,
   fetchTrend,
   fetchWorkouts,
 } from '@/api/dashboard'
@@ -33,6 +35,7 @@ type DashboardViewMode =
 const PANEL_KEYS = [
   'summary',
   'workouts',
+  'volume',
   'steps',
   'heart',
   'sleep',
@@ -45,6 +48,7 @@ type PanelKey = (typeof PANEL_KEYS)[number]
 const PANEL_LABELS: Record<PanelKey, string> = {
   summary: 'activity rings',
   workouts: 'workouts',
+  volume: 'training volume',
   steps: 'steps',
   heart: 'heart rate',
   sleep: 'sleep',
@@ -60,6 +64,7 @@ function createLoadingPanels(value: boolean): Record<PanelKey, boolean> {
 interface DashboardState {
   summary: ActivityRingDay[]
   workouts: WorkoutSummary[]
+  volume: TrainingVolumeResponse | null
   steps: TrendResponse | null
   heart: TrendResponse | null
   sleep: TrendResponse | null
@@ -353,6 +358,105 @@ function TrendPanel({ trend, title }: { trend: TrendResponse | null; title: stri
   )
 }
 
+function TrainingVolumePanel({
+  volume,
+  granularity,
+  onGranularityChange,
+}: {
+  volume: TrainingVolumeResponse | null
+  granularity: 'week' | 'month'
+  onGranularityChange: (value: 'week' | 'month') => void
+}) {
+  if (!volume || volume.series.length === 0) return <NoData />
+  const totals = volume.totals
+  const durationSeries = volume.series.map((item) => ({
+    bucket: item.bucket,
+    value: item.duration_minutes,
+  }))
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3 text-xs text-gray-500">
+        <span>Aggregate by</span>
+        <div
+          className="flex rounded border border-gray-200 bg-white"
+          role="group"
+          aria-label="Training volume granularity"
+        >
+          {(['week', 'month'] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={granularity === option}
+              onClick={() => onGranularityChange(option)}
+              className={`px-2 py-1 capitalize ${granularity === option ? 'bg-blue-50 font-medium text-blue-700' : 'text-gray-600'}`}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <SummaryMetric label="Sessions" value={formatNumber(totals.sessions)} />
+        <SummaryMetric
+          label="Duration"
+          value={`${formatNumber(totals.duration_minutes / 60, 1)} h`}
+        />
+        <SummaryMetric
+          label="Distance"
+          value={`${formatNumber(totals.distance_meters / 1000, 1)} km`}
+        />
+        <SummaryMetric label="Energy" value={`${formatNumber(totals.energy_kj, 0)} kJ`} />
+      </div>
+      <TrendLine
+        series={durationSeries}
+        metricLabel="Duration"
+        metricUnit="minutes"
+        title={`Duration per ${volume.granularity}`}
+      />
+      {volume.by_activity.length > 0 ? (
+        <div className="overflow-x-auto rounded-md border border-gray-100">
+          <table className="w-full min-w-[520px] text-sm">
+            <caption className="sr-only">Training volume by activity</caption>
+            <thead className="border-b bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+              <tr>
+                <th className="px-3 py-2">Activity</th>
+                <th className="px-3 py-2 text-right">Sessions</th>
+                <th className="px-3 py-2 text-right">Duration</th>
+                <th className="px-3 py-2 text-right">Distance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {volume.by_activity.map((item) => (
+                <tr key={item.activity_type} className="border-b last:border-0">
+                  <td className="px-3 py-2 font-medium text-gray-800">
+                    {displayActivityType(item.activity_type)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">{item.sessions}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {formatNumber(item.duration_minutes / 60, 1)} h
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {formatNumber(item.distance_meters / 1000, 1)} km
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function SummaryMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-gray-50 p-3">
+      <p className="text-xs uppercase tracking-wide text-gray-400">{label}</p>
+      <p className="mt-1 font-semibold tabular-nums text-gray-900">{value}</p>
+    </div>
+  )
+}
+
 function CapabilitiesPanel({ caps }: { caps: CapabilityFlag[] }) {
   if (caps.length === 0) return <NoData />
   return (
@@ -402,6 +506,7 @@ export function DashboardView() {
   const [state, setState] = useState<DashboardState>({
     summary: [],
     workouts: [],
+    volume: null,
     steps: null,
     heart: null,
     sleep: null,
@@ -436,6 +541,7 @@ export function DashboardView() {
   const [savedViews, setSavedViews] = useState<SavedView[]>([])
   const [savedViewTitle, setSavedViewTitle] = useState('')
   const [reloadToken, setReloadToken] = useState(0)
+  const [volumeGranularity, setVolumeGranularity] = useState<'week' | 'month'>('week')
   const scopeGeneration = useRef(0)
 
   const reloadSavedViews = () => {
@@ -504,6 +610,11 @@ export function DashboardView() {
         nextWorkoutCursor: value.next_cursor,
       }),
     )
+    loadPanel(
+      'volume',
+      fetchTrainingVolume(scope, volumeGranularity, controller.signal),
+      (_current, value) => ({ volume: value }),
+    )
     loadPanel('steps', fetchTrend('steps', 'day', scope, controller.signal), (_current, value) => ({
       steps: value,
     }))
@@ -531,7 +642,7 @@ export function DashboardView() {
       active = false
       controller.abort()
     }
-  }, [scope, reloadToken])
+  }, [scope, reloadToken, volumeGranularity])
 
   const loadMoreWorkouts = () => {
     if (!state.nextWorkoutCursor) return
@@ -699,6 +810,18 @@ export function DashboardView() {
             onScopeChange={updateWorkoutScope}
             onSelect={selectWorkout}
             onLoadMore={loadMoreWorkouts}
+          />
+        )}
+      </Section>
+
+      <Section title="Training Volume (Latest 90 data days)">
+        {state.loadingPanels.volume && state.volume === null ? (
+          <PanelSkeleton panel="volume" />
+        ) : (
+          <TrainingVolumePanel
+            volume={state.volume}
+            granularity={volumeGranularity}
+            onGranularityChange={setVolumeGranularity}
           />
         )}
       </Section>

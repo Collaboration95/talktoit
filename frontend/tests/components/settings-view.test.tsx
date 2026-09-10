@@ -144,8 +144,70 @@ describe('SettingsView', () => {
     seedSuccess()
     render(<SettingsView />)
     await waitFor(() => expect(screen.getByText('Settings & data controls')).toBeInTheDocument())
-    expect(screen.getByText(/chat uses on-device answers with basic summaries/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/chat uses on-device answers with basic summaries/i),
+    ).toBeInTheDocument()
     await act(async () => {})
+  })
+
+  it('uploads an XML export and refreshes the active dataset', async () => {
+    seedSuccess()
+    let statusPolls = 0
+    server.use(
+      http.post('/api/imports', () =>
+        HttpResponse.json(
+          {
+            id: 'job_1',
+            filename: 'export.xml',
+            state: 'queued',
+            progress: 0,
+            report: null,
+            error: null,
+            created_at: '2026-09-09T00:00:00Z',
+            started_at: null,
+            completed_at: null,
+          },
+          { status: 202 },
+        ),
+      ),
+      http.get('/api/imports/job_1', () => {
+        statusPolls += 1
+        return HttpResponse.json({
+          id: 'job_1',
+          filename: 'export.xml',
+          state: 'succeeded',
+          progress: 100,
+          report: {
+            counts: { records: 2 },
+            coverage_start: '2026-01-01',
+            coverage_end: '2026-08-31',
+          },
+          error: null,
+          created_at: '2026-09-09T00:00:00Z',
+          started_at: '2026-09-09T00:00:01Z',
+          completed_at: '2026-09-09T00:00:02Z',
+        })
+      }),
+    )
+    render(<SettingsView />)
+    await waitFor(() =>
+      expect(screen.getByLabelText('Apple Health export file')).toBeInTheDocument(),
+    )
+
+    const user = userEvent.setup()
+    const file = new File(['<HealthData />'], 'export.xml', { type: 'application/xml' })
+    // jsdom's File implementation omits arrayBuffer(), while real browsers
+    // provide it for the upload fallback used by the API client.
+    Object.defineProperty(file, 'arrayBuffer', {
+      value: async () => new TextEncoder().encode('<HealthData />').buffer,
+    })
+    await user.upload(screen.getByLabelText('Apple Health export file'), file)
+    await user.click(screen.getByRole('button', { name: 'Import export' }))
+
+    await waitFor(() => expect(screen.getByText(/Imported 2 records/)).toBeInTheDocument(), {
+      timeout: 3000,
+    })
+    expect(statusPolls).toBeGreaterThan(0)
   })
 
   it('hides the stopped-server notice when the local LLM is running', async () => {
@@ -158,7 +220,9 @@ describe('SettingsView', () => {
     })
     render(<SettingsView />)
     await waitFor(() => expect(screen.getByText('Settings & data controls')).toBeInTheDocument())
-    expect(screen.queryByText(/chat uses on-device answers with basic summaries/i)).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(/chat uses on-device answers with basic summaries/i),
+    ).not.toBeInTheDocument()
     await act(async () => {})
   })
 })
