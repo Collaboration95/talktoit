@@ -5,7 +5,13 @@ export interface ChatEnvelope {
   narrative: string
   metadata?: {
     api_version: 'v1'
-    provenance: 'unknown' | 'deterministic_local' | 'remote_planned' | 'fallback' | 'cached'
+    provenance:
+      | 'unknown'
+      | 'deterministic_local'
+      | 'remote_planned'
+      | 'fallback'
+      | 'cached'
+      | 'semantic_cached'
     dataset_version_id?: string | null
     coverage_start?: string | null
     coverage_end?: string | null
@@ -104,4 +110,5 @@ export interface FallbackData {
   question: string
   table: FallbackTableRow[] | null
   text: string | null
+  message?: string
 }

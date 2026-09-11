@@ -14,10 +14,10 @@ def test_gpx_route_cache_reuses_a_file_version(monkeypatch) -> None:
     calls = 0
     original_parse = gpx.etree.parse
 
-    def parse(path: str):
+    def parse(path: str, *args, **kwargs):
         nonlocal calls
         calls += 1
-        return original_parse(path)
+        return original_parse(path, *args, **kwargs)
 
     monkeypatch.setattr(gpx.etree, "parse", parse)
 
@@ -36,10 +36,10 @@ def test_gpx_route_cache_negatively_caches_missing_and_invalid_routes(
     calls = 0
     original_parse = gpx.etree.parse
 
-    def parse(path: str):
+    def parse(path: str, *args, **kwargs):
         nonlocal calls
         calls += 1
-        return original_parse(path)
+        return original_parse(path, *args, **kwargs)
 
     monkeypatch.setattr(gpx.etree, "parse", parse)
 

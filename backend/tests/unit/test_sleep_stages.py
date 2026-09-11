@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import duckdb
 
-from app.api.dashboard import _union_interval_hours, get_sleep_stages
+from app.api.dashboard import _union_interval_hours, get_sleep, get_sleep_stages
 from app.db.schema import SQL_CREATE_TABLES
 
 
@@ -67,3 +67,28 @@ def test_sleep_stages_hide_an_overlapping_stage_partition() -> None:
     assert response.total_asleep_hours == 3.0
     assert response.stages_hours == {}
     assert not response.stage_data_available
+
+
+def test_sleep_panels_use_the_same_source_policy() -> None:
+    """AutoSleep duplicates are excluded consistently from both panels."""
+    conn = duckdb.connect(":memory:")
+    conn.execute(SQL_CREATE_TABLES)
+    conn.execute(
+        """INSERT INTO records VALUES
+        (1, 'HKCategoryTypeIdentifierSleepAnalysis', 'Watch', NULL, NULL, NULL,
+         NULL, '2024-01-01 22:00:00', '2024-01-02 01:00:00', NULL,
+         'HKCategoryValueSleepAnalysisAsleepCore'),
+        (2, 'HKCategoryTypeIdentifierSleepAnalysis', 'AutoSleep', NULL, NULL, NULL,
+         NULL, '2024-01-01 22:00:00', '2024-01-02 03:00:00', NULL,
+         'HKCategoryValueSleepAnalysisAsleep')"""
+    )
+    sleep = get_sleep(
+        granularity="day",
+        start=datetime(2024, 1, 1).date(),
+        end=datetime(2024, 1, 2).date(),
+        conn=conn,
+    )
+    stages = get_sleep_stages(
+        start=datetime(2024, 1, 1).date(), end=datetime(2024, 1, 2).date(), conn=conn
+    )
+    assert stages.total_asleep_hours in [point.value for point in sleep.series]

@@ -139,17 +139,17 @@
   <!-- === HRV RECORDS (3 records, with beats) === -->
   <Record type="HKQuantityTypeIdentifierHeartRateVariabilitySDNN" sourceName="Apple Watch" sourceVersion="1.0" unit="ms" creationDate="2026-06-05 03:00:00 +0800" startDate="2026-06-05 02:55:00 +0800" endDate="2026-06-05 03:00:00 +0800" value="45.2">
     <HeartRateVariabilityMetadataList>
-      <InstantaneousBeatsPerMinute bpm="58" time="0.0"/>
-      <InstantaneousBeatsPerMinute bpm="59" time="1.03"/>
-      <InstantaneousBeatsPerMinute bpm="57" time="2.08"/>
-      <InstantaneousBeatsPerMinute bpm="60" time="3.05"/>
+      <InstantaneousBeatsPerMinute bpm="58" time="12:00:00.00 AM"/>
+      <InstantaneousBeatsPerMinute bpm="59" time="12:00:01.03 AM"/>
+      <InstantaneousBeatsPerMinute bpm="57" time="12:00:02.08 AM"/>
+      <InstantaneousBeatsPerMinute bpm="60" time="12:00:03.05 AM"/>
     </HeartRateVariabilityMetadataList>
   </Record>
   <Record type="HKQuantityTypeIdentifierHeartRateVariabilitySDNN" sourceName="Apple Watch" sourceVersion="1.0" unit="ms" creationDate="2026-06-07 03:00:00 +0800" startDate="2026-06-07 02:55:00 +0800" endDate="2026-06-07 03:00:00 +0800" value="52.1">
     <HeartRateVariabilityMetadataList>
-      <InstantaneousBeatsPerMinute bpm="55" time="0.0"/>
-      <InstantaneousBeatsPerMinute bpm="56" time="1.07"/>
-      <InstantaneousBeatsPerMinute bpm="55" time="2.14"/>
+      <InstantaneousBeatsPerMinute bpm="55" time="12:00:00.00 AM"/>
+      <InstantaneousBeatsPerMinute bpm="56" time="12:00:01.07 AM"/>
+      <InstantaneousBeatsPerMinute bpm="55" time="12:00:02.14 AM"/>
     </HeartRateVariabilityMetadataList>
   </Record>
   <Record type="HKQuantityTypeIdentifierHeartRateVariabilitySDNN" sourceName="Apple Watch" sourceVersion="1.0" unit="ms" creationDate="2026-06-10 03:00:00 +0800" startDate="2026-06-10 02:55:00 +0800" endDate="2026-06-10 03:00:00 +0800" value="38.9"/>

@@ -1,4 +1,5 @@
 import type { DashboardQuery } from '@/lib/dashboard-query'
+import { checkedFetch } from '@/api/checked-fetch'
 
 export interface SavedView {
   id: string
@@ -6,14 +7,8 @@ export interface SavedView {
   query: DashboardQuery
 }
 
-async function checkedFetch(url: string, init?: RequestInit): Promise<Response> {
-  const response = await fetch(url, init)
-  if (!response.ok) throw new Error(`Saved view request failed: ${response.status}`)
-  return response
-}
-
 export async function listSavedViews(): Promise<SavedView[]> {
-  const response = await checkedFetch('/api/saved-views')
+  const response = await checkedFetch('/api/saved-views', undefined, 'Saved view request failed')
   return response.json() as Promise<SavedView[]>
 }
 

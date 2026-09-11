@@ -95,7 +95,7 @@ async def test_chat_and_planner_events_recorded_on_local_answer(monkeypatch, tmp
     import duckdb
 
     from app.api.chat import _get_conn, _get_gateway
-    from app.ingest.parser import ingest
+    from app.ingest.coordinator import ingest_v2 as ingest
     from app.main import create_app
 
     monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))

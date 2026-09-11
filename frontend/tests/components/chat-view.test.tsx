@@ -168,6 +168,7 @@ describe('ChatView', () => {
   })
 
   it('renames a selected local conversation without touching health data', async () => {
+    let renamed = false
     server.use(
       http.get('/api/conversations', () =>
         HttpResponse.json([
@@ -181,15 +182,18 @@ describe('ChatView', () => {
       ),
       http.patch('/api/conversations/cv_test', async ({ request }) => {
         expect(await request.json()).toEqual({ title: 'Weekend runs' })
+        renamed = true
         return HttpResponse.json({ ok: true })
       }),
     )
-    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('Weekend runs')
     const user = userEvent.setup()
     render(<ChatView />)
     await user.click(await screen.findByRole('button', { name: 'Rename Morning runs' }))
-    await waitFor(() => expect(prompt).toHaveBeenCalledWith('Rename this local conversation', 'Morning runs'))
-    prompt.mockRestore()
+    const input = screen.getByRole('textbox', { name: 'New conversation title' })
+    await user.clear(input)
+    await user.type(input, 'Weekend runs')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(renamed).toBe(true))
   })
 
   it('seed prompt submits directly and shows the query', async () => {

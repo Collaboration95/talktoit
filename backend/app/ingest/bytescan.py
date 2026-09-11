@@ -117,7 +117,46 @@ def _parse_int(raw: str | None) -> int | None:
     """Parse a string to int, returning None for empty/missing values."""
     if raw is None or raw.strip() == "":
         return None
-    return int(raw)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+_CLOCK_TIME_RE = re.compile(
+    r"^(?P<hour>\d{1,2}):(?P<minute>\d{2}):(?P<second>\d{2})(?:\.(?P<fraction>\d+))?\s*(?P<ampm>[AP]M)$",
+    re.IGNORECASE,
+)
+
+
+def _parse_hrv_time(raw: str | None) -> float | None:
+    """Parse Apple HRV beat times as seconds after midnight.
+
+    Apple exports use a clock value such as ``4:53:04.58 PM`` while older
+    fixtures and third-party exporters sometimes emit a numeric offset.
+    Supporting both keeps the byte scanner compatible with both forms.
+    """
+    if raw is None or not raw.strip():
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        pass
+    match = _CLOCK_TIME_RE.match(raw.strip())
+    if match is None:
+        return None
+    hour = int(match.group("hour"))
+    minute = int(match.group("minute"))
+    second = int(match.group("second"))
+    if hour < 1 or hour > 12 or minute > 59 or second > 59:
+        return None
+    if match.group("ampm").casefold() == "pm" and hour != 12:
+        hour += 12
+    elif match.group("ampm").casefold() == "am" and hour == 12:
+        hour = 0
+    fraction = match.group("fraction") or ""
+    fractional_seconds = float(f"0.{fraction}") if fraction else 0.0
+    return hour * 3600.0 + minute * 60.0 + second + fractional_seconds
 
 
 # ============================================================================
@@ -406,6 +445,7 @@ class WorkerResult(NamedTuple):
     records_count: int
     record_metadata_count: int
     hrv_beats_count: int
+    hrv_beats_unparsed_count: int
     workouts_count: int
     workout_events_count: int
     workout_statistics_count: int
@@ -467,6 +507,7 @@ def parse_byte_range(
     records_count = 0
     record_metadata_count = 0
     hrv_beats_count = 0
+    hrv_beats_unparsed_count = 0
     workouts_count = 0
     workout_events_count = 0
     workout_statistics_count = 0
@@ -695,12 +736,12 @@ def parse_byte_range(
                             }
                         )
 
-                    # Extract HRV beats (bug-compatible with parser.py: time parse fails, 0 rows)
+                    # Extract HRV beats. Apple uses a clock-format time value;
+                    # numeric offsets remain supported for older exports.
                     for hrv_match in _HRV_BEAT_RE.finditer(children_bytes):
                         bpm = _parse_int(_decode_bytes_to_str(hrv_match.group("bpm")))
                         time_str = _decode_bytes_to_str(hrv_match.group("time"))
-                        time_offset = _parse_float(time_str)
-                        # Bug-compatible: time_str is like "4:53:04.58 PM" which fails float parse
+                        time_offset = _parse_hrv_time(time_str)
                         if bpm is not None and time_offset is not None:
                             hrv_beats_count += 1
                             hrv_beats_batch.append(
@@ -711,6 +752,8 @@ def parse_byte_range(
                                     "time_offset": time_offset,
                                 }
                             )
+                        elif time_offset is None:
+                            hrv_beats_unparsed_count += 1
 
                     # Flush if batches are full
                     if len(records_batch) >= row_group_size:
@@ -742,7 +785,9 @@ def parse_byte_range(
                     workout = {
                         "worker_idx": worker_idx,
                         "local_id": workout_id,
-                        "activity_type": _decode_bytes_to_str(attr_match.group("type")),
+                        "activity_type": _decode_bytes_to_str(
+                            attr_match.group("workoutActivityType")
+                        ),
                         "duration": (
                             _parse_float(_decode_bytes_to_str(attr_match.group("duration")))
                             if attr_match.group("duration")
@@ -998,6 +1043,7 @@ def parse_byte_range(
         records_count=records_count,
         record_metadata_count=record_metadata_count,
         hrv_beats_count=hrv_beats_count,
+        hrv_beats_unparsed_count=hrv_beats_unparsed_count,
         workouts_count=workouts_count,
         workout_events_count=workout_events_count,
         workout_statistics_count=workout_statistics_count,

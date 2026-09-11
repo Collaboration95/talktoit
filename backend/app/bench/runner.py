@@ -20,6 +20,7 @@ def run_benchmark[T](
     fn: Callable[[], T],
     *,
     baseline_ms: float | None = None,
+    record: bool = True,
 ) -> tuple[T, float]:
     """Run one deterministic benchmark job and record its duration.
 
@@ -28,6 +29,7 @@ def run_benchmark[T](
         threshold_ms: Hard ceiling; the caller still asserts on the return.
         fn: Measured callable (no parameters).
         baseline_ms: Optional documented historical baseline for reporting.
+        record: Whether to write a diagnostics event for this invocation.
 
     Returns:
         A tuple of the callable result and the elapsed duration in milliseconds.
@@ -35,18 +37,19 @@ def run_benchmark[T](
     started_at = time.perf_counter()
     result = fn()
     duration_ms = round((time.perf_counter() - started_at) * 1000, 3)
-    safe_record(
-        None,
-        "benchmark",
-        f"benchmark:{name}",
-        duration_ms=duration_ms,
-        status="ok" if duration_ms <= threshold_ms else "over_threshold",
-        meta={
-            "benchmark_name": name,
-            "threshold_ms": str(round(threshold_ms, 3)),
-            "baseline_ms": str(round(baseline_ms, 3)) if baseline_ms else "",
-        },
-    )
+    if record:
+        safe_record(
+            None,
+            "benchmark",
+            f"benchmark:{name}",
+            duration_ms=duration_ms,
+            status="ok" if duration_ms <= threshold_ms else "over_threshold",
+            meta={
+                "benchmark_name": name,
+                "threshold_ms": str(round(threshold_ms, 3)),
+                "baseline_ms": str(round(baseline_ms, 3)) if baseline_ms else "",
+            },
+        )
     return result, duration_ms
 
 
@@ -65,9 +68,25 @@ def best_of[T](runs: int, name: str, threshold_ms: float, fn: Callable[[], T]) -
     best_result: T | None = None
     best_ms = float("inf")
     for _ in range(runs):
-        result, duration_ms = run_benchmark(name, threshold_ms, fn)
+        result, duration_ms = run_benchmark(name, threshold_ms, fn, record=False)
         if duration_ms < best_ms:
             best_result, best_ms = result, duration_ms
     if best_result is None:
         raise ValueError("best_of requires at least one run")
+    safe_record(
+        None,
+        "benchmark",
+        f"benchmark:{name}",
+        duration_ms=best_ms,
+        status="ok" if best_ms <= threshold_ms else "over_threshold",
+        meta={
+            "benchmark_name": name,
+            "threshold_ms": str(round(threshold_ms, 3)),
+            "baseline_ms": "",
+        },
+    )
+    if best_ms > threshold_ms:
+        raise AssertionError(
+            f"Benchmark {name} exceeded threshold: {best_ms:.3f} ms > {threshold_ms:.3f} ms"
+        )
     return best_result, best_ms

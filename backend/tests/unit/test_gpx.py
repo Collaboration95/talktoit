@@ -52,3 +52,14 @@ def test_parse_empty_gpx() -> None:
         assert result is None
     finally:
         Path(temp_path).unlink()
+
+
+def test_parse_root_relative_route_under_allowed_export_root(tmp_path: Path) -> None:
+    """Apple's /workout-routes references resolve inside the export root only."""
+    import shutil
+
+    route_dir = tmp_path / "workout-routes"
+    route_dir.mkdir()
+    shutil.copy(FIXTURE, route_dir / "route.gpx")
+    assert parse_gpx_route("/workout-routes/route.gpx", allowed_root=tmp_path) is not None
+    assert parse_gpx_route("/etc/hosts", allowed_root=tmp_path) is None

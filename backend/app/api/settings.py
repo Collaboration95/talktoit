@@ -7,14 +7,19 @@ each require confirmation; none delete health data under a vague "clear" label.
 
 from __future__ import annotations
 
+import asyncio
+
+# FastAPI dependency defaults are intentional for route injection.
+# ruff: noqa: B008
 import logging
 from typing import Literal
 
 import duckdb
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.analytics.metric_catalog import METRIC_CATALOG
+from app.api.deps import get_app_state_repository, get_diagnostics_repository
 from app.db.connection import (
     connect,
     delete_health_database,
@@ -101,13 +106,15 @@ def _metric_states(repository: AppStateRepository) -> dict[str, str]:
     except duckdb.Error:
         return dict.fromkeys(METRIC_CATALOG, "unavailable")
     try:
+        record_counts = {
+            str(row[0]): int(row[1])
+            for row in conn.execute("SELECT type, COUNT(*) FROM records GROUP BY type").fetchall()
+        }
         for metric_id, definition in METRIC_CATALOG.items():
             if definition.availability_source == "records":
-                total = 0
-                for apple_type in definition.apple_types:
-                    total += _row_count(
-                        conn, "SELECT COUNT(*) FROM records WHERE type = ?", [apple_type]
-                    )
+                total = sum(
+                    record_counts.get(apple_type, 0) for apple_type in definition.apple_types
+                )
                 states[metric_id] = "available" if total > 0 else "out_of_range"
             elif definition.availability_source == "activity_summaries":
                 count = _row_count(conn, "SELECT COUNT(*) FROM activity_summaries")
@@ -120,11 +127,10 @@ def _metric_states(repository: AppStateRepository) -> dict[str, str]:
     return states
 
 
-@router.get("/settings")
-async def get_settings() -> dict[str, object]:
+def _build_settings_payload(
+    repo: AppStateRepository, diagnostics: DiagnosticsRepository
+) -> dict[str, object]:
     """Return introspective settings and storage state; no health values."""
-    repo = AppStateRepository()
-    diagnostics = DiagnosticsRepository()
     active = repo.get_active()
     config = repo.get_provider_config()
     litert_status: dict[str, object] = {}
@@ -185,8 +191,19 @@ async def get_settings() -> dict[str, object]:
     }
 
 
+@router.get("/settings")
+async def get_settings(
+    repo: AppStateRepository = Depends(get_app_state_repository),
+    diagnostics: DiagnosticsRepository = Depends(get_diagnostics_repository),
+) -> dict[str, object]:
+    """Return settings without blocking the event loop on local probes/scans."""
+    return await asyncio.to_thread(_build_settings_payload, repo, diagnostics)
+
+
 @router.put("/settings/provider")
-async def update_provider(payload: ProviderUpdateRequest) -> dict[str, object]:
+async def update_provider(
+    payload: ProviderUpdateRequest, repo: AppStateRepository = Depends(get_app_state_repository)
+) -> dict[str, object]:
     """Persist a provider selection; takes effect on the next chat request.
 
     The chosen provider is stored in the app-state DB so it survives process
@@ -194,7 +211,6 @@ async def update_provider(payload: ProviderUpdateRequest) -> dict[str, object]:
     exists. Switching is live — no restart is required; the next chat request
     reads the persisted config and uses the matching gateway/client.
     """
-    repo = AppStateRepository()
     updates: dict[str, object] = {"provider": payload.provider}
     if payload.mode is not None:
         updates["mode"] = payload.mode
@@ -234,14 +250,15 @@ async def update_provider(payload: ProviderUpdateRequest) -> dict[str, object]:
 
 
 @router.get("/settings/llm/health")
-async def llm_health() -> dict[str, object]:
+async def llm_health(
+    repo: AppStateRepository = Depends(get_app_state_repository),
+) -> dict[str, object]:
     """Return the health of the currently selected LLM provider.
 
     For the local provider this probes ``GET {base_url}/models``; for Groq
     it reports the configured model/base_url without a network probe so the
     endpoint itself never triggers external egress.
     """
-    repo = AppStateRepository()
     config = repo.get_provider_config()
     if config.get("provider") == "local":
         try:
@@ -274,7 +291,7 @@ async def llm_start() -> dict[str, object]:
         from app.llm.litert import start as litert_start
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"LiteRT not available: {exc}") from exc
-    result = litert_start()
+    result = await asyncio.to_thread(litert_start)
     if result.get("error") and not result.get("running"):
         raise HTTPException(status_code=500, detail=str(result.get("error")))
     return result
@@ -287,45 +304,57 @@ async def llm_stop() -> dict[str, object]:
         from app.llm.litert import stop as litert_stop
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"LiteRT not available: {exc}") from exc
-    return litert_stop()
+    return await asyncio.to_thread(litert_stop)
 
 
 @router.delete("/settings/cache")
-async def clear_response_cache(payload: ScopedClearRequest) -> dict[str, object]:
+async def clear_response_cache(
+    payload: ScopedClearRequest, repo: AppStateRepository = Depends(get_app_state_repository)
+) -> dict[str, object]:
     """Delete the local response cache (history, views, health remain)."""
     if payload.scope != "cache":
         raise HTTPException(status_code=422, detail="Scope mismatch for cache clear.")
-    deleted = AppStateRepository().clear_cache()
+    deleted = repo.clear_cache()
     return {"cleared": deleted, "scope": "cache"}
 
 
 @router.delete("/settings/history")
-async def delete_conversation_history(payload: ScopedClearRequest) -> dict[str, object]:
+async def delete_conversation_history(
+    payload: ScopedClearRequest, repo: AppStateRepository = Depends(get_app_state_repository)
+) -> dict[str, object]:
     """Delete all local conversation history (cache and health remain)."""
     if payload.scope != "history":
         raise HTTPException(status_code=422, detail="Scope mismatch for history clear.")
-    deleted = AppStateRepository().delete_all_conversations()
+    deleted = repo.delete_all_conversations()
     return {"deleted": deleted, "scope": "history"}
 
 
 @router.delete("/settings/diagnostics")
-async def clear_diagnostics_events(payload: ScopedClearRequest) -> dict[str, object]:
+async def clear_diagnostics_events(
+    payload: ScopedClearRequest,
+    diagnostics: DiagnosticsRepository = Depends(get_diagnostics_repository),
+) -> dict[str, object]:
     """Clear local diagnostics events only (cache, history, health remain)."""
     if payload.scope != "diagnostics":
         raise HTTPException(status_code=422, detail="Scope mismatch for diagnostics clear.")
-    deleted = DiagnosticsRepository().clear()
+    deleted = diagnostics.clear()
     return {"cleared": deleted, "scope": "diagnostics"}
 
 
 @router.delete("/settings/health")
-async def delete_imported_health_data(payload: ScopedClearRequest) -> dict[str, object]:
+async def delete_imported_health_data(
+    payload: ScopedClearRequest, repo: AppStateRepository = Depends(get_app_state_repository)
+) -> dict[str, object]:
     """Delete the imported health database and deactivate the active dataset.
 
     Explicit health scope plus confirmation only; nothing else is touched.
     """
     if payload.scope != "health":
         raise HTTPException(status_code=422, detail="Scope mismatch for health clear.")
-    deleted = delete_health_database()
+    try:
+        deleted = await asyncio.to_thread(delete_health_database)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if deleted:
-        AppStateRepository().deactivate_active_dataset()
+        repo.deactivate_active_dataset()
     return {"deleted": deleted, "scope": "health"}

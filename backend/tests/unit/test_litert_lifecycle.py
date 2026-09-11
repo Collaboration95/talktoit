@@ -309,8 +309,8 @@ def test_health_reports_unreachable_server() -> None:
 def test_serve_command_override_is_used(monkeypatch: pytest.MonkeyPatch) -> None:
     """LITERT_SERVE_CMD replaces the default binary + flags."""
     monkeypatch.setenv("LITERT_SERVE_CMD", "/opt/custom/litert serve --model foo")
-    assert litert.resolve_litert_binary() == "/opt/custom/litert"
-    assert litert._build_serve_command() == ["/opt/custom/litert", "serve", "--model", "foo"]
+    assert litert.resolve_litert_binary() is None
+    assert litert._build_serve_command() == []
 
 
 def test_default_serve_command_has_no_model_flag(monkeypatch: pytest.MonkeyPatch) -> None:

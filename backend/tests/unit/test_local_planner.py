@@ -90,3 +90,20 @@ def test_plans_running_month_comparison() -> None:
 def test_returns_none_for_unrecognised_question_or_empty_database() -> None:
     assert plan_local_question("What should I eat?", _profile()) is None
     assert plan_local_question("Show my last run", _profile(latest_date=None)) is None
+
+
+def test_period_and_activity_matching_use_explicit_boundaries() -> None:
+    """Last year is a prior calendar year and prose substrings are not workouts."""
+    last_year = plan_local_question("resting heart rate last year", _profile())
+    assert last_year is not None
+    assert last_year["arguments"]["start_date"] == "2025-01-01"
+    assert last_year["arguments"]["end_date"] == "2025-12-31"
+    assert plan_local_question("Show my top brunch runs", _profile()) is None
+    assert plan_local_question("my longest cyclone ride", _profile()) is None
+
+
+def test_week_comparison_uses_monday_based_ranges() -> None:
+    plan = plan_local_question("compare my runs this week and last week", _profile())
+    assert plan is not None
+    assert plan["arguments"]["this_start"] == "2026-06-15"
+    assert plan["arguments"]["last_start"] == "2026-06-08"

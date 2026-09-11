@@ -1,6 +1,7 @@
 // Settings and data-lifecycle introspection client. Settings are read-only
 // service state; destructive operations are explicitly scoped and require a
 // confirmation payload.
+import { checkedFetch } from '@/api/checked-fetch'
 
 export type ProviderMode = 'local_only' | 'remote_planning' | 'remote_planning_and_narration'
 export type ProviderType = 'local' | 'groq'
@@ -80,14 +81,8 @@ export type ClearScope = 'cache' | 'history' | 'diagnostics' | 'health'
 
 export type DestroyResult = { cleared?: number; deleted?: number; scope: ClearScope }
 
-async function checkedFetch(url: string, init?: RequestInit): Promise<Response> {
-  const response = await fetch(url, init)
-  if (!response.ok) throw new Error(`Settings request failed: ${response.status}`)
-  return response
-}
-
 export async function fetchSettings(): Promise<Settings> {
-  const response = await checkedFetch('/api/settings')
+  const response = await checkedFetch('/api/settings', undefined, 'Settings request failed')
   return response.json() as Promise<Settings>
 }
 
