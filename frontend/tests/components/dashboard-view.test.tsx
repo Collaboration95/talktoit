@@ -223,7 +223,7 @@ describe('DashboardView', () => {
     setupHandlers()
     render(<DashboardView />)
     expect(await screen.findByText('Training Volume (Latest 90 data days)')).toBeInTheDocument()
-    expect(screen.getAllByText('0.8 h').length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('0.8 h')).length).toBeGreaterThan(0)
     expect(screen.getByText('Training volume by activity')).toBeInTheDocument()
   })
 
