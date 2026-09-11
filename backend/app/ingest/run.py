@@ -71,7 +71,27 @@ def _fsync_file_and_directory(path: Path) -> None:
         os.close(directory_fd)
 
 
+_active_import_lock: object | None = None
+
+
+def _release_import_lock(exc_info: tuple[object, object, object]) -> None:
+    """Release the process-wide import lock exactly once."""
+    global _active_import_lock
+    lock = _active_import_lock
+    _active_import_lock = None
+    if lock is not None:
+        lock.__exit__(*exc_info)  # type: ignore[attr-defined]
+
+
 def main() -> None:
+    """Parse CLI args and run ingestion with guaranteed lock cleanup."""
+    try:
+        _main_impl()
+    finally:
+        _release_import_lock(sys.exc_info())
+
+
+def _main_impl() -> None:
     """Parse CLI args and run ingestion."""
     configure_logging(level=logging.INFO)
 
@@ -152,6 +172,8 @@ def main() -> None:
     target_path.parent.mkdir(parents=True, exist_ok=True)
     import_lock = _advisory_import_lock(target_path)
     import_lock.__enter__()
+    global _active_import_lock
+    _active_import_lock = import_lock
     staging_fd, staging_name = tempfile.mkstemp(
         prefix="tti-import-", suffix=".duckdb", dir=target_path.parent
     )
@@ -242,7 +264,7 @@ def main() -> None:
                 print(f"  Total: {stats['total_time_seconds']:.2f}s")
     except Exception:
         staging_path.unlink(missing_ok=True)
-        import_lock.__exit__(*sys.exc_info())
+        _release_import_lock(sys.exc_info())
         safe_record(
             None,
             "import",
@@ -293,7 +315,7 @@ def main() -> None:
         },
         counts={key: int(value) for key, value in stats.items() if isinstance(value, int)},
     )
-    import_lock.__exit__(None, None, None)
+    _release_import_lock((None, None, None))
     if report_json:
         timing = {
             name: round(float(stats[name]), 6)
