@@ -11,12 +11,13 @@ export function Fallback({ data, narrative }: FallbackProps) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
       <h2 className="text-lg font-semibold text-gray-900">
-        {hasStructuredContent ? 'Answer unavailable' : 'Could not answer from your health data'}
+        {hasStructuredContent ? 'Here is what I found' : 'Answer unavailable'}
       </h2>
       <p className="mt-1 text-sm text-gray-500">
         {narrative ?? 'Try asking about workouts, trends, comparisons, or weekly summaries.'}
       </p>
       {data.text ? <p className="mt-3 text-gray-700">{data.text}</p> : null}
+      {data.message ? <p className="mt-3 text-gray-700">{data.message}</p> : null}
       {data.table !== null && data.table.length > 0 ? (
         <table className="mt-3 w-full text-sm">
           <tbody>

@@ -8,7 +8,7 @@ from datetime import date
 import duckdb
 
 import app.state.app_state as app_state
-from app.api.chat import _prepare_chat
+from app.api.chat import _prepare_chat, _semantic_cached_answer
 from app.db.data_profile import DataProfile
 from app.llm.cache_keys import CACHE_KEY_VERSION, build_cache_key
 from app.models.chat import ChatRequest
@@ -125,8 +125,18 @@ def test_valid_cache_serves_stale_value_until_the_dataset_revalidates(tmp_path) 
 def _cached_envelope(text: str) -> str:
     return json.dumps(
         {
-            "template_id": "fallback",
-            "data": {"question": "show my last run", "table": None, "text": text},
+            "template_id": "workout_card",
+            "data": {
+                "activity_type": "Running",
+                "date": "2026-06-01T00:00:00+00:00",
+                "duration_minutes": 30,
+                "avg_heart_rate": None,
+                "max_heart_rate": None,
+                "distance_meters": None,
+                "distance_unit": "m",
+                "energy_burned_kj": None,
+                "elevation_ascent_meters": None,
+            },
             "narrative": text,
             "metadata": {"provenance": "deterministic_local"},
         }
@@ -157,6 +167,36 @@ def test_prepare_chat_cache_hit_skips_profile_scan(tmp_path, monkeypatch) -> Non
     assert prepared.canonical_key == build_cache_key("canonical", plan)
 
 
+def test_prepare_chat_rejects_legacy_fallback_cache_entry(tmp_path, monkeypatch) -> None:
+    """Fallback envelopes written by older versions are never replayed."""
+    repo = AppStateRepository(tmp_path / "state.sqlite")
+    dataset_id = _activate_dataset(repo, coverage_end="2026-08-31", content_prefix="ffff")
+    key = build_cache_key("exact", "show my last run")
+    repo.put_cached_response(
+        key,
+        dataset_id,
+        json.dumps(
+            {
+                "template_id": "fallback",
+                "data": {"question": "show my last run", "table": None, "text": "degraded"},
+                "narrative": "degraded",
+                "metadata": {"provenance": "deterministic_local"},
+            }
+        ),
+    )
+    profile = DataProfile(
+        first_date=date(2026, 1, 1),
+        latest_date=date(2026, 8, 15),
+        workout_types=("Running",),
+        metrics=(),
+    )
+    monkeypatch.setattr("app.api.chat.get_data_profile", lambda _conn: profile)
+    conn = duckdb.connect(":memory:")
+    prepared = _prepare_chat(ChatRequest(question="show my last run"), conn, repo)
+    assert prepared.cache_hit is False
+    assert prepared.response is None
+
+
 def test_prepare_chat_cache_miss_still_scans_and_recomputes(tmp_path, monkeypatch) -> None:
     """GH-6: a cache miss keeps planning from the profile scan, as before."""
     repo = AppStateRepository(tmp_path / "state.sqlite")
@@ -185,6 +225,36 @@ def test_prepare_chat_cache_miss_still_scans_and_recomputes(tmp_path, monkeypatc
         "arguments": {"activity_type": "Running"},
     }
     assert prepared.response is None
+
+
+def test_semantic_cache_does_not_reuse_fallback_turn(tmp_path) -> None:
+    """Fallback history is never promoted to a semantic cached success."""
+    repo = AppStateRepository(tmp_path / "state.sqlite")
+    dataset_id = _activate_dataset(repo, coverage_end="2026-08-31", content_prefix="semantic")
+    conversation_id = repo.create_conversation("History", dataset_id)
+    fallback_json = json.dumps(
+        {
+            "template_id": "fallback",
+            "data": {"question": "show my last run", "table": None, "text": "degraded"},
+            "narrative": "degraded",
+            "metadata": {"provenance": "fallback"},
+        }
+    )
+    repo.add_completed_turn(
+        conversation_id,
+        "show my last run",
+        fallback_json,
+        "default",
+        "fallback",
+        canonical_plan={"tool_name": "get_last_workout", "arguments": {"activity_type": "Running"}},
+    )
+    result = _semantic_cached_answer(
+        repo,
+        repo.get_active(),  # type: ignore[arg-type]
+        "show my last run",
+        {"tool_name": "get_last_workout", "arguments": {"activity_type": "Running"}},
+    )
+    assert result is None
 
 
 def test_fresh_cache_mode_skips_read_and_write(tmp_path) -> None:

@@ -24,6 +24,7 @@ from app.llm.semantic_candidates import normalize_question
 
 CACHE_MAX_ENTRIES = 200
 CACHE_MAX_BYTES = 5 * 1024 * 1024
+_PROCESS_MIGRATION_LOCK = threading.RLock()
 
 # The latest PRAGMA user_version applied by ``AppStateRepository.migrate``.
 # Bump alongside the last migration step; startup telemetry and contract tests
@@ -103,6 +104,19 @@ def default_state_path() -> Path:
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _execute_migration_sql(conn: sqlite3.Connection, script: str) -> None:
+    """Execute migration statements without ``executescript``'s implicit commit."""
+    for statement in script.split(";"):
+        statement = statement.strip()
+        if statement:
+            conn.execute(statement)
+
+
+def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    """Return whether a SQLite table already contains one column."""
+    return any(row[1] == column for row in conn.execute(f"PRAGMA table_info({table})"))
 
 
 @dataclass(frozen=True)
@@ -197,10 +211,12 @@ class AppStateRepository:
 
     def migrate(self) -> None:
         """Apply the versioned schema; back up before a future destructive step."""
-        with self._connection() as conn:
+        with _PROCESS_MIGRATION_LOCK, self._connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             version = conn.execute("PRAGMA user_version").fetchone()[0]
             if version < 1:
-                conn.executescript(
+                _execute_migration_sql(
+                    conn,
                     """
                     CREATE TABLE IF NOT EXISTS dataset_versions (
                         id TEXT PRIMARY KEY,
@@ -222,18 +238,19 @@ class AppStateRepository:
                         value TEXT NOT NULL
                     );
                     PRAGMA user_version = 1;
-                    """
+                    """,
                 )
                 version = 1
             if version < 2:
-                conn.executescript(
+                _execute_migration_sql(
+                    conn,
                     """
-                    CREATE TABLE conversations (
+                    CREATE TABLE IF NOT EXISTS conversations (
                         id TEXT PRIMARY KEY, dataset_version_id TEXT, title TEXT NOT NULL,
                         archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
                     );
-                    CREATE TABLE turns (
+                    CREATE TABLE IF NOT EXISTS turns (
                         id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL
                         REFERENCES conversations(id),
                         ordinal INTEGER NOT NULL, question TEXT NOT NULL, state TEXT NOT NULL,
@@ -242,50 +259,47 @@ class AppStateRepository:
                         UNIQUE(conversation_id, ordinal)
                     );
                     PRAGMA user_version = 2;
-                    """
+                    """,
                 )
                 version = 2
             if version < 3:
-                conn.executescript(
+                _execute_migration_sql(
+                    conn,
                     """
-                    CREATE TABLE cache_entries (
+                    CREATE TABLE IF NOT EXISTS cache_entries (
                         cache_key TEXT PRIMARY KEY, dataset_version_id TEXT NOT NULL,
                         response_json TEXT NOT NULL, created_at TEXT NOT NULL,
                         accessed_at TEXT NOT NULL, hit_count INTEGER NOT NULL DEFAULT 0
                     );
                     PRAGMA user_version = 3;
-                    """
+                    """,
                 )
                 version = 3
             if version < 4:
-                conn.executescript(
+                _execute_migration_sql(
+                    conn,
                     """
-                    CREATE TABLE saved_views (
+                    CREATE TABLE IF NOT EXISTS saved_views (
                         id TEXT PRIMARY KEY, dataset_version_id TEXT, title TEXT NOT NULL,
                         query_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
                     );
                     PRAGMA user_version = 4;
-                    """
+                    """,
                 )
                 version = 4
             if version < 5:
-                conn.executescript(
-                    """
-                    ALTER TABLE turns ADD COLUMN canonical_plan_json TEXT;
-                    PRAGMA user_version = 5;
-                    """
-                )
+                if not _has_column(conn, "turns", "canonical_plan_json"):
+                    conn.execute("ALTER TABLE turns ADD COLUMN canonical_plan_json TEXT")
+                conn.execute("PRAGMA user_version = 5")
                 version = 5
             if version < 6:
-                conn.executescript(
-                    """
-                    ALTER TABLE turns ADD COLUMN error_message TEXT;
-                    PRAGMA user_version = 6;
-                    """
-                )
+                if not _has_column(conn, "turns", "error_message"):
+                    conn.execute("ALTER TABLE turns ADD COLUMN error_message TEXT")
+                conn.execute("PRAGMA user_version = 6")
                 version = 6
             if version < 7:
-                conn.executescript(
+                _execute_migration_sql(
+                    conn,
                     """
                     CREATE TABLE IF NOT EXISTS diagnostics_events (
                         id TEXT PRIMARY KEY,
@@ -298,16 +312,13 @@ class AppStateRepository:
                         created_at TEXT NOT NULL
                     );
                     PRAGMA user_version = 7;
-                    """
+                    """,
                 )
                 version = 7
             if version < 8:
-                conn.executescript(
-                    """
-                    ALTER TABLE turns ADD COLUMN normalized_question TEXT;
-                    PRAGMA user_version = 8;
-                    """
-                )
+                if not _has_column(conn, "turns", "normalized_question"):
+                    conn.execute("ALTER TABLE turns ADD COLUMN normalized_question TEXT")
+                conn.execute("PRAGMA user_version = 8")
                 # Backfill normalized search text for completed turns so the
                 # semantic candidate index covers history imported pre-v8.
                 rows = conn.execute(
@@ -323,12 +334,9 @@ class AppStateRepository:
                 # v9: cache entries optionally carry the canonical plan that
                 # produced them so an exact-cache hit can skip the DuckDB
                 # profile scan without losing the plan for follow-ups.
-                conn.executescript(
-                    """
-                    ALTER TABLE cache_entries ADD COLUMN canonical_plan_json TEXT;
-                    PRAGMA user_version = 9;
-                    """
-                )
+                if not _has_column(conn, "cache_entries", "canonical_plan_json"):
+                    conn.execute("ALTER TABLE cache_entries ADD COLUMN canonical_plan_json TEXT")
+                conn.execute("PRAGMA user_version = 9")
                 version = 9
         self._migrated = True
 
@@ -472,6 +480,20 @@ class AppStateRepository:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def conversation_plan_turns(
+        self, conversation_id: str, conn: sqlite3.Connection | None = None
+    ) -> list[dict[str, object]]:
+        """Return only completed turn fields needed for follow-up planning."""
+        self._ensure_ready()
+        with self._connection(conn) as connection:
+            rows = connection.execute(
+                "SELECT id, question, canonical_plan_json, created_at "
+                "FROM turns WHERE conversation_id = ? AND state = 'completed' "
+                "ORDER BY ordinal",
+                (conversation_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def list_conversations(self, search: str = "") -> list[dict[str, object]]:
         """List non-archived local conversation metadata."""
         self._ensure_ready()
@@ -497,6 +519,7 @@ class AppStateRepository:
         canonical_plan: Mapping[str, object] | None = None,
     ) -> str:
         """Append one immutable completed result and update its conversation timestamp."""
+        self._ensure_ready()
         turn_id, now = f"tr_{uuid.uuid4().hex}", _now()
         with self._connection() as conn:
             ordinal = conn.execute(
@@ -575,6 +598,7 @@ class AppStateRepository:
         conn: sqlite3.Connection | None = None,
     ) -> bool:
         """Atomically promote one pending turn to an immutable completed result."""
+        self._ensure_ready()
         with self._connection(conn) as connection:
             changed = connection.execute(
                 """
@@ -601,6 +625,7 @@ class AppStateRepository:
         conn: sqlite3.Connection | None = None,
     ) -> bool:
         """Persist a retryable terminal failure or cancellation; never leave a gap."""
+        self._ensure_ready()
         if state not in {"failed", "cancelled"}:
             raise ValueError("Terminal turn state must be failed or cancelled")
         with self._connection(conn) as connection:

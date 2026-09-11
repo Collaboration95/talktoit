@@ -5,15 +5,18 @@ Exposes the health-check endpoint and mounts the API router.
 
 import asyncio
 import logging
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from typing import Final
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 
+from app.analytics.registry import validate_query_catalogue
 from app.api.chat import router as chat_router
 from app.api.conversations import router as conversations_router
 from app.api.dashboard import router as dashboard_router
@@ -28,7 +31,16 @@ from app.observability import configure_logging
 from app.state.app_state import APP_STATE_SCHEMA_VERSION, AppStateRepository
 from app.state.diagnostics import DiagnosticsRepository, safe_record
 
-APP_VERSION = "0.1.0"
+
+def _package_version() -> str:
+    """Return the installed package version, with a source-tree fallback."""
+    try:
+        return version("tti")
+    except PackageNotFoundError:
+        return "0.1.0"
+
+
+APP_VERSION: Final[str] = _package_version()
 
 _logger = logging.getLogger(__name__)
 
@@ -138,6 +150,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.app_state_repository.migrate()
     app.state.diagnostics_repository = DiagnosticsRepository()
     app.state.diagnostics_repository.migrate()
+    validate_query_catalogue()
     import duckdb
 
     safe_record(
@@ -188,11 +201,17 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    # Docs remain enabled for this local-first app; deployments should bind to
+    # loopback or disable them at the reverse proxy when exposed externally.
     app = FastAPI(title="tti", version=APP_VERSION, lifespan=_lifespan)
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173"],
+        allow_origins=[
+            origin.strip()
+            for origin in os.environ.get("TTI_ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+            if origin.strip()
+        ],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -212,19 +231,35 @@ def create_app() -> FastAPI:
     app.include_router(imports_router)
     app.include_router(settings_router)
 
-    # Serve built frontend if dist/ exists (production: make run).
-    # API routes above take precedence; this catch-all handles SPA navigation.
-    _dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
-    if _dist.exists():
-        # Vite writes hashed assets to dist/assets/ by default (build.assetsDir).
-        # If that Vite config is ever changed this path must be updated too.
-        app.mount("/assets", StaticFiles(directory=str(_dist / "assets")), name="assets")
+    @app.get("/api/{full_path:path}", include_in_schema=False)
+    async def api_not_found(full_path: str) -> JSONResponse:
+        """Return a JSON error for unknown API paths before the SPA fallback."""
+        del full_path
+        return JSONResponse(status_code=404, content={"detail": "API route not found"})
 
-        @app.get("/{full_path:path}", include_in_schema=False)
-        async def serve_spa(full_path: str) -> FileResponse:
-            """Serve the SPA index.html for all non-API routes."""
-            del full_path  # unused — FastAPI needs it for path matching
-            return FileResponse(str(_dist / "index.html"))
+    # Serve built frontend if dist/ exists (production: make run). Resolve the
+    # asset directory per request so a build completed after startup is visible.
+    _dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+
+    @app.get("/assets/{asset_path:path}", include_in_schema=False)
+    async def serve_asset(asset_path: str) -> FileResponse:
+        """Serve one hashed frontend asset from the current build."""
+        asset = (_dist / "assets" / asset_path).resolve()
+        try:
+            asset.relative_to((_dist / "assets").resolve())
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="Asset not found") from exc
+        if not asset.is_file():
+            raise HTTPException(status_code=404, detail="Asset not found")
+        return FileResponse(str(asset))
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str) -> FileResponse:
+        """Serve the current SPA build for non-API routes."""
+        del full_path  # unused — FastAPI needs it for path matching
+        if not _dist.exists() or not (_dist / "index.html").exists():
+            raise HTTPException(status_code=404, detail="Frontend build is not available")
+        return FileResponse(str(_dist / "index.html"))
 
     return app
 

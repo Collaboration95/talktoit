@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import duckdb
+import pytest
 
+from app.db.connection import connect, delete_health_database
 from app.db.migrate import SCHEMA_VERSION, migrate, table_has_column
 
 _SQL_LEGACY_SCHEMA = """
@@ -144,3 +146,15 @@ async def test_fastapi_lifespan_runs_health_db_migrations(monkeypatch) -> None:
 
     assert calls == ["migrate"]
     assert gateway.closed
+
+
+def test_delete_health_database_closes_tracked_connections(monkeypatch, tmp_path: Path) -> None:
+    """Health-file deletion is serialized with app-owned open handles."""
+    path = tmp_path / "health.duckdb"
+    monkeypatch.setenv("TTI_DB_PATH", str(path))
+    conn = connect()
+    conn.execute("CREATE TABLE marker(value INTEGER)")
+    assert delete_health_database() == 1
+    assert not path.exists()
+    with pytest.raises(duckdb.Error):
+        conn.execute("SELECT * FROM marker")

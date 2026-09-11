@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.api.deps import get_app_state_repository, get_diagnostics_repository
 from app.db.connection import connect
-from app.db.data_profile import get_data_profile
+from app.db.data_profile import DataProfile, get_data_profile
 from app.llm.cache_keys import build_cache_key
 from app.llm.followups import FollowupContext, followup_disambiguation, resolve_followup
 from app.llm.local_planner import plan_local_question
@@ -106,6 +106,15 @@ def _plan_mode(response: ChatResponse, cached: bool, disambiguated: bool) -> str
     return "fallback"
 
 
+def _cacheable_envelope(raw: str) -> bool:
+    """Reject legacy degraded envelopes before they can poison a cache hit."""
+    try:
+        payload = ChatResponse.model_validate_json(raw)
+    except Exception:
+        return False
+    return payload.template_id != "fallback" and payload.metadata.provenance not in {"fallback"}
+
+
 @dataclass
 class _ChatPreparation:
     """Everything one chat request needs, prepared off the event loop.
@@ -123,6 +132,7 @@ class _ChatPreparation:
     use_exact_cache: bool
     followup_plan: dict[str, Any] | None
     canonical_plan: dict[str, Any] | None
+    data_profile: DataProfile | None
     cache_hit: bool
     disambiguated: bool
     response: ChatResponse | None
@@ -159,6 +169,7 @@ def _prepare_chat(
         needed (cache or disambiguation hit), otherwise ``None``.
     """
     pending_turn_id: str | None = None
+    data_profile: DataProfile | None = None
     with repository.session() as store:
         if request.conversation_id:
             pending_turn_id = repository.create_pending_turn(
@@ -172,13 +183,16 @@ def _prepare_chat(
         if active is not None and request.cache_mode != "fresh" and use_exact_cache:
             entry = repository.get_cached_entry(cache_key, active.id, conn=store)
             if entry is not None:
-                cached, canonical_plan = entry
+                candidate, canonical_plan = entry
+                if _cacheable_envelope(candidate):
+                    cached = candidate
         canonical_key: str | None = None
         followup_plan: dict[str, Any] | None = None
         disambiguation: str | None = None
         if cached is None:
             # ── Cache miss: only this path pays for the profile scan ────────
-            local_plan = plan_local_question(request.question, get_data_profile(conn))
+            data_profile = get_data_profile(conn)
+            local_plan = plan_local_question(request.question, data_profile)
             if request.conversation_id and active is not None:
                 conversation = repository.get_conversation(request.conversation_id, conn=store)
                 if conversation and conversation.get("dataset_version_id") == active.id:
@@ -189,7 +203,7 @@ def _prepare_chat(
                             )
                         ]
                         if request.parent_turn_id
-                        else repository.get_turns(request.conversation_id, conn=store)
+                        else repository.conversation_plan_turns(request.conversation_id, conn=store)
                     )
                     contexts: list[FollowupContext] = []
                     for turn in turns:
@@ -222,7 +236,9 @@ def _prepare_chat(
             if active is not None and canonical_key and request.cache_mode != "fresh":
                 hit = repository.get_cached_entry(canonical_key, active.id, conn=store)
                 if hit is not None:
-                    cached, canonical_plan = hit
+                    candidate, cached_plan = hit
+                    if _cacheable_envelope(candidate):
+                        cached, canonical_plan = candidate, cached_plan
         else:
             canonical_key = build_cache_key("canonical", canonical_plan) if canonical_plan else None
         response: ChatResponse | None = None
@@ -266,6 +282,7 @@ def _prepare_chat(
         use_exact_cache=use_exact_cache,
         followup_plan=followup_plan,
         canonical_plan=canonical_plan,
+        data_profile=data_profile,
         cache_hit=cached is not None,
         disambiguated=disambiguation is not None,
         response=response,
@@ -301,7 +318,16 @@ def _finalize_chat(
         response.metadata.generated_at = active.activated_at
     encoded = response.model_dump_json()
     with prepared.repository.session() as store:
-        if active is not None and request.cache_mode != "fresh":
+        cacheable = (
+            active is not None
+            and request.cache_mode != "fresh"
+            and not prepared.disambiguated
+            and prepared.followup_plan is None
+            and response.metadata.provenance not in {"fallback"}
+        )
+        if cacheable:
+            if active is None:
+                raise RuntimeError("Active dataset disappeared before cache write")
             if prepared.use_exact_cache:
                 prepared.repository.put_cached_response(
                     prepared.cache_key,
@@ -319,13 +345,16 @@ def _finalize_chat(
                     conn=store,
                 )
         if request.conversation_id:
-            prepared.repository.finish_turn(
-                prepared.pending_turn_id or "",
+            if not prepared.pending_turn_id:
+                raise RuntimeError("Pending chat turn is missing")
+            if not prepared.repository.finish_turn(
+                prepared.pending_turn_id,
                 response_json=encoded,
                 cache_outcome=response.metadata.provenance,
                 canonical_plan=prepared.canonical_plan,
                 conn=store,
-            )
+            ):
+                raise RuntimeError("Pending chat turn could not be completed")
     _record_chat_event(
         diagnostics,
         started_at,
@@ -333,6 +362,7 @@ def _finalize_chat(
         cached=prepared.cache_hit,
         disambiguated=prepared.disambiguated,
         status="ok",
+        cache_mode=request.cache_mode,
     )
 
 
@@ -379,6 +409,8 @@ async def chat(
             )
             response = prepared.response
             if response is None:
+                if prepared.data_profile is None:
+                    raise RuntimeError("Chat data profile was not prepared")
                 orchestrator = ChatOrchestrator(
                     client=gateway.client,
                     conn=conn,
@@ -389,7 +421,10 @@ async def chat(
                 # Only this await stays on the loop; the orchestrator offloads its
                 # DuckDB profile query and tool dispatch to worker threads.
                 response = await orchestrator.answer(
-                    request.question, plan_override=prepared.followup_plan
+                    request.question,
+                    plan_override=prepared.canonical_plan,
+                    data_profile=prepared.data_profile,
+                    local_plan_checked=True,
                 )
             await asyncio.to_thread(
                 _finalize_chat, prepared, request, response, started_at, diagnostics
@@ -407,25 +442,21 @@ async def chat(
             )
         return response
     except asyncio.CancelledError:
-        if prepared is not None and prepared.pending_turn_id is not None:
-            prepared.repository.terminate_turn(
-                prepared.pending_turn_id,
-                state="cancelled",
-                message="Request cancelled by the client.",
-            )
-        _record_chat_error(diagnostics_repository, started_at, "cancelled")
+        await _terminate_pending(
+            prepared, state="cancelled", message="Request cancelled by the client."
+        )
+        _record_chat_error(diagnostics_repository, started_at, "cancelled", request.cache_mode)
         raise
     except HTTPException:
-        _record_chat_error(diagnostics_repository, started_at, "http")
+        _record_chat_error(diagnostics_repository, started_at, "http", request.cache_mode)
         raise
     except ProviderUnavailableError as exc:
-        if prepared is not None and prepared.pending_turn_id is not None:
-            prepared.repository.terminate_turn(
-                prepared.pending_turn_id,
-                state="failed",
-                message="The optional provider is unavailable.",
-            )
-        _record_chat_error(diagnostics_repository, started_at, "provider_unavailable")
+        await _terminate_pending(
+            prepared, state="failed", message="The optional provider is unavailable."
+        )
+        _record_chat_error(
+            diagnostics_repository, started_at, "provider_unavailable", request.cache_mode
+        )
         raise _problem(
             503,
             "provider_unavailable",
@@ -433,22 +464,18 @@ async def chat(
             request_id,
         ) from exc
     except TimeoutError as exc:
-        if prepared is not None and prepared.pending_turn_id is not None:
-            prepared.repository.terminate_turn(
-                prepared.pending_turn_id, state="failed", message="The request timed out."
-            )
-        _record_chat_error(diagnostics_repository, started_at, "timeout")
+        await _terminate_pending(prepared, state="failed", message="The request timed out.")
+        _record_chat_error(diagnostics_repository, started_at, "timeout", request.cache_mode)
         raise _problem(
             504, "request_timeout", "The request timed out. Please try again.", request_id
         ) from exc
     except duckdb.Error as exc:
-        if prepared is not None and prepared.pending_turn_id is not None:
-            prepared.repository.terminate_turn(
-                prepared.pending_turn_id,
-                state="failed",
-                message="Local health data is unavailable.",
-            )
-        _record_chat_error(diagnostics_repository, started_at, "data_unavailable")
+        await _terminate_pending(
+            prepared, state="failed", message="Local health data is unavailable."
+        )
+        _record_chat_error(
+            diagnostics_repository, started_at, "data_unavailable", request.cache_mode
+        )
         raise _problem(
             503,
             "data_unavailable",
@@ -456,13 +483,10 @@ async def chat(
             request_id,
         ) from exc
     except Exception as exc:
-        if prepared is not None and prepared.pending_turn_id is not None:
-            prepared.repository.terminate_turn(
-                prepared.pending_turn_id,
-                state="failed",
-                message="The answer could not be completed.",
-            )
-        _record_chat_error(diagnostics_repository, started_at, "internal")
+        await _terminate_pending(
+            prepared, state="failed", message="The answer could not be completed."
+        )
+        _record_chat_error(diagnostics_repository, started_at, "internal", request.cache_mode)
         raise _problem(
             500,
             "internal_failure",
@@ -485,6 +509,20 @@ def _record_semantic_event(
         status="ok",
         meta={"outcome": outcome, "state": "ok"},
         counts={"candidates_considered": considered},
+    )
+
+
+async def _terminate_pending(
+    prepared: _ChatPreparation | None, *, state: str, message: str
+) -> None:
+    """Finish a pending turn without running a synchronous SQLite write on the loop."""
+    if prepared is None or prepared.pending_turn_id is None:
+        return
+    await asyncio.to_thread(
+        prepared.repository.terminate_turn,
+        prepared.pending_turn_id,
+        state=state,
+        message=message,
     )
 
 
@@ -522,6 +560,8 @@ def _semantic_cached_answer(
     if not isinstance(response_json, str) or not response_json:
         return None
     prior = ChatResponse.model_validate_json(response_json)
+    if not _cacheable_envelope(response_json):
+        return None
     prior.metadata.provenance = "semantic_cached"
     _record_semantic_event(diagnostics, verdict.considered, "identical")
     return prior
@@ -531,6 +571,7 @@ def _record_chat_error(
     diagnostics: DiagnosticsBuffer | DiagnosticsRepository | None,
     started_at: float,
     error_class: str,
+    cache_mode: str,
 ) -> None:
     """Record a failed chat event; diagnostics never break the chat path."""
     timed_record(
@@ -539,7 +580,7 @@ def _record_chat_error(
         "chat_request",
         started_at,
         status=error_class,
-        meta={"plan_mode": "error", "cache_outcome": "error", "cache_mode": ""},
+        meta={"plan_mode": "error", "cache_outcome": "error", "cache_mode": cache_mode},
         counts={"cache_hits": 0, "cache_misses": 0, "result_size_bytes": 0},
     )
 
@@ -552,6 +593,7 @@ def _record_chat_event(
     cached: bool,
     disambiguated: bool,
     status: str,
+    cache_mode: str = "default",
 ) -> None:
     """Record one privacy-safe chat event with cache outcome and latency."""
     payload = response.model_dump_json()
@@ -564,7 +606,7 @@ def _record_chat_event(
         meta={
             "plan_mode": _plan_mode(response, cached, disambiguated),
             "cache_outcome": response.metadata.provenance,
-            "cache_mode": "standard",
+            "cache_mode": cache_mode,
         },
         counts={
             "cache_hits": 1 if cached else 0,

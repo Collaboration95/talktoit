@@ -26,7 +26,8 @@ from typing import TYPE_CHECKING
 import ciso8601
 from lxml import etree  # type: ignore[import-untyped]
 
-from app.db.schema import SQL_CREATE_TABLES
+from app.db.schema import reset_schema
+from app.ingest.bytescan import _parse_hrv_time  # pyright: ignore[reportPrivateUsage]
 
 if TYPE_CHECKING:
     import duckdb
@@ -88,7 +89,10 @@ def _parse_int(raw: str | None) -> int | None:
     """Parse a string to int, returning None for empty/missing values."""
     if raw is None or raw.strip() == "":
         return None
-    return int(raw)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 # Hoist regex compilation to module scope to avoid repeated recompilation
@@ -157,7 +161,7 @@ def ingest(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> IngestResult:
     logger.info("Ingesting %s", xml_path)
 
     # Create schema (DROP + CREATE for idempotent re-runs).
-    db.execute(SQL_CREATE_TABLES)
+    reset_schema(db)
 
     result = IngestResult()
     record_id = 0
@@ -339,7 +343,7 @@ def ingest(xml_path: str | Path, db: duckdb.DuckDBPyConnection) -> IngestResult:
             if hrv_list is not None:
                 for beat in hrv_list.iterchildren("InstantaneousBeatsPerMinute"):
                     bpm = _parse_int(beat.get("bpm"))
-                    time_off = _parse_float(beat.get("time"))
+                    time_off = _parse_hrv_time(beat.get("time"))
                     if bpm is not None and time_off is not None:
                         hrv_batch.append((record_id, bpm, time_off))
                         result.hrv_beats += 1

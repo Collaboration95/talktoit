@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
 import time
 from collections.abc import Generator
 from datetime import UTC, date, datetime, timedelta
 from itertools import pairwise
+from pathlib import Path as FilePath
 from typing import Annotated, Literal
 
 import duckdb
@@ -27,7 +29,7 @@ from app.db.aggregations import (
     to_local_dt,
     utc_bounds,
 )
-from app.db.connection import connect
+from app.db.connection import connect, resolve_db_path
 from app.db.dashboard_cache import (
     CapabilitiesGlobal,
     DashboardContext,
@@ -74,7 +76,8 @@ SELECT workout_id,
     SUM(CASE
         WHEN LOWER(unit) = 'km' THEN sum * 1000.0
         WHEN LOWER(unit) IN ('mi', 'mile', 'miles') THEN sum * 1609.344
-        ELSE sum
+        WHEN LOWER(unit) IN ('m', 'meter', 'metre', 'meters', 'metres') THEN sum
+        ELSE NULL
     END) AS distance_m
 FROM workout_statistics
 WHERE type IN ('HKQuantityTypeIdentifierDistanceWalkingRunning',
@@ -83,12 +86,24 @@ WHERE type IN ('HKQuantityTypeIdentifierDistanceWalkingRunning',
 GROUP BY workout_id
 """
 
+_SQL_ENERGY_STATS = """
+SELECT workout_id,
+    SUM(CASE
+        WHEN LOWER(unit) IN ('kcal', 'cal') THEN sum * 4.184
+        WHEN LOWER(unit) IN ('kj', 'kilojoule', 'kilojoules') THEN sum
+        ELSE NULL
+    END) AS energy_kj
+FROM workout_statistics
+WHERE type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
+GROUP BY workout_id
+"""
+
 _SQL_WORKOUTS_LIST = (
     """
 SELECT w.id, w.activity_type, w.start_date, w.duration, w.duration_unit, w.source_name,
     hr.average AS avg_hr,
     dist.distance_m AS distance_m,
-    energy.sum AS energy_kj
+    energy.energy_kj AS energy_kj
 FROM workouts w
 LEFT JOIN workout_statistics hr
     ON hr.workout_id = w.id
@@ -98,9 +113,11 @@ LEFT JOIN (
     + _SQL_DISTANCE_STATS
     + """
 ) dist ON dist.workout_id = w.id
-LEFT JOIN workout_statistics energy
-    ON energy.workout_id = w.id
-    AND energy.type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
+LEFT JOIN (
+"""
+    + _SQL_ENERGY_STATS
+    + """
+) energy ON energy.workout_id = w.id
 WHERE w.start_date >= ? AND w.start_date < ?
   AND (? IS NULL OR w.activity_type = ?)
   AND (? IS NULL OR w.source_name = ?)
@@ -123,6 +140,7 @@ _SQL_SLEEP_STAGE_RECORDS = """
 SELECT start_date, end_date, text_value
 FROM records
 WHERE type = 'HKCategoryTypeIdentifierSleepAnalysis'
+  AND source_name != 'AutoSleep'
   AND start_date >= ? AND start_date < ?
 ORDER BY start_date
 """
@@ -187,7 +205,7 @@ SELECT
     hr.average          AS avg_hr,
     hr.maximum          AS max_hr,
     dist.distance_m     AS distance_m,
-    energy.sum          AS energy_kj,
+    energy.energy_kj    AS energy_kj,
     TRY_CAST(elev.value AS DOUBLE) AS elevation_m
 FROM workouts w
 LEFT JOIN workout_statistics hr
@@ -198,9 +216,11 @@ LEFT JOIN (
     + _SQL_DISTANCE_STATS
     + """
 ) dist ON dist.workout_id = w.id
-LEFT JOIN workout_statistics energy
-    ON energy.workout_id = w.id
-    AND energy.type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
+LEFT JOIN (
+"""
+    + _SQL_ENERGY_STATS
+    + """
+) energy ON energy.workout_id = w.id
 LEFT JOIN workout_metadata elev
     ON elev.workout_id = w.id
     AND elev.key = 'HKElevationAscended'
@@ -915,7 +935,12 @@ def get_workout_detail(
     route = WorkoutRouteState(state="missing", message="No route is available for this workout.")
     route_path_row = conn.execute(_SQL_WORKOUT_ROUTE_PATH, [workout_id]).fetchone()
     if route_path_row is not None and route_path_row[0] is not None:
-        gps_route = parse_gpx_route(route_path_row[0])
+        export_root = (
+            FilePath(os.environ.get("TTI_EXPORT_PATH", str(resolve_db_path().parent)))
+            .expanduser()
+            .resolve()
+        )
+        gps_route = parse_gpx_route(route_path_row[0], allowed_root=export_root)
         if gps_route is None:
             route = WorkoutRouteState(state="invalid", message="The saved route could not be read.")
         else:

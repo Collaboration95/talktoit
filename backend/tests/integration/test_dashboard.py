@@ -16,7 +16,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.db.aggregations import DEFAULT_TZ, utc_bounds
-from app.ingest.parser import ingest
+from app.ingest.coordinator import ingest_v2 as ingest
 from app.main import app
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "sample.xml"
@@ -366,6 +366,16 @@ async def test_http_sleep(client: AsyncClient) -> None:
     assert data["metric_label"] == "Sleep"
     assert data["metric_unit"] == "hours"
     assert len(data["series"]) == 10
+
+
+@pytest.mark.asyncio
+async def test_http_sleep_and_stages_share_auto_sleep_filter(client: AsyncClient) -> None:
+    """The two sleep endpoints describe the same source population."""
+    sleep = await client.get("/api/dashboard/sleep?start=2026-06-05&end=2026-06-05")
+    stages = await client.get("/api/dashboard/sleep/stages?start=2026-06-05&end=2026-06-05")
+    assert sleep.status_code == stages.status_code == 200
+    stage_total = stages.json()["total_asleep_hours"]
+    assert stage_total in [point["value"] for point in sleep.json()["series"]]
 
 
 @pytest.mark.asyncio

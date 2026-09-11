@@ -11,8 +11,10 @@ from app.main import create_app
 from app.state.app_state import AppStateRepository
 
 PRIOR_RESPONSE = (
-    '{"template_id":"fallback","data":{"question":"Show my last run",'
-    '"table":null,"text":"Here is your most recent workout."},'
+    '{"template_id":"workout_card","data":{"activity_type":"Running",'
+    '"date":"2026-08-05T00:00:00+00:00","duration_minutes":30,'
+    '"avg_heart_rate":null,"max_heart_rate":null,"distance_meters":null,'
+    '"distance_unit":"m","energy_burned_kj":null,"elevation_ascent_meters":null},'
     '"narrative":"Here is your most recent workout.",'
     '"metadata":{"provenance":"deterministic_local","api_version":"v1"}}'
 )

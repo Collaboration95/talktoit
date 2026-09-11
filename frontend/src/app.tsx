@@ -35,7 +35,8 @@ function initialTab(): 'chat' | 'dashboard' | 'diagnostics' | 'settings' {
 /** Keep the URL tab in sync with the visible view without dropping dashboard state. */
 function pushTab(tab: 'chat' | 'dashboard' | 'diagnostics' | 'settings') {
   const params = new URLSearchParams(window.location.search)
-  params.set('tab', tab)
+  const current = params.get('tab')
+  params.set('tab', tab === 'dashboard' && current === 'workouts' ? 'workouts' : tab)
   window.history.pushState({}, '', `?${params.toString()}`)
 }
 

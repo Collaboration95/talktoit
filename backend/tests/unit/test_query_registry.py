@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from app.analytics.registry import (
     QUERY_REGISTRY,
+    MetricTrendInput,
     execute_activity_summary,
     execute_comparison,
     execute_period_summary,
@@ -46,6 +47,35 @@ def test_every_registry_entry_has_a_validated_input_contract() -> None:
     for definition in QUERY_REGISTRY.values():
         with pytest.raises(ValidationError):
             definition.input_model.model_validate([])
+
+
+def test_unknown_metric_id_is_rejected_before_query_execution() -> None:
+    with pytest.raises(ValidationError, match="Unsupported metric"):
+        MetricTrendInput.model_validate(
+            {
+                "metric_id": "HKQuantityTypeIdentifierTypo",
+                "start": "2024-01-01",
+                "end": "2024-01-02",
+                "granularity": "day",
+            }
+        )
+
+
+def test_catalog_metric_alias_maps_to_apple_record_type() -> None:
+    conn = duckdb.connect(":memory:")
+    conn.execute(SQL_CREATE_TABLES)
+    conn.execute(
+        """INSERT INTO records (id, type, source_name, start_date, end_date, value)
+        VALUES (1, 'HKQuantityTypeIdentifierStepCount', 'Watch',
+                TIMESTAMP '2024-01-01 00:00:00', TIMESTAMP '2024-01-01 01:00:00', 42)"""
+    )
+    from app.analytics.registry import execute_metric_trend
+
+    result = execute_metric_trend(
+        conn,
+        {"metric_id": "steps", "start": "2024-01-01", "end": "2024-01-01", "granularity": "day"},
+    )
+    assert result.series[0].value == 42
 
 
 def test_activity_summary_executor_validates_absolute_scope_and_returns_facts() -> None:

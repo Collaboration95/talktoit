@@ -7,21 +7,16 @@ sending any additional health data off-device.
 
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 from typing import Any
 
 from app.db.data_profile import DataProfile
+from app.llm.vocabulary import activity_type_from_question, contains_word
 
 
 def _activity_type(question: str) -> str | None:
-    lower = question.lower()
-    if "run" in lower or "jog" in lower:
-        return "Running"
-    if "bike" in lower or "cycl" in lower:
-        return "Cycling"
-    if any(word in lower for word in ("gym", "weight", "strength")):
-        return "TraditionalStrengthTraining"
-    return None
+    return activity_type_from_question(question)
 
 
 def _month_bounds(value: date) -> tuple[date, date]:
@@ -35,35 +30,54 @@ def _month_bounds(value: date) -> tuple[date, date]:
 
 def _period_for_question(question: str, as_of: date) -> tuple[date, date, str] | None:
     lower = question.lower()
-    if "last month" in lower:
+    if re.search(r"\blast month\b", lower):
         current_start, _current_end = _month_bounds(as_of)
         previous_day = current_start - timedelta(days=1)
         start, end = _month_bounds(previous_day)
         return start, end, start.strftime("%B %Y")
-    if "this month" in lower:
+    if re.search(r"\bthis month\b", lower):
         start, _end = _month_bounds(as_of)
         return start, as_of, start.strftime("%B %Y")
-    if "last week" in lower:
+    if re.search(r"\blast week\b", lower):
         current_week_start = as_of - timedelta(days=as_of.weekday())
         end = current_week_start - timedelta(days=1)
         start = end - timedelta(days=6)
         return start, end, f"{start:%b %-d}-{end:%b %-d}"
-    if "this year" in lower or "year" in lower:
+    if re.search(r"\blast year\b", lower):
+        start = date(as_of.year - 1, 1, 1)
+        end = date(as_of.year - 1, 12, 31)
+        return start, end, str(as_of.year - 1)
+    if re.search(r"\b(?:this year|year to date)\b", lower):
         return date(as_of.year, 1, 1), as_of, str(as_of.year)
+    if re.search(r"\bthis week\b", lower):
+        start = as_of - timedelta(days=as_of.weekday())
+        return start, as_of, f"{start:%b %-d}-{as_of:%b %-d}"
     return None
 
 
-def _comparison_plan(question: str, as_of: date, activity_type: str | None) -> dict[str, Any]:
-    this_start, this_end = _month_bounds(as_of)
-    this_end = min(this_end, as_of)
-    last_start, last_end = _month_bounds(this_start - timedelta(days=1))
+def _comparison_plan(
+    question: str, as_of: date, activity_type: str | None, granularity: str
+) -> dict[str, Any]:
+    if granularity == "week":
+        this_start = as_of - timedelta(days=as_of.weekday())
+        this_end = min(this_start + timedelta(days=6), as_of)
+        last_end = this_start - timedelta(days=1)
+        last_start = last_end - timedelta(days=6)
+        this_label = f"{this_start:%d %b} to {this_end:%d %b %Y}"
+        last_label = f"{last_start:%d %b} to {last_end:%d %b %Y}"
+    else:
+        this_start, this_end = _month_bounds(as_of)
+        this_end = min(this_end, as_of)
+        last_start, last_end = _month_bounds(this_start - timedelta(days=1))
+        this_label = this_start.strftime("%B %Y")
+        last_label = last_start.strftime("%B %Y")
     arguments: dict[str, Any] = {
         "this_start": this_start.isoformat(),
         "this_end": this_end.isoformat(),
         "last_start": last_start.isoformat(),
         "last_end": last_end.isoformat(),
-        "this_label": this_start.strftime("%B %Y"),
-        "last_label": last_start.strftime("%B %Y"),
+        "this_label": this_label,
+        "last_label": last_label,
     }
     if activity_type is not None:
         arguments["activity_type"] = activity_type
@@ -84,8 +98,11 @@ def plan_local_question(question: str, profile: DataProfile) -> dict[str, Any] |
     activity_type = _activity_type(question)
     period = _period_for_question(question, as_of)
 
-    if "compare" in lower and ("month" in lower or "week" in lower):
-        return _comparison_plan(question, as_of, activity_type)
+    if contains_word(lower, "compare") and (
+        contains_word(lower, "month") or contains_word(lower, "week")
+    ):
+        granularity = "week" if contains_word(lower, "week") else "month"
+        return _comparison_plan(question, as_of, activity_type, granularity)
 
     if "resting heart" in lower or "resting hr" in lower:
         start, end, _label = period or (as_of - timedelta(days=89), as_of, "Latest 90 days")

@@ -252,6 +252,7 @@ def ingest(
     total_records = sum(r.records_count for r in results)
     total_record_metadata = sum(r.record_metadata_count for r in results)
     total_hrv_beats = sum(r.hrv_beats_count for r in results)
+    total_hrv_beats_unparsed = sum(r.hrv_beats_unparsed_count for r in results)
     total_workouts = sum(r.workouts_count for r in results)
     total_workout_events = sum(r.workout_events_count for r in results)
     total_workout_statistics = sum(r.workout_statistics_count for r in results)
@@ -267,6 +268,7 @@ def ingest(
         "records": total_records,
         "record_metadata": total_record_metadata,
         "hrv_beats": total_hrv_beats,
+        "hrv_beats_unparsed": total_hrv_beats_unparsed,
         "workouts": total_workouts,
         "workout_events": total_workout_events,
         "workout_statistics": total_workout_statistics,
@@ -384,6 +386,7 @@ def ingest_v2(
         "records": result["records"],
         "record_metadata": result["record_metadata"],
         "hrv_beats": result["hrv_beats"],
+        "hrv_beats_unparsed": result.get("hrv_beats_unparsed", 0),
         "workouts": result["workouts"],
         "workout_events": result["workout_events"],
         "workout_statistics": result["workout_statistics"],

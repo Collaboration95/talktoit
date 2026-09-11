@@ -19,7 +19,8 @@ from app.db.queries import (
     get_top_workouts,
     get_trend,
 )
-from app.ingest.parser import ingest
+from app.db.schema import SQL_CREATE_TABLES
+from app.ingest.coordinator import ingest_v2 as ingest
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "sample.xml"
 
@@ -385,3 +386,49 @@ def test_gps_route_present_when_populated(db: duckdb.DuckDBPyConnection) -> None
     assert "gps_route" in data_dict
     assert data_dict["gps_route"]["type"] == "LineString"
     assert len(data_dict["gps_route"]["coordinates"]) == 2
+
+
+def test_period_summary_normalizes_mixed_duration_and_energy_units() -> None:
+    """One hour plus sixty minutes totals 120 minutes and kcal converts to kJ."""
+    conn = duckdb.connect(":memory:")
+    conn.execute(SQL_CREATE_TABLES)
+    conn.executemany(
+        "INSERT INTO workouts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (
+                1,
+                "Running",
+                1.0,
+                "hr",
+                "Watch",
+                None,
+                None,
+                "2026-06-10 00:00:00",
+                "2026-06-10 00:00:00",
+                "2026-06-10 01:00:00",
+            ),
+            (
+                2,
+                "Running",
+                60.0,
+                "min",
+                "Watch",
+                None,
+                None,
+                "2026-06-10 02:00:00",
+                "2026-06-10 02:00:00",
+                "2026-06-10 03:00:00",
+            ),
+        ],
+    )
+    conn.executemany(
+        "INSERT INTO workout_statistics (workout_id, type, sum, unit) VALUES (?, ?, ?, ?)",
+        [
+            (1, "HKQuantityTypeIdentifierActiveEnergyBurned", 100.0, "kJ"),
+            (2, "HKQuantityTypeIdentifierActiveEnergyBurned", 10.0, "kcal"),
+        ],
+    )
+    result = get_period_summary(conn, date(2026, 6, 10), date(2026, 6, 10))
+    assert result.metrics[2].value == 120.0
+    assert result.metrics[3].value == pytest.approx(141.84)
+    conn.close()

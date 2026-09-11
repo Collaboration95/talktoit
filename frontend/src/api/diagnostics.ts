@@ -1,5 +1,6 @@
 // Privacy-safe local diagnostics client. Responses contain aggregates and
 // event metadata only — never question text, health values, routes, or paths.
+import { checkedFetch } from '@/api/checked-fetch'
 
 export type DiagnosticsCategory =
   | 'import'
@@ -41,14 +42,8 @@ export interface DiagnosticsEventsResponse {
   events: DiagnosticsEvent[]
 }
 
-async function checkedFetch(url: string, init?: RequestInit): Promise<Response> {
-  const response = await fetch(url, init)
-  if (!response.ok) throw new Error(`Diagnostics request failed: ${response.status}`)
-  return response
-}
-
 export async function fetchDiagnosticsSummary(): Promise<DiagnosticsSummary> {
-  const response = await checkedFetch('/api/diagnostics')
+  const response = await checkedFetch('/api/diagnostics', undefined, 'Diagnostics request failed')
   return response.json() as Promise<DiagnosticsSummary>
 }
 
