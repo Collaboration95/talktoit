@@ -22,6 +22,23 @@ def _repo(tmp_path) -> DiagnosticsRepository:
     return repo
 
 
+def test_default_records_reuse_one_repository_per_state_path(tmp_path, monkeypatch) -> None:
+    """Best-effort records must not build (and re-migrate) a repository per event."""
+    import app.state.diagnostics as diagnostics_module
+
+    state_path = tmp_path / "state.sqlite"
+    monkeypatch.setenv("TTI_APP_STATE_PATH", str(state_path))
+    diagnostics_module._DEFAULT_REPOSITORIES.pop(state_path, None)
+
+    repository = diagnostics_module.shared_repository()
+    safe_record(None, "panel", "panel:summary")
+    safe_record(None, "panel", "panel:workouts")
+
+    # The default path resolves to the same instance, and every record landed in it.
+    assert diagnostics_module.shared_repository() is repository
+    assert repository.count("panel") == 2
+
+
 # ---------------------------------------------------------------------------
 # Recording, listing, and clearing
 # ---------------------------------------------------------------------------

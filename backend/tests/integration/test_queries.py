@@ -598,3 +598,31 @@ def test_get_last_workout_preserves_unconvertible_duration_unit() -> None:
     assert result is not None
     assert result.duration_minutes is None
     conn.close()
+
+
+def test_ranked_and_comparison_labels_use_display_activity_names(
+    db: duckdb.DuckDBPyConnection,
+) -> None:
+    """Ranked and comparison payloads show the human activity name, not the id."""
+    ranked = get_top_workouts(db, "TraditionalStrengthTraining", "duration")
+    assert ranked.title == "Top 5 Traditional Strength Training by Duration"
+    assert ranked.rows[0].label == "Traditional Strength Training — 2026-06-06"
+
+    comparison = get_comparison(
+        db,
+        date(2026, 6, 1),
+        date(2026, 6, 10),
+        date(2026, 5, 1),
+        date(2026, 5, 31),
+        "June 2026",
+        "May 2026",
+        activity_type="TraditionalStrengthTraining",
+    )
+    assert comparison.title == "Traditional Strength Training: June 2026 vs May 2026"
+
+
+def test_latest_workout_card_uses_display_activity_name(db: duckdb.DuckDBPyConnection) -> None:
+    """The workout card presents the human activity name."""
+    card = get_last_workout(db, "TraditionalStrengthTraining")
+    assert card is not None
+    assert card.activity_type == "Traditional Strength Training"
