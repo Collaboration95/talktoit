@@ -1,3 +1,5 @@
+import { checkedFetch } from '@/api/checked-fetch'
+
 export type ImportState = 'queued' | 'running' | 'succeeded' | 'failed'
 
 export interface ImportJob {
@@ -20,15 +22,6 @@ export interface ImportJob {
   created_at: string
   started_at: string | null
   completed_at: string | null
-}
-
-async function checkedFetch(url: string, init?: RequestInit): Promise<Response> {
-  const response = await fetch(url, init)
-  if (!response.ok) {
-    const detail = (await response.json().catch(() => null)) as { detail?: string } | null
-    throw new Error(detail?.detail ?? `Import request failed: ${response.status}`)
-  }
-  return response
 }
 
 export async function startImport(file: File): Promise<ImportJob> {

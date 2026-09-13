@@ -540,9 +540,12 @@ export function DashboardView() {
   const backendDown = useBackendHealth()
   const [savedViews, setSavedViews] = useState<SavedView[]>([])
   const [savedViewTitle, setSavedViewTitle] = useState('')
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [volumeGranularity, setVolumeGranularity] = useState<'week' | 'month'>('week')
   const scopeGeneration = useRef(0)
+  const paginationController = useRef<AbortController | null>(null)
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
 
   const reloadSavedViews = () => {
     listSavedViews()
@@ -641,21 +644,35 @@ export function DashboardView() {
     return () => {
       active = false
       controller.abort()
+      paginationController.current?.abort()
+      paginationController.current = null
     }
   }, [scope, reloadToken, volumeGranularity])
 
   const loadMoreWorkouts = () => {
     if (!state.nextWorkoutCursor) return
-    fetchWorkouts(scope, state.nextWorkoutCursor)
+    paginationController.current?.abort()
+    const controller = new AbortController()
+    paginationController.current = controller
+    const generation = scopeGeneration.current
+    setLoadMoreError(null)
+    fetchWorkouts(scope, state.nextWorkoutCursor, controller.signal)
       .then((page) => {
+        if (scopeGeneration.current !== generation || controller.signal.aborted) return
         setState((current) => ({
           ...current,
           workouts: [...current.workouts, ...page.workouts],
           nextWorkoutCursor: page.next_cursor,
         }))
       })
-      .catch(() => {
-        // The currently loaded page remains usable when an additional page fails.
+      .catch((error: unknown) => {
+        if (isAbortError(error)) return
+        if (scopeGeneration.current === generation) {
+          setLoadMoreError(error instanceof Error ? error.message : 'Could not load more workouts.')
+        }
+      })
+      .finally(() => {
+        if (paginationController.current === controller) paginationController.current = null
       })
   }
 
@@ -717,19 +734,38 @@ export function DashboardView() {
       ...(query.activityType ? { activityType: query.activityType } : {}),
       ...(query.source ? { source: query.source } : {}),
     }
-    window.history.pushState({}, '', `?${encodeDashboardQuery({ ...query, tab: 'overview' })}`)
-    setMode({ view: 'list' })
+    const nextQuery = { ...query, tab: query.tab }
+    window.history.pushState({}, '', `?${encodeDashboardQuery(nextQuery)}`)
+    setMode(
+      nextQuery.selectedWorkout
+        ? {
+            view: 'detail',
+            workoutId: nextQuery.selectedWorkout,
+            ...(nextQuery.selectedWorkoutFingerprint
+              ? { fingerprint: nextQuery.selectedWorkoutFingerprint }
+              : {}),
+          }
+        : { view: 'list' },
+    )
     setScope(nextScope)
   }
 
   const saveCurrentView = () => {
     if (!scope.start || !scope.end) return
-    createSavedView(savedViewTitle, { tab: 'overview', ...scope })
+    const title = savedViewTitle.trim()
+    if (!title) {
+      setSaveError('Enter a name for this view.')
+      return
+    }
+    setSaveError(null)
+    createSavedView(title, { tab: 'overview', ...scope })
       .then(() => {
         setSavedViewTitle('')
         reloadSavedViews()
       })
-      .catch(() => undefined)
+      .catch((error: unknown) =>
+        setSaveError(error instanceof Error ? error.message : 'Could not save this view.'),
+      )
   }
 
   // Workout detail view (R1-09)
@@ -788,6 +824,7 @@ export function DashboardView() {
           >
             Save view
           </button>
+          {saveError ? <p className="text-xs text-red-600">{saveError}</p> : null}
         </div>
       ) : null}
 
@@ -812,6 +849,7 @@ export function DashboardView() {
             onLoadMore={loadMoreWorkouts}
           />
         )}
+        {loadMoreError ? <p className="mt-2 text-sm text-red-600">{loadMoreError}</p> : null}
       </Section>
 
       <Section title="Training Volume (Latest 90 data days)">
