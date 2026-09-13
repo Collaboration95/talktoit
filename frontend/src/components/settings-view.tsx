@@ -135,9 +135,7 @@ export function SettingsView() {
     setProviderSaved(false)
     try {
       const payload: Record<string, string> = { provider }
-      // Only send mode when Groq is selected; local ignores it but we keep it persisted.
-      if (provider === 'groq') payload['mode'] = mode
-      else payload['mode'] = mode
+      payload['mode'] = mode
       if (groqModel.trim()) payload['groq_model'] = groqModel.trim()
       if (groqBaseUrl.trim()) payload['groq_base_url'] = groqBaseUrl.trim()
       if (litertModel.trim()) payload['litert_model'] = litertModel.trim()
@@ -228,7 +226,7 @@ export function SettingsView() {
           <p className="text-xs text-gray-500">
             Choose an <code className="rounded bg-gray-50 px-1">export.xml</code> file. It is staged
             and validated locally before becoming the active dataset; a failed import keeps the
-            previous data available.
+            previous data available. Uploads are limited to 2 GiB.
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <input

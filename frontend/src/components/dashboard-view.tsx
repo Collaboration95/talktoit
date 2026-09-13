@@ -27,6 +27,7 @@ import { createSavedView, listSavedViews } from '@/api/saved-views'
 import type { SavedView } from '@/api/saved-views'
 import { formatDateOnly, formatNumber } from '@/lib/format'
 import { useBackendHealth } from '@/lib/use-backend-health'
+import { BackendDownBanner } from '@/components/backend-down-banner'
 
 type DashboardViewMode =
   | { view: 'list' }
@@ -492,15 +493,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 /** Banner shown when the backend health check fails (R1-12). */
-function BackendDownBanner() {
-  return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-      Cannot connect to the backend. Make sure <code className="font-mono">make dev</code> is
-      running on port 8000.
-    </div>
-  )
-}
-
 export function DashboardView() {
   const initialQuery = decodeDashboardQuery(window.location.search)
   const [state, setState] = useState<DashboardState>({

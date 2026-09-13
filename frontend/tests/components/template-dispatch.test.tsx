@@ -49,4 +49,48 @@ describe('TemplateDispatch', () => {
     render(<TemplateDispatch envelope={envelope} />)
     expect(screen.getByText('Top Runs')).toBeInTheDocument()
   })
+
+  it('degrades malformed template payloads to a safe fallback', () => {
+    render(
+      <TemplateDispatch
+        envelope={{
+          template_id: 'ranked_list',
+          data: { title: 'Broken', rows: null },
+          narrative: '',
+        }}
+      />,
+    )
+    expect(screen.getByText(/could not be displayed/i)).toBeInTheDocument()
+  })
+
+  it('keeps only well-formed rows from a malformed fallback table', () => {
+    const envelope = {
+      template_id: 'fallback',
+      data: {
+        question: 'q',
+        table: [null, { key: 'Steps', value: '1000' }, { key: 'Missing value' }, 7],
+        text: null,
+      },
+      narrative: '',
+    } as unknown as ChatEnvelope
+
+    render(<TemplateDispatch envelope={envelope} />)
+
+    expect(screen.getByText('Steps')).toBeInTheDocument()
+    expect(screen.getByText('1000')).toBeInTheDocument()
+    expect(screen.queryByText('Missing value')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Here is what I found' })).toBeInTheDocument()
+  })
+
+  it('renders a safe fallback when every table row is malformed', () => {
+    const envelope = {
+      template_id: 'fallback',
+      data: { question: 'q', table: [null, 3, 'row'], text: null },
+      narrative: '',
+    } as unknown as ChatEnvelope
+
+    render(<TemplateDispatch envelope={envelope} />)
+
+    expect(screen.getByRole('heading', { name: 'Answer unavailable' })).toBeInTheDocument()
+  })
 })
