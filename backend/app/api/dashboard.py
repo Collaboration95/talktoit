@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
 import time
 from collections.abc import Generator
 from datetime import UTC, date, datetime, timedelta
 from itertools import pairwise
+from pathlib import Path as FilePath
 from typing import Annotated, Literal
 
 import duckdb
@@ -27,7 +29,7 @@ from app.db.aggregations import (
     to_local_dt,
     utc_bounds,
 )
-from app.db.connection import connect
+from app.db.connection import connect, resolve_db_path
 from app.db.dashboard_cache import (
     CapabilitiesGlobal,
     DashboardContext,
@@ -274,6 +276,23 @@ def _workout_fingerprint(
     """Return a stable local identity supplementing rebuild-local workout IDs."""
     raw = "|".join((activity_type, start_date.isoformat(), str(duration or ""), source_name))
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def _resolve_export_root(repo: AppStateRepository | None) -> FilePath:
+    """Return the directory a stored workout route path is resolved against.
+
+    The import records the export directory it was read from; that value is the
+    only accurate root for Apple's root-relative route references. The
+    environment variable and the database directory remain as fallbacks for
+    databases imported before the root was recorded.
+    """
+    if repo is not None:
+        recorded = repo.get_export_root()
+        if recorded is not None:
+            return recorded.expanduser().resolve()
+    configured = os.environ.get("TTI_EXPORT_PATH")
+    root = FilePath(configured) if configured else resolve_db_path().parent
+    return root.expanduser().resolve()
 
 
 def _route_summary(route: object) -> WorkoutRouteSummary | None:
@@ -915,7 +934,8 @@ def get_workout_detail(
     route = WorkoutRouteState(state="missing", message="No route is available for this workout.")
     route_path_row = conn.execute(_SQL_WORKOUT_ROUTE_PATH, [workout_id]).fetchone()
     if route_path_row is not None and route_path_row[0] is not None:
-        gps_route = parse_gpx_route(route_path_row[0])
+        export_root = _resolve_export_root(repo)
+        gps_route = parse_gpx_route(route_path_row[0], allowed_root=export_root)
         if gps_route is None:
             route = WorkoutRouteState(state="invalid", message="The saved route could not be read.")
         else:
