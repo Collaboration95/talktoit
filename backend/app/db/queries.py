@@ -29,6 +29,8 @@ from app.db.aggregations import (
     to_iso_week,
     to_local_dt,
     utc_bounds,
+    utc_day_end,
+    utc_day_start,
 )
 from app.models.templates import (
     ComparisonData,
@@ -68,7 +70,8 @@ _DURATION_EXPR = """CASE
     ELSE NULL
 END"""
 _ENERGY_EXPR = """CASE
-    WHEN LOWER({unit}) IN ('kcal', 'cal') THEN {value} * 4.184
+    WHEN LOWER({unit}) IN ('kcal', 'kilocalorie', 'kilocalories') THEN {value} * 4.184
+    WHEN LOWER({unit}) = 'cal' THEN {value} * 0.004184
     WHEN LOWER({unit}) IN ('kj', 'kilojoule', 'kilojoules') THEN {value}
     ELSE NULL
 END"""
@@ -84,12 +87,42 @@ def distance_to_metres_sql(unit: str = "unit", value: str = "sum") -> str:
     return _unit_expr(_DISTANCE_EXPR, unit=unit, value=value)
 
 
+def energy_to_kj_sql(unit: str = "unit", value: str = "sum") -> str:
+    """Return the canonical SQL expression converting energy units to kilojoules.
+
+    Apple Health records active energy in kcal or kJ. A literal small calorie
+    (cal) is 4.184 joules; an unrecognized unit yields NULL so the row is not
+    silently added to a kilojoule total.
+    """
+    return _unit_expr(_ENERGY_EXPR, unit=unit, value=value)
+
+
 _DISTANCE_STAT_EXPR = distance_to_metres_sql("unit", "sum")
 _DISTANCE_WS_EXPR = distance_to_metres_sql("ws.unit", "ws.sum")
 _DURATION_EXPR_W = _unit_expr(_DURATION_EXPR, unit="w.duration_unit", value="w.duration")
 _DURATION_EXPR_BARE = _unit_expr(_DURATION_EXPR, unit="duration_unit", value="duration")
 _ENERGY_WS_EXPR = _unit_expr(_ENERGY_EXPR, unit="ws.unit", value="ws.sum")
 _ENERGY_STAT_EXPR = _unit_expr(_ENERGY_EXPR, unit="unit", value="sum")
+
+# Per-workout distance and energy aggregates, shared with the dashboard API so
+# both surfaces normalize units identically.
+SQL_DISTANCE_BY_WORKOUT = f"""
+SELECT workout_id,
+    SUM({_DISTANCE_STAT_EXPR}) AS distance_m
+FROM workout_statistics
+WHERE type IN ('HKQuantityTypeIdentifierDistanceWalkingRunning',
+               'HKQuantityTypeIdentifierDistanceCycling',
+               'HKQuantityTypeIdentifierDistanceSwimming')
+GROUP BY workout_id
+"""
+
+SQL_ENERGY_BY_WORKOUT = f"""
+SELECT workout_id,
+    SUM({_ENERGY_STAT_EXPR}) AS energy_kj
+FROM workout_statistics
+WHERE type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
+GROUP BY workout_id
+"""
 
 _SQL_LAST_WORKOUT = f"""
 SELECT
@@ -337,6 +370,8 @@ class TrainingVolumeResult:
 # ---------------------------------------------------------------------------
 
 _utc_bounds = utc_bounds
+_utc_day_start = utc_day_start
+_utc_day_end = utc_day_end
 _to_local_dt = to_local_dt
 
 
@@ -384,7 +419,7 @@ def get_last_workout(
     ) = row
 
     local_dt = _to_local_dt(start_date_utc, tz)
-    duration_minutes = minutes_from_duration(duration, duration_unit) or 0.0
+    duration_minutes = minutes_from_duration(duration, duration_unit)
     avg_heart_rate = round(avg_hr_raw) if avg_hr_raw is not None else None
     max_heart_rate = round(max_hr_raw) if max_hr_raw is not None else None
     fingerprint = _workout_fingerprint(act_type, start_date_utc, duration, source_name)
@@ -555,10 +590,8 @@ def get_top_workouts(
     Returns:
         A :class:`RankedListData` with up to ``n`` ranked rows.
     """
-    if start is not None and end is not None:
-        utc_start, utc_end = _utc_bounds(start, end, tz)
-    else:
-        utc_start = utc_end = None
+    utc_start = _utc_day_start(start, tz) if start is not None else None
+    utc_end = _utc_day_end(end, tz) if end is not None else None
 
     rows = conn.execute(
         _SQL_TOP_WORKOUTS,

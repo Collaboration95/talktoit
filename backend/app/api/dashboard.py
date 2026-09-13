@@ -26,6 +26,7 @@ from app.db.aggregations import (
     DEFAULT_TZ,
     bucket_key,
     generate_buckets,
+    minutes_from_duration,
     to_local_dt,
     utc_bounds,
 )
@@ -39,7 +40,11 @@ from app.db.dashboard_cache import (
 )
 from app.db.data_profile import DataProfile
 from app.db.migrate import table_has_column
-from app.db.queries import get_training_volume
+from app.db.queries import (
+    SQL_DISTANCE_BY_WORKOUT,
+    SQL_ENERGY_BY_WORKOUT,
+    get_training_volume,
+)
 from app.ingest.gpx import parse_gpx_route
 from app.models.dashboard import (
     ActivityRingDay,
@@ -71,32 +76,10 @@ router = APIRouter(prefix="/api/dashboard")
 # SQL constants (no f-strings in execute calls — avoids S608)
 # ---------------------------------------------------------------------------
 
-_SQL_DISTANCE_STATS = """
-SELECT workout_id,
-    SUM(CASE
-        WHEN LOWER(unit) = 'km' THEN sum * 1000.0
-        WHEN LOWER(unit) IN ('mi', 'mile', 'miles') THEN sum * 1609.344
-        WHEN LOWER(unit) IN ('m', 'meter', 'metre', 'meters', 'metres') THEN sum
-        ELSE NULL
-    END) AS distance_m
-FROM workout_statistics
-WHERE type IN ('HKQuantityTypeIdentifierDistanceWalkingRunning',
-               'HKQuantityTypeIdentifierDistanceCycling',
-               'HKQuantityTypeIdentifierDistanceSwimming')
-GROUP BY workout_id
-"""
-
-_SQL_ENERGY_STATS = """
-SELECT workout_id,
-    SUM(CASE
-        WHEN LOWER(unit) IN ('kcal', 'cal') THEN sum * 4.184
-        WHEN LOWER(unit) IN ('kj', 'kilojoule', 'kilojoules') THEN sum
-        ELSE NULL
-    END) AS energy_kj
-FROM workout_statistics
-WHERE type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
-GROUP BY workout_id
-"""
+# Reuse the canonical per-workout unit normalization from queries.py so the
+# dashboard and the chat query paths can never disagree about a unit.
+_SQL_DISTANCE_STATS = SQL_DISTANCE_BY_WORKOUT
+_SQL_ENERGY_STATS = SQL_ENERGY_BY_WORKOUT
 
 _SQL_WORKOUTS_LIST = (
     """
@@ -280,11 +263,8 @@ def _resolve_window(
 
 
 def _duration_minutes(duration: float | None, unit: str | None) -> float | None:
-    if duration is None:
-        return None
-    if unit == "hr":
-        return duration * 60.0
-    return float(duration)
+    """Reuse the shared duration conversion so every panel agrees on units."""
+    return minutes_from_duration(duration, unit)
 
 
 def _workout_fingerprint(

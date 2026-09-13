@@ -432,3 +432,169 @@ def test_period_summary_normalizes_mixed_duration_and_energy_units() -> None:
     assert result.metrics[2].value == 120.0
     assert result.metrics[3].value == pytest.approx(141.84)
     conn.close()
+
+
+def _insert_running_workouts(conn: duckdb.DuckDBPyConnection) -> None:
+    """Insert three one-day-apart Running workouts with distinct durations."""
+    conn.executemany(
+        "INSERT INTO workouts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (
+                1,
+                "Running",
+                30.0,
+                "min",
+                "Watch",
+                None,
+                None,
+                "2026-06-01 00:00:00",
+                "2026-06-01 00:00:00",
+                "2026-06-01 00:30:00",
+            ),
+            (
+                2,
+                "Running",
+                40.0,
+                "min",
+                "Watch",
+                None,
+                None,
+                "2026-06-05 00:00:00",
+                "2026-06-05 00:00:00",
+                "2026-06-05 00:40:00",
+            ),
+            (
+                3,
+                "Running",
+                50.0,
+                "min",
+                "Watch",
+                None,
+                None,
+                "2026-06-10 00:00:00",
+                "2026-06-10 00:00:00",
+                "2026-06-10 00:50:00",
+            ),
+        ],
+    )
+
+
+def test_top_workouts_respects_independent_single_sided_bounds() -> None:
+    """A lone start or end filters on its own instead of being ignored."""
+    conn = duckdb.connect(":memory:")
+    conn.execute(SQL_CREATE_TABLES)
+    _insert_running_workouts(conn)
+
+    unbounded = get_top_workouts(conn, "Running", "duration")
+    assert [row.label for row in unbounded.rows] == [
+        "Running — 2026-06-10",
+        "Running — 2026-06-05",
+        "Running — 2026-06-01",
+    ]
+
+    only_after = get_top_workouts(conn, "Running", "duration", start=date(2026, 6, 5))
+    assert [row.label for row in only_after.rows] == [
+        "Running — 2026-06-10",
+        "Running — 2026-06-05",
+    ]
+
+    only_before = get_top_workouts(conn, "Running", "duration", end=date(2026, 6, 5))
+    assert [row.label for row in only_before.rows] == [
+        "Running — 2026-06-05",
+        "Running — 2026-06-01",
+    ]
+    conn.close()
+
+
+def test_unknown_units_are_unavailable_not_zero() -> None:
+    """Hour/second variants convert; unrecognized units never become zeroes."""
+    conn = duckdb.connect(":memory:")
+    conn.execute(SQL_CREATE_TABLES)
+    conn.executemany(
+        "INSERT INTO workouts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (
+                1,
+                "Running",
+                1.0,
+                "hours",
+                "Watch",
+                None,
+                None,
+                "2026-06-10 00:00:00",
+                "2026-06-10 00:00:00",
+                "2026-06-10 01:00:00",
+            ),
+            (
+                2,
+                "Running",
+                90.0,
+                "seconds",
+                "Watch",
+                None,
+                None,
+                "2026-06-10 02:00:00",
+                "2026-06-10 02:00:00",
+                "2026-06-10 02:02:00",
+            ),
+            (
+                3,
+                "Running",
+                5.0,
+                "furlong",
+                "Watch",
+                None,
+                None,
+                "2026-06-10 03:00:00",
+                "2026-06-10 03:00:00",
+                "2026-06-10 03:05:00",
+            ),
+        ],
+    )
+    conn.executemany(
+        "INSERT INTO workout_statistics (workout_id, type, sum, unit) VALUES (?, ?, ?, ?)",
+        [
+            (1, "HKQuantityTypeIdentifierActiveEnergyBurned", 1000.0, "cal"),
+            (2, "HKQuantityTypeIdentifierActiveEnergyBurned", 10.0, "kcal"),
+            (3, "HKQuantityTypeIdentifierActiveEnergyBurned", 5.0, "btu"),
+            (1, "HKQuantityTypeIdentifierDistanceWalkingRunning", 1.0, "furlong"),
+        ],
+    )
+
+    summary = get_period_summary(conn, date(2026, 6, 10), date(2026, 6, 10))
+
+    assert summary.metrics[0].value == 3.0
+    # A distance unit the app cannot convert is unavailable, not silently metres.
+    assert summary.metrics[1].value is None
+    # 1 hour + 90 seconds convert; the furlong-duration row is excluded.
+    assert summary.metrics[2].value == pytest.approx(61.5)
+    # 1000 cal (small) + 10 kcal convert; the btu row is excluded.
+    assert summary.metrics[3].value == pytest.approx(46.024)
+    conn.close()
+
+
+def test_get_last_workout_preserves_unconvertible_duration_unit() -> None:
+    """An unknown duration unit surfaces as unavailable instead of 0.0 minutes."""
+    conn = duckdb.connect(":memory:")
+    conn.execute(SQL_CREATE_TABLES)
+    conn.execute(
+        "INSERT INTO workouts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            1,
+            "Running",
+            5.0,
+            "furlong",
+            "Watch",
+            None,
+            None,
+            "2026-06-01 00:00:00",
+            "2026-06-01 00:00:00",
+            "2026-06-01 00:05:00",
+        ),
+    )
+
+    result = get_last_workout(conn, "Running")
+
+    assert result is not None
+    assert result.duration_minutes is None
+    conn.close()
