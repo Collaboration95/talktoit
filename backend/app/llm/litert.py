@@ -17,6 +17,7 @@ import shlex
 import shutil
 import signal
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -40,6 +41,7 @@ AUTOSTART_TIMEOUT_ENV_VAR = "TTI_LOCAL_AUTOSTART_TIMEOUT_SECONDS"
 STOP_ON_EXIT_ENV_VAR = "TTI_LOCAL_STOP_ON_EXIT"
 AUTOSTART_TIMEOUT_DEFAULT_SECONDS = 3.0
 AUTOSTART_TIMEOUT_MAX_SECONDS = 30.0
+_LIFECYCLE_LOCK = threading.Lock()
 
 
 def _litert_base_url() -> str:
@@ -74,7 +76,7 @@ def resolve_litert_binary() -> str | None:
         candidate = override[0]
         if Path(candidate).exists() or shutil.which(candidate):
             return candidate
-        return candidate
+        return None
     which = shutil.which("litert-lm")
     if which:
         return which
@@ -187,6 +189,8 @@ def _build_serve_command(model: str | None = None) -> list[str]:
     """
     override = _litert_serve_cmd()
     if override is not None:
+        if resolve_litert_binary() is None:
+            return []
         return override
     binary = resolve_litert_binary()
     if binary is None:
@@ -217,6 +221,14 @@ def start(
 
     Returns a status dict with ``started`` and optional ``error``.
     """
+    with _LIFECYCLE_LOCK:
+        return _start_locked(model=model, wait_seconds=wait_seconds, poll_interval=poll_interval)
+
+
+def _start_locked(
+    model: str | None = None, wait_seconds: float = 8.0, poll_interval: float = 0.5
+) -> dict[str, object]:
+    """Start LiteRT while the lifecycle lock is held."""
     current = status()
     if current.get("running"):
         return {"started": False, "already_running": True, **current}
@@ -272,6 +284,11 @@ def start(
     try:
         pidfile.write_text(str(proc.pid))
     except OSError as exc:
+        proc.terminate()
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
         return {
             "started": False,
             "error": f"Cannot write pidfile: {exc}",
@@ -317,6 +334,30 @@ def stop(timeout_seconds: float = 5.0) -> dict[str, object]:
     Only kills the pid recorded in our pidfile, and only if that pid is still
     alive. Never kills an unrelated process.
     """
+    with _LIFECYCLE_LOCK:
+        return _stop_locked(timeout_seconds)
+
+
+def _owns_process(pid: int) -> bool:
+    """Check that a pidfile process still runs the configured LiteRT command."""
+    binary = resolve_litert_binary()
+    expected_name = Path(binary).name if binary else "litert-lm"
+    try:
+        result = subprocess.run(  # noqa: S603 - querying the local process table
+            ["ps", "-p", str(pid), "-o", "command="],  # noqa: S607
+            capture_output=True,
+            text=True,
+            timeout=1.0,
+            check=False,
+        )
+        command = result.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return bool(command) and (expected_name in command or "litert-lm" in command)
+
+
+def _stop_locked(timeout_seconds: float = 5.0) -> dict[str, object]:
+    """Stop LiteRT while the lifecycle lock is held."""
     pid = _read_pid()
     if pid is None:
         return {"stopped": False, "reason": "no pidfile", **status()}
@@ -326,6 +367,8 @@ def stop(timeout_seconds: float = 5.0) -> dict[str, object]:
         except OSError:
             pass
         return {"stopped": False, "reason": "not running", **status()}
+    if not _owns_process(pid):
+        return {"stopped": False, "reason": "pidfile is not owned by LiteRT", **status()}
 
     try:
         os.kill(pid, signal.SIGTERM)

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
+
+from app.llm.vocabulary import activity_type_from_question
 
 
 @dataclass(frozen=True)
@@ -99,10 +102,13 @@ def followup_disambiguation(
 
 def _activity_type_from_question(question: str) -> str | None:
     """Map a deliberately small safe activity vocabulary to tool arguments."""
-    if "run" in question or "jog" in question:
+    resolved = activity_type_from_question(question)
+    if resolved is not None:
+        return resolved
+    if re.search(r"\b(?:run|running|runs|jog|jogging)\b", question):
         return "Running"
-    if "cycl" in question or "bike" in question:
+    if re.search(r"\b(?:bike|biking|cycle|cycling|ride|riding|rides)\b", question):
         return "Cycling"
-    if any(word in question for word in ("gym", "strength", "weight")):
+    if re.search(r"\b(?:gym|weights?|weightlifting|strength)\b", question):
         return "TraditionalStrengthTraining"
     return None

@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 import time
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, Literal
 
@@ -98,6 +100,8 @@ class ProviderGateway:
         self._clock = clock or time.monotonic
         self._consecutive_failures = 0
         self._circuit_open_until = 0.0
+        self._active_calls = 0
+        self._active_lock = threading.Lock()
 
     def permits(self, stage: Literal["planning", "narration"]) -> bool:
         """Return whether the configured egress mode permits this stage.
@@ -121,32 +125,37 @@ class ProviderGateway:
         if self._circuit_is_open():
             raise ProviderUnavailableError("Remote provider circuit is open")
 
-        for attempt in range(self.max_retries + 1):
-            try:
-                async with self._semaphore, asyncio.timeout(self.timeout_seconds):
-                    response = await self.client.chat.completions.create(
-                        model=self.model,
-                        messages=messages,  # type: ignore[arg-type]
-                    )
-                if not response.choices:
-                    raise ProviderUnavailableError("Remote provider returned no answer")
-                self._record_success()
-                return response.choices[0].message.content or ""
-            except asyncio.CancelledError:
-                raise
-            except ProviderUnavailableError:
-                raise
-            except Exception as exc:
-                if not self._is_retryable(exc):
-                    raise ProviderUnavailableError("Remote provider is unavailable") from exc
-                self._record_failure()
-                if attempt >= self.max_retries or self._circuit_is_open():
-                    if isinstance(exc, TimeoutError):
-                        raise ProviderUnavailableError("Remote provider timed out") from exc
-                    raise ProviderUnavailableError("Remote provider is unavailable") from exc
-                await self._sleep(self.retry_backoff_seconds * (2**attempt))
-
-        raise ProviderUnavailableError("Remote provider is unavailable")
+        with self._active_lock:
+            self._active_calls += 1
+        try:
+            for attempt in range(self.max_retries + 1):
+                try:
+                    async with self._semaphore, asyncio.timeout(self.timeout_seconds):
+                        response = await self.client.chat.completions.create(
+                            model=self.model,
+                            messages=messages,  # type: ignore[arg-type]
+                        )
+                    if not response.choices:
+                        raise ProviderUnavailableError("Remote provider returned no answer")
+                    self._record_success()
+                    return response.choices[0].message.content or ""
+                except asyncio.CancelledError:
+                    raise
+                except ProviderUnavailableError:
+                    raise
+                except Exception as exc:
+                    if not self._is_retryable(exc):
+                        raise ProviderUnavailableError("Remote provider is unavailable") from exc
+                    self._record_failure()
+                    if attempt >= self.max_retries or self._circuit_is_open():
+                        if isinstance(exc, TimeoutError):
+                            raise ProviderUnavailableError("Remote provider timed out") from exc
+                        raise ProviderUnavailableError("Remote provider is unavailable") from exc
+                    await self._sleep(self.retry_backoff_seconds * (2**attempt))
+            raise ProviderUnavailableError("Remote provider is unavailable")
+        finally:
+            with self._active_lock:
+                self._active_calls -= 1
 
     @staticmethod
     def _is_retryable(error: Exception) -> bool:
@@ -187,6 +196,12 @@ class ProviderGateway:
         """Close the process-owned async HTTP client when FastAPI stops."""
         await self.client.close()
 
+    @property
+    def active_calls(self) -> int:
+        """Return the number of provider calls currently in flight."""
+        with self._active_lock:
+            return self._active_calls
+
 
 def _make_client_for_provider(provider: Provider, base_url: str | None) -> openai.AsyncOpenAI:
     """Create an AsyncOpenAI client for one provider.
@@ -226,7 +241,9 @@ def _gateway_cache_key(config: Mapping[str, object]) -> tuple[str, str, str, str
     )
 
 
-_gateway_cache: dict[tuple[str, str, str, str], ProviderGateway] = {}
+_gateway_cache: OrderedDict[tuple[str, str, str, str], ProviderGateway] = OrderedDict()
+_gateway_cache_lock = threading.RLock()
+_GATEWAY_CACHE_MAX = 8
 
 
 def get_gateway_for_config(
@@ -237,10 +254,12 @@ def get_gateway_for_config(
 ) -> ProviderGateway:
     """Return a cached gateway for ``config`` (provider, mode, model, base_url)."""
     key = _gateway_cache_key(config)
-    cached = _gateway_cache.get(key)
-    if cached is not None:
-        return cached
-    provider = str(config.get("provider", "local"))  # type: ignore[assignment]
+    with _gateway_cache_lock:
+        cached = _gateway_cache.get(key)
+        if cached is not None:
+            _gateway_cache.move_to_end(key)
+            return cached
+        provider = str(config.get("provider", "local"))  # type: ignore[assignment]
     if provider not in {"local", "groq"}:
         provider = "local"
     mode = str(config.get("mode", "local_only"))  # type: ignore[assignment]
@@ -266,18 +285,54 @@ def get_gateway_for_config(
         sleep=sleep,
         clock=clock,
     )
-    _gateway_cache[key] = gateway
-    return gateway
+    with _gateway_cache_lock:
+        existing = _gateway_cache.get(key)
+        if existing is not None:
+            _gateway_cache.move_to_end(key)
+            _schedule_gateway_close(gateway)
+            return existing
+        _gateway_cache[key] = gateway
+        while len(_gateway_cache) > _GATEWAY_CACHE_MAX:
+            _old_key, old_gateway = _gateway_cache.popitem(last=False)
+            _schedule_gateway_close(old_gateway)
+        return gateway
+
+
+def _schedule_gateway_close(gateway: ProviderGateway) -> None:
+    """Close an evicted client's pool without blocking the request thread."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        try:
+            asyncio.run(gateway.aclose())
+        except Exception:
+            logger.debug("gateway close failed", exc_info=True)
+        return
+    loop.create_task(gateway.aclose()).add_done_callback(lambda _task: None)
 
 
 def clear_gateway_cache() -> None:
     """Clear the cached gateways (for tests)."""
-    _gateway_cache.clear()
+    with _gateway_cache_lock:
+        gateways = list(_gateway_cache.values())
+        _gateway_cache.clear()
+    for gateway in gateways:
+        _schedule_gateway_close(gateway)
 
 
 async def aclose_all_gateways() -> None:
     """Close all cached gateways and clear the cache."""
-    for gateway in list(_gateway_cache.values()):
+    deadline = time.monotonic() + 5.0
+    while True:
+        with _gateway_cache_lock:
+            gateways = list(_gateway_cache.values())
+        if not any(gateway.active_calls for gateway in gateways) or time.monotonic() >= deadline:
+            break
+        await asyncio.sleep(0.05)
+    with _gateway_cache_lock:
+        gateways = list(_gateway_cache.values())
+        _gateway_cache.clear()
+    for gateway in gateways:
         try:
             await gateway.aclose()
         except Exception:
