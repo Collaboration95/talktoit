@@ -7,7 +7,9 @@ cd "$(dirname "$0")/.."
 
 backend_version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' backend/pyproject.toml | head -n1)
 frontend_version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' frontend/package.json | head -n1)
-app_version=$(sed -n 's/^APP_VERSION = "\([^"]*\)"/\1/p' backend/app/main.py | head -n1)
+# APP_VERSION is derived from installed package metadata; the source-tree
+# fallback keeps this check runnable before the package is installed.
+app_version=$(sed -n 's/.*return "\([0-9][^"]*\)"/\1/p' backend/app/main.py | tail -n1)
 
 fail=0
 for spec in "backend/pyproject.toml:$backend_version" "frontend/package.json:$frontend_version" "backend/app/main.py (APP_VERSION):$app_version"; do

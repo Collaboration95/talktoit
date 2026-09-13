@@ -24,7 +24,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
 
-from app.db.connection import connect, resolve_db_path
+from app.db.connection import close_open_connections, connect, resolve_db_path
 from app.db.data_profile import DataProfile, get_data_profile
 from app.ingest.coordinator import resolve_worker_count
 from app.observability import configure_logging
@@ -336,7 +336,9 @@ def _main_impl() -> None:
 
     # Only a successfully reconciled staging database replaces the active data.
     # The swap rolls back to the previous database if activation fails, so the
-    # manifest and the data it describes can never disagree.
+    # manifest and the data it describes can never disagree. Connections to the
+    # previous file are closed first so a running API re-opens the new database.
+    close_open_connections(target_path)
     with _activated_database(staging_path, target_path):
         profile = _read_data_profile(target_path)
         manifest = AppStateRepository().activate_file(

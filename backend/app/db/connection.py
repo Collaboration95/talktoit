@@ -6,10 +6,24 @@ a consistent default path.
 
 from __future__ import annotations
 
+import logging
 import os
+import threading
+import weakref
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 
 import duckdb
+
+_DATABASE_LIFECYCLE_LOCK = threading.RLock()
+_logger = logging.getLogger(__name__)
+_OPEN_CONNECTIONS: weakref.WeakKeyDictionary[duckdb.DuckDBPyConnection, Path] = (
+    weakref.WeakKeyDictionary()
+)
+# Connections currently being used by a request. A database replacement or
+# deletion must never close one of these out from under its caller.
+_ACTIVE_LEASES: dict[duckdb.DuckDBPyConnection, int] = {}
 
 
 def resolve_db_path(db_path: str | Path | None = None) -> Path:
@@ -40,7 +54,9 @@ def connect(
     path = resolve_db_path(db_path)
     if not read_only:
         path.parent.mkdir(parents=True, exist_ok=True)
-    conn = duckdb.connect(str(path), read_only=read_only)
+    with _DATABASE_LIFECYCLE_LOCK:
+        conn = duckdb.connect(str(path), read_only=read_only)
+        _OPEN_CONNECTIONS[conn] = path.resolve()
     return conn
 
 
@@ -50,6 +66,52 @@ def health_database_size_bytes() -> int | None:
     return path.stat().st_size if path.exists() else None
 
 
+def close_open_connections(db_path: str | Path | None = None) -> int:
+    """Close idle tracked connections for a database before replacement/deletion.
+
+    Connections leased through lease_connection() are in use by another request
+    and are left open; they keep reading the previous file until the request
+    finishes and the next request opens the replacement.
+    """
+    target = resolve_db_path(db_path).resolve() if db_path is not None else None
+    closed = 0
+    with _DATABASE_LIFECYCLE_LOCK:
+        for conn, opened_path in list(_OPEN_CONNECTIONS.items()):
+            if target is not None and opened_path != target:
+                continue
+            if _ACTIVE_LEASES.get(conn):
+                continue
+            try:
+                conn.close()
+                closed += 1
+            except Exception:
+                _logger.debug("Unable to close health database connection", exc_info=True)
+            _OPEN_CONNECTIONS.pop(conn, None)
+    return closed
+
+
+@contextmanager
+def lease_connection(
+    conn: duckdb.DuckDBPyConnection,
+) -> Generator[duckdb.DuckDBPyConnection, None, None]:
+    """Mark a connection as in use for the duration of a request.
+
+    While a lease is held, close_open_connections() (and therefore an import
+    activation or a health-data deletion) will not close it.
+    """
+    with _DATABASE_LIFECYCLE_LOCK:
+        _ACTIVE_LEASES[conn] = _ACTIVE_LEASES.get(conn, 0) + 1
+    try:
+        yield conn
+    finally:
+        with _DATABASE_LIFECYCLE_LOCK:
+            remaining = _ACTIVE_LEASES.get(conn, 1) - 1
+            if remaining > 0:
+                _ACTIVE_LEASES[conn] = remaining
+            else:
+                _ACTIVE_LEASES.pop(conn, None)
+
+
 def delete_health_database() -> int:
     """Delete the imported health database file after an explicit scoped request.
 
@@ -57,7 +119,12 @@ def delete_health_database() -> int:
     confirmation; cache, history, saved views, and diagnostics are untouched.
     """
     path = resolve_db_path()
-    if not path.exists():
-        return 0
-    path.unlink()
-    return 1
+    with _DATABASE_LIFECYCLE_LOCK:
+        if not path.exists():
+            return 0
+        close_open_connections(path)
+        try:
+            path.unlink()
+        except OSError as exc:
+            raise RuntimeError(f"Could not remove health database: {exc}") from exc
+        return 1
