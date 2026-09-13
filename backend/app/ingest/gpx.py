@@ -36,7 +36,8 @@ def _parse_gpx_route_cached(resolved_path: str, mtime_ns: int, size: int) -> Gps
         return None
 
     try:
-        tree = etree.parse(resolved_path)
+        parser = etree.XMLParser(resolve_entities=False, no_network=True)
+        tree = etree.parse(resolved_path, parser)
         root = tree.getroot()
     except Exception:
         return None
@@ -65,20 +66,35 @@ def clear_gpx_route_cache() -> None:
     _parse_gpx_route_cached.cache_clear()
 
 
-def parse_gpx_route(file_path: str | Path) -> GpsRoute | None:
+def parse_gpx_route(
+    file_path: str | Path, allowed_root: str | Path | None = None
+) -> GpsRoute | None:
     """Parse a GPX file and return a GeoJSON LineString of the first track.
 
     Args:
         file_path: Path to the GPX file. Relative paths are resolved against
             the directory of the original export.xml (the file reference is a
             sibling of the export).
+        allowed_root: Optional export directory; paths outside it are refused.
 
     Returns:
         A :class:`GpsRoute` with track coordinates, or ``None`` if the file
         cannot be parsed or contains no track points.
     """
     try:
-        path = Path(file_path).expanduser().resolve()
+        raw_path = str(file_path)
+        candidate = Path(raw_path).expanduser()
+        if allowed_root is not None and (
+            not candidate.is_absolute() or raw_path.startswith("/workout-routes/")
+        ):
+            candidate = Path(allowed_root).expanduser() / raw_path.lstrip("/")
+        path = candidate.resolve()
+        if allowed_root is not None:
+            root = Path(allowed_root).expanduser().resolve()
+            try:
+                path.relative_to(root)
+            except ValueError:
+                return None
         stat = path.stat()
     except (OSError, RuntimeError):
         # Keep missing files negatively cached. A later-created file gets a

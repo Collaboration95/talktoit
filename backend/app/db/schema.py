@@ -1,23 +1,17 @@
 """DuckDB schema definitions for the Apple Health export.
 
-Creates all tables on an empty database. Designed to be called once at the start
-of ingestion (DROP IF EXISTS + CREATE to support idempotent re-runs).
+``SQL_CREATE_TABLES`` is additive and safe to run against an existing database.
+Call :func:`reset_schema` explicitly when a staging import needs a destructive
+reset before loading a fresh export.
 """
 
-SQL_CREATE_TABLES = """
--- Drop in reverse dependency order (or with CASCADE on root tables).
-DROP TABLE IF EXISTS hrv_beats;
-DROP TABLE IF EXISTS record_metadata;
-DROP TABLE IF EXISTS records;
-DROP TABLE IF EXISTS workout_routes;
-DROP TABLE IF EXISTS workout_metadata;
-DROP TABLE IF EXISTS workout_statistics;
-DROP TABLE IF EXISTS workout_events;
-DROP TABLE IF EXISTS workouts;
-DROP TABLE IF EXISTS activity_summaries;
+from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+SQL_CREATE_TABLES = """
 -- Records: the main health measurement table.
-CREATE TABLE records (
+CREATE TABLE IF NOT EXISTS records (
     id            INTEGER PRIMARY KEY,
     type          VARCHAR NOT NULL,
     source_name   VARCHAR NOT NULL,
@@ -32,7 +26,7 @@ CREATE TABLE records (
 );
 
 -- Metadata attached to records (e.g. AutoSleep fields, HR motion context).
-CREATE TABLE record_metadata (
+CREATE TABLE IF NOT EXISTS record_metadata (
     record_id INTEGER NOT NULL,
     key       VARCHAR NOT NULL,
     value     VARCHAR NOT NULL,
@@ -40,7 +34,7 @@ CREATE TABLE record_metadata (
 );
 
 -- Per-beat HRV data (InstantaneousBeatsPerMinute children).
-CREATE TABLE hrv_beats (
+CREATE TABLE IF NOT EXISTS hrv_beats (
     record_id   INTEGER NOT NULL,
     bpm         INTEGER NOT NULL,
     time_offset DOUBLE NOT NULL,
@@ -48,7 +42,7 @@ CREATE TABLE hrv_beats (
 );
 
 -- Workout sessions.
-CREATE TABLE workouts (
+CREATE TABLE IF NOT EXISTS workouts (
     id              INTEGER PRIMARY KEY,
     activity_type   VARCHAR NOT NULL,
     duration        DOUBLE,
@@ -62,7 +56,7 @@ CREATE TABLE workouts (
 );
 
 -- Per-metric aggregates within a workout (HR, distance, energy, etc.).
-CREATE TABLE workout_statistics (
+CREATE TABLE IF NOT EXISTS workout_statistics (
     workout_id INTEGER NOT NULL,
     type       VARCHAR NOT NULL,
     start_date TIMESTAMP,
@@ -76,7 +70,7 @@ CREATE TABLE workout_statistics (
 );
 
 -- In-workout events (laps, pauses, segments).
-CREATE TABLE workout_events (
+CREATE TABLE IF NOT EXISTS workout_events (
     workout_id    INTEGER NOT NULL,
     type          VARCHAR NOT NULL,
     date          TIMESTAMP,
@@ -86,7 +80,7 @@ CREATE TABLE workout_events (
 );
 
 -- GPS route file references.
-CREATE TABLE workout_routes (
+CREATE TABLE IF NOT EXISTS workout_routes (
     workout_id    INTEGER NOT NULL,
     source_name   VARCHAR,
     creation_date TIMESTAMP,
@@ -97,7 +91,7 @@ CREATE TABLE workout_routes (
 );
 
 -- Arbitrary key-value metadata on workouts (METs, elevation, brand, timezone).
-CREATE TABLE workout_metadata (
+CREATE TABLE IF NOT EXISTS workout_metadata (
     workout_id INTEGER NOT NULL,
     key        VARCHAR NOT NULL,
     value      VARCHAR NOT NULL,
@@ -105,7 +99,7 @@ CREATE TABLE workout_metadata (
 );
 
 -- Daily activity ring summaries.
-CREATE TABLE activity_summaries (
+CREATE TABLE IF NOT EXISTS activity_summaries (
     date_components          VARCHAR PRIMARY KEY,
     active_energy_burned     DOUBLE,
     active_energy_burned_goal DOUBLE,
@@ -124,3 +118,24 @@ CREATE INDEX IF NOT EXISTS idx_records_source ON records(source_name);
 CREATE INDEX IF NOT EXISTS idx_workouts_type_date ON workouts(activity_type, start_date);
 CREATE INDEX IF NOT EXISTS idx_workout_stats_workout_type ON workout_statistics(workout_id, type);
 """
+
+SQL_RESET_SCHEMA = """
+DROP TABLE IF EXISTS hrv_beats;
+DROP TABLE IF EXISTS record_metadata;
+DROP TABLE IF EXISTS records;
+DROP TABLE IF EXISTS workout_routes;
+DROP TABLE IF EXISTS workout_metadata;
+DROP TABLE IF EXISTS workout_statistics;
+DROP TABLE IF EXISTS workout_events;
+DROP TABLE IF EXISTS workouts;
+DROP TABLE IF EXISTS activity_summaries;
+"""
+
+if TYPE_CHECKING:
+    import duckdb
+
+
+def reset_schema(conn: duckdb.DuckDBPyConnection) -> None:
+    """Destructively clear all health tables, then recreate them."""
+    conn.execute(SQL_RESET_SCHEMA)
+    conn.execute(SQL_CREATE_TABLES)
