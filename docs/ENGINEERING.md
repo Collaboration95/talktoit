@@ -106,10 +106,32 @@ No `setup.py`, no `requirements.txt`, no `setup.cfg`. The app version lives here
 `frontend/package.json` AND `app/main.py::APP_VERSION` — all three must agree, enforced by
 `scripts/check-versions.sh` (§2.6, §7).
 
+**Resolved versions live in `backend/uv.lock`, not in `pyproject.toml`.** The manifest states
+floors (`ruff>=0.11.0`, `pyright>=1.1.400`, …); the lockfile is what `uv sync` and CI actually
+install, so it is the source of truth when documenting or reviewing versions.
+
+| Tool | Floor in `pyproject.toml` | Resolved in `uv.lock` |
+|---|---|---|
+| Ruff | `>=0.11.0` | 0.15.20 |
+| Pyright | `>=1.1.400` | 1.1.410 |
+| pytest | `>=8.3.0` | 9.1.1 |
+| pytest-cov | `>=6.0.0` | 7.1.0 |
+| coverage | `>=7.6.0` | 7.14.3 |
+| pip-audit | `>=2.7.0` | 2.10.1 |
+
+Interpreter note: `requires-python = ">=3.12"` and Pyright target `pythonVersion: "3.12"`
+are the compatibility floor. uv installs the newest allowed interpreter, so a local `.venv`
+may run 3.13 while the type checker still validates 3.12 compatibility. Nothing in the tree
+relies on 3.13-only syntax — keep it that way so the two stay interchangeable.
+
 ### 2.2 Linting & Formatting
 
 **Tool: [Ruff](https://docs.astral.sh/ruff/)** — replaces flake8 + isort + black + bandit in one
 binary (pydocstyle via the `D` rules).
+
+Version comes from `uv.lock` (currently **0.15.20**, floor `>=0.11.0` in `pyproject.toml`).
+The pre-commit hook pins its own copy in `.pre-commit-config.yaml`; see §6 for why those two
+numbers can differ.
 
 ```toml
 # backend/pyproject.toml
@@ -144,6 +166,9 @@ indent-style = "space"
 
 **Tool: [Pyright](https://github.com/microsoft/pyright)** — **strict mode, with five rules
 relaxed** (see note below).
+
+Version comes from `uv.lock` (currently **1.1.410**, floor `>=1.1.400`). Pyright is the
+decided choice over mypy (§9).
 
 ```json
 // backend/pyrightconfig.json
@@ -273,6 +298,17 @@ health data.
 | Package manager | **npm** (lock file committed) |
 | Build tool | **Vite 6.x** |
 | Framework | **React 19** + TypeScript (TS ~5.8) |
+
+As on the backend, `package.json` declares caret ranges and `frontend/package-lock.json`
+holds the resolved versions — the lockfile is the source of truth for reviews:
+
+| Tool | Range in `package.json` | Resolved in `package-lock.json` |
+|---|---|---|
+| TypeScript | `~5.8.0` | 5.8.3 |
+| Vite | `^6.3.0` | 6.4.3 |
+| Vitest | `^3.1.0` | 3.2.6 |
+| oxlint | `^1.8.0` | 1.71.0 |
+| Prettier | `^3.5.0` | 3.8.4 |
 
 **`allowScripts`:** `frontend/package.json` whitelists the three packages whose postinstall
 scripts are required — **esbuild**, **fsevents**, **msw** — pinned to exact versions so
@@ -592,6 +628,23 @@ repos:
 ```
 
 **No tests in pre-commit** — too slow for a blocking hook; they run in CI.
+
+Install status is per-clone, not in the repo: `pre-commit install` writes a hook script under
+`.git/hooks/` that is tracked nowhere. `make install` does **not** install the hook — run
+`uv tool install pre-commit && pre-commit install` once per clone (the README quick start does
+this). Check whether a clone has it with `test -x .git/hooks/pre-commit`.
+
+Two other things worth knowing about the hook set:
+
+- **Hook versions are pinned by git tag, independently of `uv.lock`/`package-lock.json`.**
+  `ruff-pre-commit` is pinned at `rev: v0.11.0` while the lockfile resolves Ruff **0.15.20**.
+  Both run real Ruff, but a rule added or changed between the two releases can lint
+  differently in the hook (pre-commit) and in `make lint`/CI (locked venv). Bump the `rev` to
+  match the lockfile whenever that matters; pre-commit fetches the hook env on first run.
+- **The Python and Node hooks use `pass_filenames: false`**, so they run the project-wide
+  command on every commit that touches a matching file rather than just the staged paths.
+  Ruff (via the `ruff-pre-commit` repo, whose hooks do receive filenames) is the staged-only
+  hook. This keeps hook output identical to `make check`, at the cost of a slower commit.
 
 ---
 
