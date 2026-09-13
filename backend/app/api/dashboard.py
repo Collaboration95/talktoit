@@ -26,6 +26,7 @@ from app.db.aggregations import (
     DEFAULT_TZ,
     bucket_key,
     generate_buckets,
+    minutes_from_duration,
     to_local_dt,
     utc_bounds,
 )
@@ -39,7 +40,11 @@ from app.db.dashboard_cache import (
 )
 from app.db.data_profile import DataProfile
 from app.db.migrate import table_has_column
-from app.db.queries import get_training_volume
+from app.db.queries import (
+    SQL_DISTANCE_BY_WORKOUT,
+    SQL_ENERGY_BY_WORKOUT,
+    get_training_volume,
+)
 from app.ingest.gpx import parse_gpx_route
 from app.models.dashboard import (
     ActivityRingDay,
@@ -71,26 +76,17 @@ router = APIRouter(prefix="/api/dashboard")
 # SQL constants (no f-strings in execute calls — avoids S608)
 # ---------------------------------------------------------------------------
 
-_SQL_DISTANCE_STATS = """
-SELECT workout_id,
-    SUM(CASE
-        WHEN LOWER(unit) = 'km' THEN sum * 1000.0
-        WHEN LOWER(unit) IN ('mi', 'mile', 'miles') THEN sum * 1609.344
-        ELSE sum
-    END) AS distance_m
-FROM workout_statistics
-WHERE type IN ('HKQuantityTypeIdentifierDistanceWalkingRunning',
-               'HKQuantityTypeIdentifierDistanceCycling',
-               'HKQuantityTypeIdentifierDistanceSwimming')
-GROUP BY workout_id
-"""
+# Reuse the canonical per-workout unit normalization from queries.py so the
+# dashboard and the chat query paths can never disagree about a unit.
+_SQL_DISTANCE_STATS = SQL_DISTANCE_BY_WORKOUT
+_SQL_ENERGY_STATS = SQL_ENERGY_BY_WORKOUT
 
 _SQL_WORKOUTS_LIST = (
     """
 SELECT w.id, w.activity_type, w.start_date, w.duration, w.duration_unit, w.source_name,
     hr.average AS avg_hr,
     dist.distance_m AS distance_m,
-    energy.sum AS energy_kj
+    energy.energy_kj AS energy_kj
 FROM workouts w
 LEFT JOIN workout_statistics hr
     ON hr.workout_id = w.id
@@ -100,9 +96,11 @@ LEFT JOIN (
     + _SQL_DISTANCE_STATS
     + """
 ) dist ON dist.workout_id = w.id
-LEFT JOIN workout_statistics energy
-    ON energy.workout_id = w.id
-    AND energy.type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
+LEFT JOIN (
+"""
+    + _SQL_ENERGY_STATS
+    + """
+) energy ON energy.workout_id = w.id
 WHERE w.start_date >= ? AND w.start_date < ?
   AND (? IS NULL OR w.activity_type = ?)
   AND (? IS NULL OR w.source_name = ?)
@@ -189,7 +187,7 @@ SELECT
     hr.average          AS avg_hr,
     hr.maximum          AS max_hr,
     dist.distance_m     AS distance_m,
-    energy.sum          AS energy_kj,
+    energy.energy_kj    AS energy_kj,
     TRY_CAST(elev.value AS DOUBLE) AS elevation_m
 FROM workouts w
 LEFT JOIN workout_statistics hr
@@ -200,9 +198,11 @@ LEFT JOIN (
     + _SQL_DISTANCE_STATS
     + """
 ) dist ON dist.workout_id = w.id
-LEFT JOIN workout_statistics energy
-    ON energy.workout_id = w.id
-    AND energy.type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
+LEFT JOIN (
+"""
+    + _SQL_ENERGY_STATS
+    + """
+) energy ON energy.workout_id = w.id
 LEFT JOIN workout_metadata elev
     ON elev.workout_id = w.id
     AND elev.key = 'HKElevationAscended'
@@ -263,11 +263,8 @@ def _resolve_window(
 
 
 def _duration_minutes(duration: float | None, unit: str | None) -> float | None:
-    if duration is None:
-        return None
-    if unit == "hr":
-        return duration * 60.0
-    return float(duration)
+    """Reuse the shared duration conversion so every panel agrees on units."""
+    return minutes_from_duration(duration, unit)
 
 
 def _workout_fingerprint(

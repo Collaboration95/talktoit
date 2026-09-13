@@ -24,7 +24,7 @@ class WorkoutCardData(BaseModel):
 
     activity_type: str
     date: datetime
-    duration_minutes: float
+    duration_minutes: float | None
     avg_heart_rate: int | None
     max_heart_rate: int | None
     distance_meters: float | None

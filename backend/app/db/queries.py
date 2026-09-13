@@ -29,6 +29,8 @@ from app.db.aggregations import (
     to_iso_week,
     to_local_dt,
     utc_bounds,
+    utc_day_end,
+    utc_day_start,
 )
 from app.models.templates import (
     ComparisonData,
@@ -44,6 +46,10 @@ from app.models.templates import (
     WorkoutCardData,
 )
 
+# Unit-conversion fragments are closed module-level constants; all user values
+# remain bound parameters in execute() calls.
+# ruff: noqa: S608
+
 if TYPE_CHECKING:
     import duckdb
 
@@ -51,7 +57,74 @@ if TYPE_CHECKING:
 # SQL constants (no f-strings in execute calls — avoids S608)
 # ---------------------------------------------------------------------------
 
-_SQL_LAST_WORKOUT = """
+_DISTANCE_EXPR = """CASE
+    WHEN LOWER({unit}) IN ('m', 'meter', 'metre', 'meters', 'metres') THEN {value}
+    WHEN LOWER({unit}) = 'km' THEN {value} * 1000.0
+    WHEN LOWER({unit}) IN ('mi', 'mile', 'miles') THEN {value} * 1609.344
+    ELSE NULL
+END"""
+_DURATION_EXPR = """CASE
+    WHEN LOWER({unit}) IN ('hr', 'hour', 'hours') THEN {value} * 60.0
+    WHEN LOWER({unit}) IN ('sec', 'second', 'seconds', 's') THEN {value} / 60.0
+    WHEN LOWER({unit}) IN ('min', 'minute', 'minutes') THEN {value}
+    ELSE NULL
+END"""
+_ENERGY_EXPR = """CASE
+    WHEN LOWER({unit}) IN ('kcal', 'kilocalorie', 'kilocalories') THEN {value} * 4.184
+    WHEN LOWER({unit}) = 'cal' THEN {value} * 0.004184
+    WHEN LOWER({unit}) IN ('kj', 'kilojoule', 'kilojoules') THEN {value}
+    ELSE NULL
+END"""
+
+
+def _unit_expr(template: str, *, unit: str, value: str) -> str:
+    """Instantiate one of the shared unit-conversion SQL fragments."""
+    return template.format(unit=unit, value=value)
+
+
+def distance_to_metres_sql(unit: str = "unit", value: str = "sum") -> str:
+    """Return the canonical SQL expression for distance units."""
+    return _unit_expr(_DISTANCE_EXPR, unit=unit, value=value)
+
+
+def energy_to_kj_sql(unit: str = "unit", value: str = "sum") -> str:
+    """Return the canonical SQL expression converting energy units to kilojoules.
+
+    Apple Health records active energy in kcal or kJ. A literal small calorie
+    (cal) is 4.184 joules; an unrecognized unit yields NULL so the row is not
+    silently added to a kilojoule total.
+    """
+    return _unit_expr(_ENERGY_EXPR, unit=unit, value=value)
+
+
+_DISTANCE_STAT_EXPR = distance_to_metres_sql("unit", "sum")
+_DISTANCE_WS_EXPR = distance_to_metres_sql("ws.unit", "ws.sum")
+_DURATION_EXPR_W = _unit_expr(_DURATION_EXPR, unit="w.duration_unit", value="w.duration")
+_DURATION_EXPR_BARE = _unit_expr(_DURATION_EXPR, unit="duration_unit", value="duration")
+_ENERGY_WS_EXPR = _unit_expr(_ENERGY_EXPR, unit="ws.unit", value="ws.sum")
+_ENERGY_STAT_EXPR = _unit_expr(_ENERGY_EXPR, unit="unit", value="sum")
+
+# Per-workout distance and energy aggregates, shared with the dashboard API so
+# both surfaces normalize units identically.
+SQL_DISTANCE_BY_WORKOUT = f"""
+SELECT workout_id,
+    SUM({_DISTANCE_STAT_EXPR}) AS distance_m
+FROM workout_statistics
+WHERE type IN ('HKQuantityTypeIdentifierDistanceWalkingRunning',
+               'HKQuantityTypeIdentifierDistanceCycling',
+               'HKQuantityTypeIdentifierDistanceSwimming')
+GROUP BY workout_id
+"""
+
+SQL_ENERGY_BY_WORKOUT = f"""
+SELECT workout_id,
+    SUM({_ENERGY_STAT_EXPR}) AS energy_kj
+FROM workout_statistics
+WHERE type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
+GROUP BY workout_id
+"""
+
+_SQL_LAST_WORKOUT = f"""
 SELECT
     w.id,
     w.activity_type,
@@ -62,7 +135,7 @@ SELECT
     hr.average          AS avg_hr,
     hr.maximum          AS max_hr,
     dist.distance_m     AS distance_m,
-    energy.sum          AS energy_kj,
+    energy.energy_kj    AS energy_kj,
     TRY_CAST(elev.value AS DOUBLE) AS elevation_m
 FROM workouts w
 LEFT JOIN workout_statistics hr
@@ -70,11 +143,7 @@ LEFT JOIN workout_statistics hr
     AND hr.type = 'HKQuantityTypeIdentifierHeartRate'
 LEFT JOIN (
     SELECT workout_id,
-        SUM(CASE
-            WHEN LOWER(unit) = 'km' THEN sum * 1000.0
-            WHEN LOWER(unit) IN ('mi', 'mile', 'miles') THEN sum * 1609.344
-            ELSE sum
-        END) AS distance_m
+        SUM({_DISTANCE_STAT_EXPR}) AS distance_m
     FROM workout_statistics
     WHERE type IN (
         'HKQuantityTypeIdentifierDistanceWalkingRunning',
@@ -83,19 +152,22 @@ LEFT JOIN (
     )
     GROUP BY workout_id
 ) dist ON dist.workout_id = w.id
-LEFT JOIN workout_statistics energy
-    ON energy.workout_id = w.id
-    AND energy.type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
+LEFT JOIN (
+    SELECT workout_id, SUM({_ENERGY_STAT_EXPR}) AS energy_kj
+    FROM workout_statistics
+    WHERE type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
+    GROUP BY workout_id
+) energy ON energy.workout_id = w.id
 LEFT JOIN workout_metadata elev
     ON elev.workout_id = w.id
     AND elev.key = 'HKElevationAscended'
 WHERE w.activity_type = ?
-  AND (? IS NULL OR CASE WHEN w.duration_unit = 'hr' THEN w.duration * 60 ELSE w.duration END >= ?)
+  AND (? IS NULL OR {_DURATION_EXPR_W} >= ?)
 ORDER BY w.start_date DESC
 LIMIT 1
 """
 
-_SQL_TOP_WORKOUTS = """
+_SQL_TOP_WORKOUTS = f"""
 SELECT
     w.id,
     w.activity_type,
@@ -105,18 +177,14 @@ SELECT
     hr.average   AS avg_hr,
     hr.maximum   AS max_hr,
     dist.distance_m AS distance_m,
-    energy.sum   AS energy_kj
+    energy.energy_kj AS energy_kj
 FROM workouts w
 LEFT JOIN workout_statistics hr
     ON hr.workout_id = w.id
     AND hr.type = 'HKQuantityTypeIdentifierHeartRate'
 LEFT JOIN (
     SELECT workout_id,
-        SUM(CASE
-            WHEN LOWER(unit) = 'km' THEN sum * 1000.0
-            WHEN LOWER(unit) IN ('mi', 'mile', 'miles') THEN sum * 1609.344
-            ELSE sum
-        END) AS distance_m
+        SUM({_DISTANCE_STAT_EXPR}) AS distance_m
     FROM workout_statistics
     WHERE type IN (
         'HKQuantityTypeIdentifierDistanceWalkingRunning',
@@ -125,51 +193,49 @@ LEFT JOIN (
     )
     GROUP BY workout_id
 ) dist ON dist.workout_id = w.id
-LEFT JOIN workout_statistics energy
-    ON energy.workout_id = w.id
-    AND energy.type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
+LEFT JOIN (
+    SELECT workout_id, SUM({_ENERGY_STAT_EXPR}) AS energy_kj
+    FROM workout_statistics
+    WHERE type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
+    GROUP BY workout_id
+) energy ON energy.workout_id = w.id
 WHERE w.activity_type = ?
-  AND w.start_date >= ?
-  AND w.start_date < ?
-ORDER BY {order_col} DESC NULLS LAST, w.start_date DESC, w.id DESC
+  AND (? IS NULL OR w.start_date >= ?)
+  AND (? IS NULL OR w.start_date < ?)
+ORDER BY CASE ?
+    WHEN 'distance' THEN dist.distance_m
+    WHEN 'duration' THEN {_DURATION_EXPR_W}
+    WHEN 'avg_hr' THEN hr.average
+    WHEN 'energy' THEN energy.energy_kj
+    ELSE NULL
+END DESC NULLS LAST, w.start_date DESC, w.id DESC
 LIMIT ?
 """
 
-# Fixed metric -> ranking column whitelist for _SQL_TOP_WORKOUTS. Only the
-# literal keys below are accepted (the ``metric`` argument is a closed Literal
-# type), so the ORDER BY column can never be attacker-controlled.
-_TOP_WORKOUTS_ORDER_COLUMNS = {
-    "distance": "dist.distance_m",
-    "duration": "w.duration",
-    "avg_hr": "hr.average",
-    "energy": "energy.sum",
-}
-
-_SQL_WORKOUT_COLLECTION = """
+_SQL_WORKOUT_COLLECTION = f"""
 SELECT w.id, w.activity_type, w.start_date, w.duration, w.duration_unit, w.source_name,
     hr.average AS avg_hr,
     dist.distance_m AS distance_m,
-    energy.sum AS energy_kj
+    energy.energy_kj AS energy_kj
 FROM workouts w
 LEFT JOIN workout_statistics hr
     ON hr.workout_id = w.id
     AND hr.type = 'HKQuantityTypeIdentifierHeartRate'
 LEFT JOIN (
     SELECT workout_id,
-        SUM(CASE
-            WHEN LOWER(unit) = 'km' THEN sum * 1000.0
-            WHEN LOWER(unit) IN ('mi', 'mile', 'miles') THEN sum * 1609.344
-            ELSE sum
-        END) AS distance_m
+        SUM({_DISTANCE_STAT_EXPR}) AS distance_m
     FROM workout_statistics
     WHERE type IN ('HKQuantityTypeIdentifierDistanceWalkingRunning',
                    'HKQuantityTypeIdentifierDistanceCycling',
                    'HKQuantityTypeIdentifierDistanceSwimming')
     GROUP BY workout_id
 ) dist ON dist.workout_id = w.id
-LEFT JOIN workout_statistics energy
-    ON energy.workout_id = w.id
-    AND energy.type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
+LEFT JOIN (
+    SELECT workout_id, SUM({_ENERGY_STAT_EXPR}) AS energy_kj
+    FROM workout_statistics
+    WHERE type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
+    GROUP BY workout_id
+) energy ON energy.workout_id = w.id
 WHERE w.start_date >= ? AND w.start_date < ?
   AND (? IS NULL OR w.activity_type = ?)
   AND (? IS NULL OR w.source_name = ?)
@@ -188,18 +254,14 @@ WHERE type = ?
 ORDER BY start_date
 """
 
-_SQL_WORKOUTS_STATS = """
-SELECT COUNT(*) AS cnt, SUM(duration) AS dur
+_SQL_WORKOUTS_STATS = f"""
+SELECT COUNT(*) AS cnt, SUM({_DURATION_EXPR_BARE}) AS dur
 FROM workouts
 WHERE start_date >= ? AND start_date < ?
 """
 
-_SQL_DISTANCE = """
-SELECT SUM(CASE
-    WHEN LOWER(ws.unit) = 'km' THEN ws.sum * 1000.0
-    WHEN LOWER(ws.unit) IN ('mi', 'mile', 'miles') THEN ws.sum * 1609.344
-    ELSE ws.sum
-END)
+_SQL_DISTANCE = f"""
+SELECT SUM({_DISTANCE_WS_EXPR})
 FROM workout_statistics ws
 JOIN workouts w ON ws.workout_id = w.id
 WHERE ws.type IN (
@@ -210,26 +272,22 @@ WHERE ws.type IN (
 AND w.start_date >= ? AND w.start_date < ?
 """
 
-_SQL_ENERGY = """
-SELECT SUM(ws.sum)
+_SQL_ENERGY = f"""
+SELECT SUM({_ENERGY_WS_EXPR})
 FROM workout_statistics ws
 JOIN workouts w ON ws.workout_id = w.id
 WHERE ws.type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
 AND w.start_date >= ? AND w.start_date < ?
 """
 
-_SQL_WORKOUTS_STATS_FILTERED = """
-SELECT COUNT(*) AS cnt, SUM(w.duration) AS dur
+_SQL_WORKOUTS_STATS_FILTERED = f"""
+SELECT COUNT(*) AS cnt, SUM({_DURATION_EXPR_W}) AS dur
 FROM workouts w
 WHERE w.start_date >= ? AND w.start_date < ? AND w.activity_type = ?
 """
 
-_SQL_DISTANCE_FILTERED = """
-SELECT SUM(CASE
-    WHEN LOWER(ws.unit) = 'km' THEN ws.sum * 1000.0
-    WHEN LOWER(ws.unit) IN ('mi', 'mile', 'miles') THEN ws.sum * 1609.344
-    ELSE ws.sum
-END)
+_SQL_DISTANCE_FILTERED = f"""
+SELECT SUM({_DISTANCE_WS_EXPR})
 FROM workout_statistics ws
 JOIN workouts w ON ws.workout_id = w.id
 WHERE ws.type IN (
@@ -240,26 +298,22 @@ WHERE ws.type IN (
 AND w.start_date >= ? AND w.start_date < ? AND w.activity_type = ?
 """
 
-_SQL_ENERGY_FILTERED = """
-SELECT SUM(ws.sum)
+_SQL_ENERGY_FILTERED = f"""
+SELECT SUM({_ENERGY_WS_EXPR})
 FROM workout_statistics ws
 JOIN workouts w ON ws.workout_id = w.id
 WHERE ws.type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
 AND w.start_date >= ? AND w.start_date < ? AND w.activity_type = ?
 """
 
-_SQL_TRAINING_VOLUME = """
+_SQL_TRAINING_VOLUME = f"""
 SELECT w.activity_type, w.start_date, w.duration, w.duration_unit, w.source_name,
     dist.distance_m,
     energy.energy_kj
 FROM workouts w
 LEFT JOIN (
     SELECT workout_id,
-        SUM(CASE
-            WHEN LOWER(unit) = 'km' THEN sum * 1000.0
-            WHEN LOWER(unit) IN ('mi', 'mile', 'miles') THEN sum * 1609.344
-            ELSE sum
-        END) AS distance_m
+        SUM({_DISTANCE_STAT_EXPR}) AS distance_m
     FROM workout_statistics
     WHERE type IN ('HKQuantityTypeIdentifierDistanceWalkingRunning',
                    'HKQuantityTypeIdentifierDistanceCycling',
@@ -267,7 +321,7 @@ LEFT JOIN (
     GROUP BY workout_id
 ) dist ON dist.workout_id = w.id
 LEFT JOIN (
-    SELECT workout_id, SUM(sum) AS energy_kj
+    SELECT workout_id, SUM({_ENERGY_STAT_EXPR}) AS energy_kj
     FROM workout_statistics
     WHERE type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
     GROUP BY workout_id
@@ -316,6 +370,8 @@ class TrainingVolumeResult:
 # ---------------------------------------------------------------------------
 
 _utc_bounds = utc_bounds
+_utc_day_start = utc_day_start
+_utc_day_end = utc_day_end
 _to_local_dt = to_local_dt
 
 
@@ -363,7 +419,7 @@ def get_last_workout(
     ) = row
 
     local_dt = _to_local_dt(start_date_utc, tz)
-    duration_minutes = minutes_from_duration(duration, duration_unit) or 0.0
+    duration_minutes = minutes_from_duration(duration, duration_unit)
     avg_heart_rate = round(avg_hr_raw) if avg_hr_raw is not None else None
     max_heart_rate = round(max_hr_raw) if max_hr_raw is not None else None
     fingerprint = _workout_fingerprint(act_type, start_date_utc, duration, source_name)
@@ -524,26 +580,22 @@ def get_top_workouts(
         metric: The ranking metric: ``"distance"``, ``"duration"``,
             ``"avg_hr"``, or ``"energy"``.
         n: Number of top rows to return.
-        start: First local day of the filter window (inclusive). Defaults to
-            the epoch when ``None``.
-        end: Last local day of the filter window (inclusive). Defaults to a
-            far-future date when ``None``.
+        start: First local day of the filter window (inclusive). ``None``
+            leaves the lower bound open.
+        end: Last local day of the filter window (inclusive). ``None``
+            leaves the upper bound open.
         title: Override the auto-generated chart title.
         tz: IANA timezone for start/end conversion and label formatting.
 
     Returns:
         A :class:`RankedListData` with up to ``n`` ranked rows.
     """
-    if start is None or end is None:
-        utc_start = datetime(1970, 1, 1)
-        utc_end = datetime(2100, 1, 1)
-    else:
-        utc_start, utc_end = _utc_bounds(start, end, tz)
+    utc_start = _utc_day_start(start, tz) if start is not None else None
+    utc_end = _utc_day_end(end, tz) if end is not None else None
 
-    order_col = _TOP_WORKOUTS_ORDER_COLUMNS[metric]
     rows = conn.execute(
-        _SQL_TOP_WORKOUTS.format(order_col=order_col),
-        [activity_type, utc_start, utc_end, n],
+        _SQL_TOP_WORKOUTS,
+        [activity_type, utc_start, utc_start, utc_end, utc_end, metric, n],
     ).fetchall()
 
     ranked_rows: list[RankedListRow] = []
@@ -709,9 +761,7 @@ def get_period_summary(
     )
     energy_val = None if no_workouts else total_energy_kj
 
-    auto_title = (
-        title or f"Training Summary: {period_start.isoformat()} to {period_end.isoformat()}"
-    )
+    auto_title = title or _period_label(period_start, period_end)
 
     metrics: list[PeriodMetric] = [
         PeriodMetric(label="Workouts", value=session_count, unit="sessions"),
@@ -726,6 +776,13 @@ def get_period_summary(
         period_end=period_end,
         metrics=metrics,
     )
+
+
+def _period_label(start: date, end: date) -> str:
+    """Return the shared human-readable period vocabulary used in comparisons."""
+    if start.year == end.year and start.month == end.month:
+        return start.strftime("%B %Y")
+    return f"{start:%d %b %Y} to {end:%d %b %Y}"
 
 
 def _period_stats(
