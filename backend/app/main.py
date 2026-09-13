@@ -31,11 +31,15 @@ from app.observability import configure_logging
 from app.state.app_state import APP_STATE_SCHEMA_VERSION, AppStateRepository
 from app.state.diagnostics import DiagnosticsRepository, safe_record
 
+# The installed distribution name. It must match [project].name in
+# backend/pyproject.toml; a mismatch silently fell back to the literal below.
+_DISTRIBUTION_NAME: Final[str] = "tti-backend"
+
 
 def _package_version() -> str:
     """Return the installed package version, with a source-tree fallback."""
     try:
-        return version("tti")
+        return version(_DISTRIBUTION_NAME)
     except PackageNotFoundError:
         return "0.1.0"
 
@@ -230,6 +234,15 @@ def create_app() -> FastAPI:
     app.include_router(diagnostics_router)
     app.include_router(imports_router)
     app.include_router(settings_router)
+
+    @app.get("/api", include_in_schema=False)
+    async def api_root_not_found() -> JSONResponse:
+        """Return a JSON error for the exact /api path.
+
+        The path convertor route below requires a slash after /api, so without
+        this route the SPA catch-all would answer with HTML.
+        """
+        return JSONResponse(status_code=404, content={"detail": "API route not found"})
 
     @app.get("/api/{full_path:path}", include_in_schema=False)
     async def api_not_found(full_path: str) -> JSONResponse:

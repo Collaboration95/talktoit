@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import signal
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -34,7 +36,13 @@ MAX_IMPORT_BYTES = int(os.environ.get("TTI_IMPORT_MAX_BYTES", str(2 * 1024**3)))
 IMPORT_TIMEOUT_SECONDS = float(os.environ.get("TTI_IMPORT_TIMEOUT_SECONDS", str(60 * 60)))
 MAX_RETAINED_JOBS = 100
 _IMPORT_PROCESSES: dict[str, subprocess.Popen[str]] = {}
+# Upload paths whose import was cancelled before its subprocess was registered.
+# The registration path checks this set so a cancellation cannot race the Popen
+# call and leave an orphan importer running.
+_CANCELLED_IMPORTS: set[str] = set()
 _IMPORT_PROCESS_LOCK = threading.Lock()
+
+_logger = logging.getLogger(__name__)
 
 
 class ImportJob(BaseModel):
@@ -64,6 +72,7 @@ class _ImportJob:
     error: str | None = None
     started_at: str | None = None
     completed_at: str | None = None
+    cancelled: bool = False
 
     def public(self) -> ImportJob:
         """Return the API representation without local paths or subprocess output."""
@@ -90,6 +99,10 @@ class ImportJobManager:
         self._tasks: set[asyncio.Task[None]] = set()
         self._tasks_by_job: dict[str, asyncio.Task[None]] = {}
         self._uploads_by_job: dict[str, Path] = {}
+        # Guarded by _lock: cancel() runs on a worker thread while _run() runs
+        # on the event loop.
+        self._lock = threading.Lock()
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     def list(self) -> list[ImportJob]:
         """Return recent jobs, newest first."""
@@ -130,6 +143,7 @@ class ImportJobManager:
                 self.jobs.pop(stale.id, None)
         self._active_job_id = job.id
         self._uploads_by_job[job.id] = upload_path
+        self._loop = asyncio.get_running_loop()
         task = asyncio.create_task(self._run(job, upload_path))
         self._tasks.add(task)
         self._tasks_by_job[job.id] = task
@@ -139,44 +153,73 @@ class ImportJobManager:
 
     async def _run(self, job: _ImportJob, upload_path: Path) -> None:
         """Execute the existing importer off the event loop."""
-        job.state = "running"
-        job.progress = 10
-        job.started_at = datetime.now(UTC).isoformat()
+        with self._lock:
+            job.state = "running"
+            job.progress = 10
+            job.started_at = datetime.now(UTC).isoformat()
         try:
-            job.report = await asyncio.to_thread(_run_import, upload_path)
-            job.state = "succeeded"
-            job.progress = 100
+            report = await asyncio.to_thread(_run_import, upload_path)
         except Exception:
-            # The importer preserves the last active database on failure. Keep
-            # the browser-facing error stable and never expose subprocess text.
-            job.state = "failed"
-            job.progress = 100
-            job.error = "The import failed; your previous dataset was kept."
+            with self._lock:
+                # A cancellation owns the terminal state; never overwrite it.
+                if not job.cancelled:
+                    # The importer preserves the last active database on
+                    # failure. Keep the browser-facing error stable and never
+                    # expose subprocess text.
+                    job.state = "failed"
+                    job.error = "The import failed; your previous dataset was kept."
+        else:
+            with self._lock:
+                if not job.cancelled:
+                    job.report = report
+                    job.state = "succeeded"
         finally:
-            job.completed_at = datetime.now(UTC).isoformat()
-            self._active_job_id = None
-            self._uploads_by_job.pop(job.id, None)
+            with self._lock:
+                job.progress = 100
+                job.completed_at = datetime.now(UTC).isoformat()
+                # Only release the slot this job owns: a cancelled job may
+                # already have been replaced by a newer import.
+                if self._active_job_id == job.id:
+                    self._active_job_id = None
+                self._uploads_by_job.pop(job.id, None)
             upload_path.unlink(missing_ok=True)
 
     def cancel(self, job_id: str) -> bool:
         """Cancel a queued/running job and release the active slot."""
-        job = self.jobs.get(job_id)
-        if job is None or job.state not in {"queued", "running"}:
-            return False
-        task = self._tasks_by_job.get(job_id)
-        upload_path = self._uploads_by_job.get(job_id)
+        with self._lock:
+            job = self.jobs.get(job_id)
+            if job is None or job.state not in {"queued", "running"}:
+                return False
+            job.cancelled = True
+            job.state = "failed"
+            job.progress = 100
+            job.error = "The import was cancelled."
+            job.completed_at = datetime.now(UTC).isoformat()
+            task = self._tasks_by_job.get(job_id)
+            upload_path = self._uploads_by_job.pop(job_id, None)
+            if self._active_job_id == job_id:
+                self._active_job_id = None
+        # Signal the process group first so an in-flight subprocess stops even
+        # if the waiting worker has not yet been cancelled.
         if upload_path is not None:
             _terminate_import_process(upload_path)
+            # The worker may never run (cancelled before it started); remove the
+            # upload here so a cancellation can never leave it behind.
+            upload_path.unlink(missing_ok=True)
         if task is not None:
-            task.cancel()
-        job.state = "failed"
-        job.progress = 100
-        job.error = "The import was cancelled."
-        job.completed_at = datetime.now(UTC).isoformat()
-        if self._active_job_id == job_id:
-            self._active_job_id = None
-        self._uploads_by_job.pop(job_id, None)
+            self._cancel_task(task)
         return True
+
+    def _cancel_task(self, task: asyncio.Task[None]) -> None:
+        """Cancel a task on its own loop; Task.cancel is not thread-safe."""
+        loop = self._loop
+        if loop is not None and not loop.is_closed():
+            try:
+                loop.call_soon_threadsafe(task.cancel)
+                return
+            except RuntimeError:
+                _logger.debug("Import loop was closed before cancellation")
+        task.cancel()
 
 
 def _run_import(upload_path: Path) -> dict[str, object]:
@@ -191,18 +234,28 @@ def _run_import(upload_path: Path) -> dict[str, object]:
         text=True,
         start_new_session=True,
     )
-    with _IMPORT_PROCESS_LOCK:
-        _IMPORT_PROCESSES[str(upload_path)] = process
+    process_key = str(upload_path)
     try:
+        with _IMPORT_PROCESS_LOCK:
+            cancelled_before_registration = process_key in _CANCELLED_IMPORTS
+            _IMPORT_PROCESSES[process_key] = process
+        if cancelled_before_registration:
+            # A cancellation arrived between job start and Popen registration.
+            _signal_process_group(process, signal.SIGKILL)
+            process.communicate()
+            raise RuntimeError("import subprocess cancelled")
         try:
             stdout, _stderr = process.communicate(timeout=IMPORT_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired as exc:
-            process.kill()
+            # Kill the whole session: the importer spawns its own workers, and
+            # killing only the direct child would leave them running.
+            _signal_process_group(process, signal.SIGKILL)
             process.communicate()
             raise RuntimeError("import subprocess timed out") from exc
     finally:
         with _IMPORT_PROCESS_LOCK:
-            _IMPORT_PROCESSES.pop(str(upload_path), None)
+            _IMPORT_PROCESSES.pop(process_key, None)
+            _CANCELLED_IMPORTS.discard(process_key)
     if process.returncode != 0:
         raise RuntimeError("import subprocess failed")
 
@@ -220,23 +273,35 @@ def _run_import(upload_path: Path) -> dict[str, object]:
 
 
 def _terminate_import_process(upload_path: Path) -> None:
-    """Terminate a subprocess associated with an upload, if one is running."""
+    """Terminate the subprocess group associated with an upload, if running.
+
+    The caller records the cancellation first, so a process that registers
+    after this returns is killed by the registration path instead.
+    """
+    process_key = str(upload_path)
     with _IMPORT_PROCESS_LOCK:
-        process = _IMPORT_PROCESSES.get(str(upload_path))
+        _CANCELLED_IMPORTS.add(process_key)
+        process = _IMPORT_PROCESSES.get(process_key)
     if process is None or process.poll() is not None:
         return
+    _signal_process_group(process, signal.SIGTERM)
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            return
+        time.sleep(0.05)
+    _signal_process_group(process, signal.SIGKILL)
+
+
+def _signal_process_group(process: subprocess.Popen[str], sig: signal.Signals) -> None:
+    """Signal a process group, falling back to the process on platforms without it."""
     try:
-        os.killpg(process.pid, signal.SIGTERM)
+        os.killpg(process.pid, sig)
     except (AttributeError, OSError):
-        process.terminate()
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except (AttributeError, OSError):
+        if sig == signal.SIGKILL:
             process.kill()
-        process.wait(timeout=5)
+        else:
+            process.terminate()
 
 
 async def _write_upload(request: Request, filename: str) -> tuple[Path, int]:

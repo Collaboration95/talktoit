@@ -17,7 +17,7 @@ import duckdb
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.api.deps import get_app_state_repository, get_diagnostics_repository
-from app.db.connection import connect
+from app.db.connection import connect, lease_connection
 from app.db.data_profile import DataProfile, get_data_profile
 from app.llm.cache_keys import build_cache_key
 from app.llm.followups import FollowupContext, followup_disambiguation, resolve_followup
@@ -53,7 +53,10 @@ def _get_conn() -> Generator[duckdb.DuckDBPyConnection, None, None]:
     """
     conn = connect(read_only=True)
     try:
-        yield conn
+        # Leased for the request so a concurrent import/deletion never closes
+        # the connection while this handler is still reading from it.
+        with lease_connection(conn):
+            yield conn
     finally:
         conn.close()
 
