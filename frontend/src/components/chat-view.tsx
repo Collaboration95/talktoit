@@ -52,7 +52,10 @@ export function ChatView() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [conversationSearch, setConversationSearch] = useState('')
   const backendDown = useBackendHealth()
-  const activeRequest = useRef<AbortController | null>(null)
+  const inFlight = useRef(new Map<string, AbortController>())
+  const conversationRef = useRef<string | undefined>(undefined)
+  const conversationCreation = useRef<Promise<string> | null>(null)
+  const selectionGeneration = useRef(0)
   const nextTurnId = useRef(0)
   const transcriptEnd = useRef<HTMLDivElement | null>(null)
   const readerIsAtBottom = useRef(true)
@@ -88,66 +91,78 @@ export function ChatView() {
 
   const handleQuestion = useCallback(
     async (question: string) => {
-      const activeConversation = conversationId ?? (await createConversation(question.slice(0, 80)))
-      if (!conversationId) {
+      const isNewConversation = !conversationRef.current && !conversationId
+      if (isNewConversation && conversationCreation.current === null) {
+        conversationCreation.current = createConversation(question.slice(0, 80))
+      }
+      const creation = conversationCreation.current
+      const activeConversation = conversationRef.current ?? conversationId ?? (await creation!)
+      if (conversationCreation.current === creation) conversationCreation.current = null
+      conversationRef.current = activeConversation
+      if (isNewConversation) {
         setConversationId(activeConversation)
         setConversations(await listConversations())
       }
       const turnId = newTurnId()
       setTurns((current) => [...current, { id: turnId, status: 'loading', question }])
       const controller = new AbortController()
-      activeRequest.current = controller
+      inFlight.current.set(turnId, controller)
       try {
         const envelope = await askQuestion(question, {
           conversationId: activeConversation,
           signal: controller.signal,
         })
-        if (activeRequest.current !== controller) return
-        setTurns((current) => [
-          ...current.slice(0, -1),
-          { id: turnId, status: 'success', question, envelope, expanded: true },
-        ])
+        setTurns((current) =>
+          current.map((turn) =>
+            turn.id === turnId
+              ? { id: turnId, status: 'success' as const, question, envelope, expanded: true }
+              : turn,
+          ),
+        )
       } catch (err) {
-        if (activeRequest.current !== controller) return
         const message = controller.signal.aborted
           ? 'This request was cancelled.'
           : err instanceof ChatApiError
             ? `Request failed (${err.status}). Please try again.`
             : 'Something went wrong. Please try again.'
-        setTurns((current) => [
-          ...current.slice(0, -1),
-          { id: turnId, status: 'error', question, message },
-        ])
+        setTurns((current) =>
+          current.map((turn) =>
+            turn.id === turnId ? { id: turnId, status: 'error' as const, question, message } : turn,
+          ),
+        )
       } finally {
-        if (activeRequest.current === controller) activeRequest.current = null
+        inFlight.current.delete(turnId)
       }
     },
     [conversationId],
   )
 
   const cancelActiveRequest = useCallback(() => {
-    if (!activeRequest.current) return
-    activeRequest.current.abort()
-    activeRequest.current = null
-    setTurns((current) => {
-      const last = current.at(-1)
-      if (!last || last.status !== 'loading') return current
-      return [
-        ...current.slice(0, -1),
-        {
-          id: last.id,
-          status: 'error',
-          question: last.question,
-          message: 'This request was cancelled.',
-        },
-      ]
-    })
+    for (const controller of inFlight.current.values()) controller.abort()
+    inFlight.current.clear()
+    setTurns((current) =>
+      current.map((turn) =>
+        turn.status === 'loading'
+          ? {
+              id: turn.id,
+              status: 'error' as const,
+              question: turn.question,
+              message: 'This request was cancelled.',
+            }
+          : turn,
+      ),
+    )
   }, [])
 
   const isLoading = turns.some((turn) => turn.status === 'loading')
 
   const selectConversation = useCallback(async (id: string) => {
+    const generation = ++selectionGeneration.current
+    for (const controller of inFlight.current.values()) controller.abort()
+    inFlight.current.clear()
     const stored = await getConversationTurns(id)
+    if (generation !== selectionGeneration.current) return
+    conversationRef.current = id
     setConversationId(id)
     setTurns(
       stored.map((turn, index) => {
@@ -244,6 +259,10 @@ export function ChatView() {
           <span className="text-gray-500">{conversations.length} local conversations</span>
           <button
             onClick={() => {
+              for (const controller of inFlight.current.values()) controller.abort()
+              inFlight.current.clear()
+              conversationRef.current = undefined
+              conversationCreation.current = null
               setConversationId(undefined)
               setTurns([])
             }}

@@ -14,6 +14,7 @@ describe('Fallback', () => {
     const data: FallbackData = { question: 'q', table: null, text: 'Some answer' }
     render(<Fallback data={data} />)
     expect(screen.getByText('Some answer')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Here is what I found' })).toBeInTheDocument()
   })
 
   it('renders table when provided', () => {
@@ -31,5 +32,6 @@ describe('Fallback', () => {
     const data: FallbackData = { question: 'q', table: null, text: null }
     render(<Fallback data={data} />)
     expect(screen.getByText(/Try rephrasing/i)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Answer unavailable' })).toBeInTheDocument()
   })
 })

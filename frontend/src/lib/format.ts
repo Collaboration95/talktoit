@@ -82,7 +82,10 @@ export function formatDateTime(isoDateTime: string): string {
 }
 
 export function formatDateOnly(isoDate: string): string {
-  return mediumDateFormatter().format(new Date(`${isoDate.slice(0, 10)}T12:00:00+08:00`))
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(isoDate)
+  return mediumDateFormatter().format(
+    dateOnly ? new Date(`${isoDate}T12:00:00+08:00`) : new Date(isoDate),
+  )
 }
 
 export function formatDateRange(startDate: string, endDate: string): string {

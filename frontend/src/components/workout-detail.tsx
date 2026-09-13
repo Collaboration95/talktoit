@@ -23,14 +23,25 @@ export function WorkoutDetail({ workoutId, fingerprint, onBack }: WorkoutDetailP
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    const controller = new AbortController()
+    let active = true
     setLoading(true)
     setError(null)
-    fetchWorkoutDetail(workoutId, fingerprint)
-      .then(setData)
+    fetchWorkoutDetail(workoutId, fingerprint, controller.signal)
+      .then((value) => {
+        if (active) setData(value)
+      })
       .catch((err: unknown) => {
+        if (!active || (err instanceof Error && err.name === 'AbortError')) return
         setError(err instanceof Error ? err.message : 'Failed to load workout')
       })
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+      controller.abort()
+    }
   }, [fingerprint, workoutId])
 
   // Memoized above the loading/error early-returns (hooks must run every render).
