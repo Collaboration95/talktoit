@@ -16,6 +16,19 @@ DEFAULT_MODEL = "llama-3.3-70b-versatile"
 _env_loaded = False
 
 
+def _parse_env_value(raw: str) -> str:
+    """Parse a small dotenv value and discard unquoted inline comments."""
+    value = raw.strip()
+    quote: str | None = None
+    for index, char in enumerate(value):
+        if char in {'"', "'"}:
+            quote = None if quote == char else (char if quote is None else quote)
+        elif char == "#" and quote is None and (index == 0 or value[index - 1].isspace()):
+            value = value[:index].rstrip()
+            break
+    return value.strip().strip('"').strip("'").strip()
+
+
 def _load_env_file(path: Path) -> None:
     """Load simple ``KEY=VALUE`` pairs from a local ``.env`` file.
 
@@ -33,7 +46,7 @@ def _load_env_file(path: Path) -> None:
             continue
         key, value = line.split("=", 1)
         key = key.strip()
-        value = value.strip().strip('"').strip("'")
+        value = _parse_env_value(value)
         if key and key not in os.environ and value:
             os.environ[key] = value
 
@@ -111,4 +124,5 @@ def get_model() -> str:
     Returns:
         Model string for the ``model`` parameter of chat completions.
     """
-    return os.environ.get("LLM_MODEL", DEFAULT_MODEL)
+    _ensure_env_loaded()
+    return _get_env("LLM_MODEL", "GROQ_MODEL", default=DEFAULT_MODEL) or DEFAULT_MODEL

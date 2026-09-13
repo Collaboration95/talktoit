@@ -49,4 +49,13 @@ describe('TemplateDispatch', () => {
     render(<TemplateDispatch envelope={envelope} />)
     expect(screen.getByText('Top Runs')).toBeInTheDocument()
   })
+
+  it('degrades malformed template payloads to a safe fallback', () => {
+    render(
+      <TemplateDispatch
+        envelope={{ template_id: 'ranked_list', data: { title: 'Broken', rows: null }, narrative: '' }}
+      />,
+    )
+    expect(screen.getByText(/could not be displayed/i)).toBeInTheDocument()
+  })
 })

@@ -14,6 +14,7 @@ import { TemplateDispatch } from '@/components/template-dispatch'
 import { ChatInput } from '@/components/chat-input'
 import { SeedPrompts } from '@/components/seed-prompts'
 import { useBackendHealth } from '@/lib/use-backend-health'
+import { BackendDownBanner } from '@/components/backend-down-banner'
 
 type ChatTurn =
   | { id: string; status: 'loading'; question: string }
@@ -56,6 +57,8 @@ export function ChatView() {
   const conversationRef = useRef<string | undefined>(undefined)
   const conversationCreation = useRef<Promise<string> | null>(null)
   const selectionGeneration = useRef(0)
+  const [renameTarget, setRenameTarget] = useState<Conversation | null>(null)
+  const [renameTitle, setRenameTitle] = useState('')
   const nextTurnId = useRef(0)
   const transcriptEnd = useRef<HTMLDivElement | null>(null)
   const readerIsAtBottom = useRef(true)
@@ -69,9 +72,12 @@ export function ChatView() {
   // useBackendHealth (R1-12).
 
   useEffect(() => {
-    listConversations(conversationSearch)
-      .then(setConversations)
-      .catch(() => undefined)
+    const timer = window.setTimeout(() => {
+      listConversations(conversationSearch)
+        .then(setConversations)
+        .catch(() => undefined)
+    }, 200)
+    return () => window.clearTimeout(timer)
   }, [conversationId, conversationSearch])
 
   useEffect(() => {
@@ -216,15 +222,10 @@ export function ChatView() {
     [conversationId],
   )
 
-  const renameConversationFromWorkspace = useCallback(
-    async (conversation: Conversation) => {
-      const title = window.prompt('Rename this local conversation', conversation.title)?.trim()
-      if (!title || title === conversation.title) return
-      await renameConversation(conversation.id, title)
-      setConversations(await listConversations(conversationSearch))
-    },
-    [conversationSearch],
-  )
+  const renameConversationFromWorkspace = useCallback(async (conversation: Conversation) => {
+    setRenameTarget(conversation)
+    setRenameTitle(conversation.title)
+  }, [])
 
   const copyAnswer = useCallback((narrative: string) => {
     void navigator.clipboard?.writeText(narrative)
@@ -247,16 +248,11 @@ export function ChatView() {
         <p className="mt-1 text-gray-500">talk to your health data</p>
       </header>
 
-      {backendDown ? (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          Cannot connect to the backend. Make sure <code className="font-mono">make dev</code> is
-          running on port 8000.
-        </div>
-      ) : null}
+      {backendDown ? <BackendDownBanner /> : null}
 
       <div className="space-y-4">
         <div className="flex items-center justify-between text-sm">
-          <span className="text-gray-500">{conversations.length} local conversations</span>
+          <span className="text-gray-500">{conversations.length} conversations</span>
           <button
             onClick={() => {
               for (const controller of inFlight.current.values()) controller.abort()
@@ -296,6 +292,30 @@ export function ChatView() {
                 >
                   Rename
                 </button>
+                {renameTarget?.id === conversation.id ? (
+                  <span className="ml-2 inline-flex items-center gap-1">
+                    <input
+                      value={renameTitle}
+                      onChange={(event) => setRenameTitle(event.target.value)}
+                      aria-label="New conversation title"
+                      className="w-36 rounded border border-gray-300 px-1 text-xs"
+                    />
+                    <button
+                      type="button"
+                      className="text-xs text-blue-600"
+                      onClick={() => {
+                        const title = renameTitle.trim()
+                        if (!title) return
+                        void renameConversation(conversation.id, title)
+                          .then(() => listConversations(conversationSearch))
+                          .then(setConversations)
+                          .then(() => setRenameTarget(null))
+                      }}
+                    >
+                      Save
+                    </button>
+                  </span>
+                ) : null}
                 <button
                   onClick={() => void archiveConversationFromWorkspace(conversation.id)}
                   className="ml-1 text-xs text-gray-600"

@@ -14,6 +14,15 @@ function validDate(value: string | null): value is string {
   return value !== null && /^\d{4}-\d{2}-\d{2}$/.test(value)
 }
 
+function safeText(value: string | null): value is string {
+  return (
+    value !== null &&
+    value.length > 0 &&
+    value.length <= 160 &&
+    ![...value].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
+  )
+}
+
 /** Decode a shareable dashboard URL into a validated, safe scope. */
 export function decodeDashboardQuery(search: string): DashboardQuery {
   const params = new URLSearchParams(search)
@@ -27,8 +36,8 @@ export function decodeDashboardQuery(search: string): DashboardQuery {
   return {
     tab,
     ...(validDate(start) && validDate(end) && start <= end ? { start, end } : {}),
-    ...(activityType && activityType.length <= 160 ? { activityType } : {}),
-    ...(source && source.length <= 160 ? { source } : {}),
+    ...(safeText(activityType) ? { activityType } : {}),
+    ...(safeText(source) ? { source } : {}),
     ...(Number.isInteger(selected) && selected > 0 ? { selectedWorkout: selected } : {}),
     ...(selectedFingerprint && /^[a-f0-9]{16}$/.test(selectedFingerprint)
       ? { selectedWorkoutFingerprint: selectedFingerprint }
