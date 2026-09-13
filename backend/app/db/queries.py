@@ -32,6 +32,7 @@ from app.db.aggregations import (
     utc_day_end,
     utc_day_start,
 )
+from app.db.data_profile import display_activity_type
 from app.models.templates import (
     ComparisonData,
     ComparisonMetric,
@@ -425,7 +426,7 @@ def get_last_workout(
     fingerprint = _workout_fingerprint(act_type, start_date_utc, duration, source_name)
 
     return WorkoutCardData(
-        activity_type=act_type,
+        activity_type=display_activity_type(act_type),
         date=local_dt,
         duration_minutes=duration_minutes,
         avg_heart_rate=avg_heart_rate,
@@ -614,7 +615,9 @@ def get_top_workouts(
 
         local_dt = _to_local_dt(start_date_utc, tz)
         local_date_str = local_dt.strftime("%Y-%m-%d")
-        label = f"{act_type} — {local_date_str}"
+        # The label is display-only, so it uses the shared activity vocabulary
+        # rather than the raw Apple identifier stored in the database.
+        label = f"{display_activity_type(act_type)} — {local_date_str}"
 
         duration_min = minutes_from_duration(duration, duration_unit)
 
@@ -655,7 +658,9 @@ def get_top_workouts(
             )
         )
 
-    auto_title = title or f"Top {n} {activity_type} by {metric.replace('_', ' ').title()}"
+    auto_title = title or (
+        f"Top {n} {display_activity_type(activity_type)} by {metric.replace('_', ' ').title()}"
+    )
     return RankedListData(title=auto_title, rows=ranked_rows)
 
 
@@ -910,7 +915,7 @@ def get_comparison(
         ),
     ]
 
-    activity_label = "All Activities" if not activity_type else activity_type
+    activity_label = "All Activities" if not activity_type else display_activity_type(activity_type)
     auto_title = title or f"{activity_label}: {this_label} vs {last_label}"
 
     return ComparisonData(
