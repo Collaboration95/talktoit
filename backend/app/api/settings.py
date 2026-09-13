@@ -352,9 +352,25 @@ async def delete_imported_health_data(
     if payload.scope != "health":
         raise HTTPException(status_code=422, detail="Scope mismatch for health clear.")
     try:
-        deleted = await asyncio.to_thread(delete_health_database)
+        deleted = await asyncio.to_thread(_delete_health_and_deactivate, repo)
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    if deleted:
-        repo.deactivate_active_dataset()
     return {"deleted": deleted, "scope": "health"}
+
+
+def _delete_health_and_deactivate(repo: AppStateRepository) -> int:
+    """Remove the health database and clear the manifest that describes it.
+
+    Deletion and deactivation are one step so the status endpoint can never
+    advertise an active dataset whose data is gone: the manifest is cleared
+    whenever no health database remains, including when the file was already
+    absent. Filesystem failures are normalized to a runtime error the endpoint
+    reports as a conflict rather than an internal failure.
+    """
+    try:
+        deleted = delete_health_database()
+    except OSError as exc:
+        raise RuntimeError(f"The health database could not be removed: {exc}") from exc
+    if not resolve_db_path().exists():
+        repo.deactivate_active_dataset()
+    return deleted

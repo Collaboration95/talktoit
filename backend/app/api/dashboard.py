@@ -26,10 +26,11 @@ from app.db.aggregations import (
     DEFAULT_TZ,
     bucket_key,
     generate_buckets,
+    minutes_from_duration,
     to_local_dt,
     utc_bounds,
 )
-from app.db.connection import connect, resolve_db_path
+from app.db.connection import connect, lease_connection, resolve_db_path
 from app.db.dashboard_cache import (
     CapabilitiesGlobal,
     DashboardContext,
@@ -39,7 +40,11 @@ from app.db.dashboard_cache import (
 )
 from app.db.data_profile import DataProfile
 from app.db.migrate import table_has_column
-from app.db.queries import get_training_volume
+from app.db.queries import (
+    SQL_DISTANCE_BY_WORKOUT,
+    SQL_ENERGY_BY_WORKOUT,
+    get_training_volume,
+)
 from app.ingest.gpx import parse_gpx_route
 from app.models.dashboard import (
     ActivityRingDay,
@@ -71,32 +76,10 @@ router = APIRouter(prefix="/api/dashboard")
 # SQL constants (no f-strings in execute calls — avoids S608)
 # ---------------------------------------------------------------------------
 
-_SQL_DISTANCE_STATS = """
-SELECT workout_id,
-    SUM(CASE
-        WHEN LOWER(unit) = 'km' THEN sum * 1000.0
-        WHEN LOWER(unit) IN ('mi', 'mile', 'miles') THEN sum * 1609.344
-        WHEN LOWER(unit) IN ('m', 'meter', 'metre', 'meters', 'metres') THEN sum
-        ELSE NULL
-    END) AS distance_m
-FROM workout_statistics
-WHERE type IN ('HKQuantityTypeIdentifierDistanceWalkingRunning',
-               'HKQuantityTypeIdentifierDistanceCycling',
-               'HKQuantityTypeIdentifierDistanceSwimming')
-GROUP BY workout_id
-"""
-
-_SQL_ENERGY_STATS = """
-SELECT workout_id,
-    SUM(CASE
-        WHEN LOWER(unit) IN ('kcal', 'cal') THEN sum * 4.184
-        WHEN LOWER(unit) IN ('kj', 'kilojoule', 'kilojoules') THEN sum
-        ELSE NULL
-    END) AS energy_kj
-FROM workout_statistics
-WHERE type = 'HKQuantityTypeIdentifierActiveEnergyBurned'
-GROUP BY workout_id
-"""
+# Reuse the canonical per-workout unit normalization from queries.py so the
+# dashboard and the chat query paths can never disagree about a unit.
+_SQL_DISTANCE_STATS = SQL_DISTANCE_BY_WORKOUT
+_SQL_ENERGY_STATS = SQL_ENERGY_BY_WORKOUT
 
 _SQL_WORKOUTS_LIST = (
     """
@@ -127,16 +110,10 @@ LIMIT ?
 """
 )
 
-_SQL_SLEEP_RECORDS = """
-SELECT start_date, end_date
-FROM records
-WHERE type = 'HKCategoryTypeIdentifierSleepAnalysis'
-  AND source_name != 'AutoSleep'
-  AND start_date >= ? AND start_date < ?
-ORDER BY start_date
-"""
-
-_SQL_SLEEP_STAGE_RECORDS = """
+# The sleep trend and the sleep-stage panel read the same rows through this one
+# query, so their source policy cannot drift: measured sleep intervals only,
+# excluding AutoSleep's metadata-only summary records.
+_SQL_SLEEP_ROWS = """
 SELECT start_date, end_date, text_value
 FROM records
 WHERE type = 'HKCategoryTypeIdentifierSleepAnalysis'
@@ -250,7 +227,10 @@ def _get_conn() -> Generator[duckdb.DuckDBPyConnection, None, None]:
     """FastAPI dependency — open a DB connection for the request lifetime."""
     conn = connect(read_only=True)
     try:
-        yield conn
+        # Leased for the request so a concurrent import/deletion never closes
+        # the connection while this handler is still reading from it.
+        with lease_connection(conn):
+            yield conn
     finally:
         conn.close()
 
@@ -281,11 +261,8 @@ def _resolve_window(
 
 
 def _duration_minutes(duration: float | None, unit: str | None) -> float | None:
-    if duration is None:
-        return None
-    if unit == "hr":
-        return duration * 60.0
-    return float(duration)
+    """Reuse the shared duration conversion so every panel agrees on units."""
+    return minutes_from_duration(duration, unit)
 
 
 def _workout_fingerprint(
@@ -294,6 +271,23 @@ def _workout_fingerprint(
     """Return a stable local identity supplementing rebuild-local workout IDs."""
     raw = "|".join((activity_type, start_date.isoformat(), str(duration or ""), source_name))
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def _resolve_export_root(repo: AppStateRepository | None) -> FilePath:
+    """Return the directory a stored workout route path is resolved against.
+
+    The import records the export directory it was read from; that value is the
+    only accurate root for Apple's root-relative route references. The
+    environment variable and the database directory remain as fallbacks for
+    databases imported before the root was recorded.
+    """
+    if repo is not None:
+        recorded = repo.get_export_root()
+        if recorded is not None:
+            return recorded.expanduser().resolve()
+    configured = os.environ.get("TTI_EXPORT_PATH")
+    root = FilePath(configured) if configured else resolve_db_path().parent
+    return root.expanduser().resolve()
 
 
 def _route_summary(route: object) -> WorkoutRouteSummary | None:
@@ -608,13 +602,13 @@ def get_sleep(
     start_date, end_date = _resolve_window(context.profile, start, end, days=30)
 
     utc_start, utc_end = utc_bounds(start_date, end_date, DEFAULT_TZ)
-    rows = conn.execute(_SQL_SLEEP_RECORDS, [utc_start, utc_end]).fetchall()
+    rows = conn.execute(_SQL_SLEEP_ROWS, [utc_start, utc_end]).fetchall()
 
     # Apple Health commonly stores overlapping in-bed, awake, and stage
     # intervals.  The raw category value is not persisted, so sum-of-rows
     # double-counts sleep. Merge intervals instead to report elapsed time.
     bucket_intervals: dict[str, list[tuple[datetime, datetime]]] = {}
-    for start_dt_utc, end_dt_utc in rows:
+    for start_dt_utc, end_dt_utc, _text_value in rows:
         local_start = to_local_dt(start_dt_utc, DEFAULT_TZ)
         local_end = to_local_dt(end_dt_utc, DEFAULT_TZ)
         key = bucket_key(local_start.date(), granularity)  # type: ignore[arg-type]
@@ -660,7 +654,7 @@ def get_sleep_stages(
     start_date, end_date = _resolve_window(context.profile, start, end, days=30)
     utc_start, utc_end = utc_bounds(start_date, end_date, DEFAULT_TZ)
     try:
-        rows = conn.execute(_SQL_SLEEP_STAGE_RECORDS, [utc_start, utc_end]).fetchall()
+        rows = conn.execute(_SQL_SLEEP_ROWS, [utc_start, utc_end]).fetchall()
     except duckdb.BinderException:
         # Imports that predate typed category values cannot supply stage
         # labels; fall through to the existing no-labels response below.
@@ -935,11 +929,7 @@ def get_workout_detail(
     route = WorkoutRouteState(state="missing", message="No route is available for this workout.")
     route_path_row = conn.execute(_SQL_WORKOUT_ROUTE_PATH, [workout_id]).fetchone()
     if route_path_row is not None and route_path_row[0] is not None:
-        export_root = (
-            FilePath(os.environ.get("TTI_EXPORT_PATH", str(resolve_db_path().parent)))
-            .expanduser()
-            .resolve()
-        )
+        export_root = _resolve_export_root(repo)
         gps_route = parse_gpx_route(route_path_row[0], allowed_root=export_root)
         if gps_route is None:
             route = WorkoutRouteState(state="invalid", message="The saved route could not be read.")

@@ -11,7 +11,10 @@ is derived from the GROUP BY result.
 
 from __future__ import annotations
 
+import threading
+import time
 from collections.abc import AsyncGenerator, Generator
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import duckdb
@@ -146,6 +149,44 @@ async def test_deactivated_dataset_bypasses_cache_without_breaking_panels(
     assert body["resource"]["dataset_version_id"] is None
     # Bypass means a fresh computation per request — correctness over caching.
     assert profile_counter["n"] == 2
+
+
+def test_cold_miss_coalesces_concurrent_panels(
+    _isolated_state: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Concurrent cold panels share one profile scan instead of each paying for it."""
+    _activate()
+    dashboard_cache.clear_dashboard_cache()
+    scan_started = threading.Event()
+    release = threading.Event()
+    calls = {"n": 0}
+    real = dashboard_cache.get_data_profile
+
+    def slow_profile(conn: duckdb.DuckDBPyConnection) -> object:
+        calls["n"] += 1
+        scan_started.set()
+        assert release.wait(timeout=10)
+        return real(conn)
+
+    monkeypatch.setattr(dashboard_cache, "get_data_profile", slow_profile)
+
+    def worker() -> object:
+        conn = duckdb.connect(":memory:")
+        ingest(str(FIXTURE), conn)
+        try:
+            return dashboard_cache.resolve_dashboard_context(conn)
+        finally:
+            conn.close()
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(worker) for _ in range(4)]
+        assert scan_started.wait(10), "no cold scan started"
+        time.sleep(0.05)
+        release.set()
+        results = [future.result(timeout=20) for future in futures]
+
+    assert calls["n"] == 1
+    assert all(result.profile is results[0].profile for result in results)
 
 
 # ---------------------------------------------------------------------------

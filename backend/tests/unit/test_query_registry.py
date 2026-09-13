@@ -61,6 +61,20 @@ def test_unknown_metric_id_is_rejected_before_query_execution() -> None:
         )
 
 
+def test_trend_rejects_metrics_the_registry_does_not_declare() -> None:
+    """Multi-type and non-numeric catalog metrics are refused, not mislabelled."""
+    for metric_id in ("distance", "sleep", "activity_rings", "workouts"):
+        with pytest.raises(ValidationError, match="Unsupported metric"):
+            MetricTrendInput.model_validate(
+                {
+                    "metric_id": metric_id,
+                    "start": "2024-01-01",
+                    "end": "2024-01-02",
+                    "granularity": "day",
+                }
+            )
+
+
 def test_catalog_metric_alias_maps_to_apple_record_type() -> None:
     conn = duckdb.connect(":memory:")
     conn.execute(SQL_CREATE_TABLES)
