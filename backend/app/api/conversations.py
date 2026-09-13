@@ -1,8 +1,12 @@
 """Local conversation-history endpoints."""
 
-from fastapi import APIRouter, HTTPException
+# FastAPI dependency defaults are intentional for route injection.
+# ruff: noqa: B008
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.api.deps import get_app_state_repository
 from app.state.app_state import AppStateRepository
 
 router = APIRouter(prefix="/api/conversations")
@@ -21,38 +25,47 @@ class ConversationRename(BaseModel):
 
 
 @router.post("")
-async def create_conversation(body: ConversationCreate) -> dict[str, str]:
+async def create_conversation(
+    body: ConversationCreate, repo: AppStateRepository = Depends(get_app_state_repository)
+) -> dict[str, str]:
     """Create a local dataset-scoped conversation."""
-    repo = AppStateRepository()
     active = repo.get_active()
     return {"id": repo.create_conversation(body.title, active.id if active else None)}
 
 
 @router.get("")
-async def list_conversations(search: str = "") -> list[dict[str, object]]:
+async def list_conversations(
+    search: str = "", repo: AppStateRepository = Depends(get_app_state_repository)
+) -> list[dict[str, object]]:
     """List local conversations with title-only local search."""
-    return AppStateRepository().list_conversations(search)
+    return repo.list_conversations(search)
 
 
 @router.get("/{conversation_id}/turns")
-async def get_turns(conversation_id: str) -> list[dict[str, object]]:
+async def get_turns(
+    conversation_id: str, repo: AppStateRepository = Depends(get_app_state_repository)
+) -> list[dict[str, object]]:
     """Read a conversation's immutable local transcript."""
-    return AppStateRepository().get_turns(conversation_id)
+    return repo.get_turns(conversation_id)
 
 
 @router.get("/{conversation_id}/turns/{turn_id}")
-async def get_turn(conversation_id: str, turn_id: str) -> dict[str, object]:
+async def get_turn(
+    conversation_id: str, turn_id: str, repo: AppStateRepository = Depends(get_app_state_repository)
+) -> dict[str, object]:
     """Read one scoped local turn, including a pending or terminal state."""
-    turn = AppStateRepository().get_conversation_turn(conversation_id, turn_id)
+    turn = repo.get_conversation_turn(conversation_id, turn_id)
     if turn is None:
         raise HTTPException(status_code=404, detail="Turn not found")
     return turn
 
 
 @router.post("/{conversation_id}/turns/{turn_id}/cancel")
-async def cancel_turn(conversation_id: str, turn_id: str) -> dict[str, bool]:
+async def cancel_turn(
+    conversation_id: str, turn_id: str, repo: AppStateRepository = Depends(get_app_state_repository)
+) -> dict[str, bool]:
     """Mark only a scoped pending turn as cancelled and retryable."""
-    repository = AppStateRepository()
+    repository = repo
     if repository.get_conversation_turn(conversation_id, turn_id) is None:
         raise HTTPException(status_code=404, detail="Turn not found")
     if not repository.terminate_turn(
@@ -63,24 +76,32 @@ async def cancel_turn(conversation_id: str, turn_id: str) -> dict[str, bool]:
 
 
 @router.patch("/{conversation_id}")
-async def rename_conversation(conversation_id: str, body: ConversationRename) -> dict[str, bool]:
+async def rename_conversation(
+    conversation_id: str,
+    body: ConversationRename,
+    repo: AppStateRepository = Depends(get_app_state_repository),
+) -> dict[str, bool]:
     """Rename one conversation without affecting health data."""
-    if not AppStateRepository().rename_conversation(conversation_id, body.title):
+    if not repo.rename_conversation(conversation_id, body.title):
         raise HTTPException(status_code=404, detail="Conversation not found")
     return {"ok": True}
 
 
 @router.post("/{conversation_id}/archive")
-async def archive_conversation(conversation_id: str) -> dict[str, bool]:
+async def archive_conversation(
+    conversation_id: str, repo: AppStateRepository = Depends(get_app_state_repository)
+) -> dict[str, bool]:
     """Archive one local transcript without deleting its turns."""
-    if not AppStateRepository().archive_conversation(conversation_id):
+    if not repo.archive_conversation(conversation_id):
         raise HTTPException(status_code=404, detail="Conversation not found")
     return {"ok": True}
 
 
 @router.delete("/{conversation_id}")
-async def delete_conversation(conversation_id: str) -> dict[str, bool]:
+async def delete_conversation(
+    conversation_id: str, repo: AppStateRepository = Depends(get_app_state_repository)
+) -> dict[str, bool]:
     """Delete only a selected local conversation after client confirmation."""
-    if not AppStateRepository().delete_conversation(conversation_id):
+    if not repo.delete_conversation(conversation_id):
         raise HTTPException(status_code=404, detail="Conversation not found")
     return {"ok": True}

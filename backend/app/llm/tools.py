@@ -11,6 +11,8 @@ import json
 from datetime import date
 from typing import TYPE_CHECKING, Any, Literal
 
+from pydantic import BaseModel, Field
+
 from app.analytics.registry import (
     execute_comparison,
     execute_latest_workout,
@@ -19,8 +21,15 @@ from app.analytics.registry import (
     execute_ranked_workouts,
 )
 from app.db import queries
-from app.db.data_profile import display_activity_type, resolve_activity_type
+from app.db.data_profile import resolve_activity_type
 from app.models.templates import FallbackData
+
+
+class _FallbackToolInput(BaseModel):
+    """Validated, bounded fallback text returned by a provider."""
+
+    text: str = Field(default="", max_length=500)
+
 
 if TYPE_CHECKING:
     import duckdb
@@ -250,9 +259,7 @@ def _tool_get_last_workout(
             text=f"No {activity_type} workouts found.",
         )
         return ("fallback", fallback.model_dump(mode="json"))
-    data = result.model_dump(mode="json")
-    data["activity_type"] = display_activity_type(data["activity_type"])
-    return ("workout_card", data)
+    return ("workout_card", result.model_dump(mode="json"))
 
 
 def _tool_get_top_workouts(
@@ -276,11 +283,7 @@ def _tool_get_top_workouts(
     result = execute_ranked_workouts(
         conn, {"activity_type": activity_type, "metric": metric, "n": n, "start": start, "end": end}
     )
-    data = result.model_dump(mode="json")
-    data["title"] = data["title"].replace(activity_type, display_activity_type(activity_type))
-    for row in data["rows"]:
-        row["label"] = row["label"].replace(activity_type, display_activity_type(activity_type))
-    return ("ranked_list", data)
+    return ("ranked_list", result.model_dump(mode="json"))
 
 
 def _tool_get_trend(
@@ -362,10 +365,7 @@ def _tool_get_comparison(
             "activity_type": activity_type,
         },
     )
-    data = result.model_dump(mode="json")
-    if activity_type is not None:
-        data["title"] = data["title"].replace(activity_type, display_activity_type(activity_type))
-    return ("comparison", data)
+    return ("comparison", result.model_dump(mode="json"))
 
 
 def _tool_get_fallback_answer(
@@ -381,8 +381,8 @@ def _tool_get_fallback_answer(
     Returns:
         Tuple of (template_id, data_dict).
     """
-    text: str = args.get("text", "")
-    result = queries.get_fallback(question, text=text)
+    parsed = _FallbackToolInput.model_validate({"text": str(args.get("text", ""))})
+    result = queries.get_fallback(question, text=parsed.text.strip())
     return ("fallback", result.model_dump(mode="json"))
 
 
