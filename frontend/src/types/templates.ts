@@ -28,7 +28,7 @@ export interface GpsRoute {
 export interface WorkoutCardData {
   activity_type: string
   date: string // ISO-8601 with timezone
-  duration_minutes: number
+  duration_minutes: number | null
   avg_heart_rate: number | null
   max_heart_rate: number | null
   distance_meters: number | null

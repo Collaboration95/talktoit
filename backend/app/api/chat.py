@@ -17,7 +17,7 @@ import duckdb
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.api.deps import get_app_state_repository, get_diagnostics_repository
-from app.db.connection import connect
+from app.db.connection import connect, lease_connection
 from app.db.data_profile import DataProfile, get_data_profile
 from app.llm.cache_keys import build_cache_key
 from app.llm.followups import FollowupContext, followup_disambiguation, resolve_followup
@@ -53,7 +53,10 @@ def _get_conn() -> Generator[duckdb.DuckDBPyConnection, None, None]:
     """
     conn = connect(read_only=True)
     try:
-        yield conn
+        # Leased for the request so a concurrent import/deletion never closes
+        # the connection while this handler is still reading from it.
+        with lease_connection(conn):
+            yield conn
     finally:
         conn.close()
 
@@ -106,13 +109,24 @@ def _plan_mode(response: ChatResponse, cached: bool, disambiguated: bool) -> str
     return "fallback"
 
 
+def _cacheable_response(response: ChatResponse) -> bool:
+    """Return whether an envelope may be stored and replayed as a cached success.
+
+    Degraded fallback templates and provider fallbacks must never be promoted
+    to a cached answer. The write path and the read path share this predicate so
+    an envelope can never be cache-eligible on one side and rejected on the
+    other.
+    """
+    return response.template_id != "fallback" and response.metadata.provenance != "fallback"
+
+
 def _cacheable_envelope(raw: str) -> bool:
-    """Reject legacy degraded envelopes before they can poison a cache hit."""
+    """Reject stored degraded envelopes before they can poison a cache hit."""
     try:
         payload = ChatResponse.model_validate_json(raw)
     except Exception:
         return False
-    return payload.template_id != "fallback" and payload.metadata.provenance not in {"fallback"}
+    return _cacheable_response(payload)
 
 
 @dataclass
@@ -138,11 +152,25 @@ class _ChatPreparation:
     response: ChatResponse | None
 
 
+@dataclass
+class _PendingTurnHandle:
+    """Worker-to-handler channel for a turn committed during the prephase.
+
+    The prephase runs on a worker thread, so a client cancellation can arrive
+    after the pending turn was committed but before the handler sees the
+    prepared state. The worker publishes the id here so the cancellation path
+    can always terminate the turn it created.
+    """
+
+    turn_id: str | None = None
+
+
 def _prepare_chat(
     request: ChatRequest,
     conn: duckdb.DuckDBPyConnection,
     repository: AppStateRepository,
     diagnostics: DiagnosticsBuffer | DiagnosticsRepository | None = None,
+    handle: _PendingTurnHandle | None = None,
 ) -> _ChatPreparation:
     """Run every blocking local read/write for one request on a worker thread.
 
@@ -163,6 +191,8 @@ def _prepare_chat(
         conn: The request-lifetime DuckDB connection (used here only).
         repository: The app-owned app-state repository.
         diagnostics: Request-scoped diagnostics collector, if available.
+        handle: Optional channel that publishes the pending turn id as soon as
+            it is committed, so a cancelled request can still finish it.
 
     Returns:
         The prepared state; ``response`` is set when no provider call is
@@ -175,6 +205,8 @@ def _prepare_chat(
             pending_turn_id = repository.create_pending_turn(
                 request.conversation_id, request.question, request.cache_mode, conn=store
             )
+            if handle is not None:
+                handle.turn_id = pending_turn_id
         active = repository.get_active(conn=store)
         cache_key = build_cache_key("exact", request.question)
         use_exact_cache = request.parent_turn_id is None
@@ -323,7 +355,7 @@ def _finalize_chat(
             and request.cache_mode != "fresh"
             and not prepared.disambiguated
             and prepared.followup_plan is None
-            and response.metadata.provenance not in {"fallback"}
+            and _cacheable_response(response)
         )
         if cacheable:
             if active is None:
@@ -400,13 +432,22 @@ async def chat(
         HTTPException: A stable, privacy-safe problem envelope for runtime failures.
     """
     prepared: _ChatPreparation | None = None
+    pending_handle = _PendingTurnHandle()
+    prepare_task: asyncio.Task[_ChatPreparation] | None = None
     request_id = request.request_id or f"req_{uuid.uuid4().hex[:12]}"
     started_at = time.perf_counter()
     try:
         with diagnostics_repository.buffer() as diagnostics:
-            prepared = await asyncio.to_thread(
-                _prepare_chat, request, conn, repository, diagnostics
+            # Shield the off-thread prephase so a cancellation cannot abandon a
+            # pending turn the worker is still committing.
+            task = asyncio.create_task(
+                asyncio.to_thread(
+                    _prepare_chat, request, conn, repository, diagnostics, pending_handle
+                )
             )
+            prepare_task = task
+            prepared_state = await asyncio.shield(task)
+            prepared = prepared_state
             response = prepared.response
             if response is None:
                 if prepared.data_profile is None:
@@ -442,19 +483,21 @@ async def chat(
             )
         return response
     except asyncio.CancelledError:
-        await _terminate_pending(
-            prepared, state="cancelled", message="Request cancelled by the client."
+        await _cancel_pending_turn(prepared, pending_handle, prepare_task, repository)
+        await _record_chat_error_async(
+            diagnostics_repository, started_at, "cancelled", request.cache_mode
         )
-        _record_chat_error(diagnostics_repository, started_at, "cancelled", request.cache_mode)
         raise
     except HTTPException:
-        _record_chat_error(diagnostics_repository, started_at, "http", request.cache_mode)
+        await _record_chat_error_async(
+            diagnostics_repository, started_at, "http", request.cache_mode
+        )
         raise
     except ProviderUnavailableError as exc:
         await _terminate_pending(
             prepared, state="failed", message="The optional provider is unavailable."
         )
-        _record_chat_error(
+        await _record_chat_error_async(
             diagnostics_repository, started_at, "provider_unavailable", request.cache_mode
         )
         raise _problem(
@@ -465,7 +508,9 @@ async def chat(
         ) from exc
     except TimeoutError as exc:
         await _terminate_pending(prepared, state="failed", message="The request timed out.")
-        _record_chat_error(diagnostics_repository, started_at, "timeout", request.cache_mode)
+        await _record_chat_error_async(
+            diagnostics_repository, started_at, "timeout", request.cache_mode
+        )
         raise _problem(
             504, "request_timeout", "The request timed out. Please try again.", request_id
         ) from exc
@@ -473,7 +518,7 @@ async def chat(
         await _terminate_pending(
             prepared, state="failed", message="Local health data is unavailable."
         )
-        _record_chat_error(
+        await _record_chat_error_async(
             diagnostics_repository, started_at, "data_unavailable", request.cache_mode
         )
         raise _problem(
@@ -486,7 +531,9 @@ async def chat(
         await _terminate_pending(
             prepared, state="failed", message="The answer could not be completed."
         )
-        _record_chat_error(diagnostics_repository, started_at, "internal", request.cache_mode)
+        await _record_chat_error_async(
+            diagnostics_repository, started_at, "internal", request.cache_mode
+        )
         raise _problem(
             500,
             "internal_failure",
@@ -524,6 +571,47 @@ async def _terminate_pending(
         state=state,
         message=message,
     )
+
+
+async def _cancel_pending_turn(
+    prepared: _ChatPreparation | None,
+    handle: _PendingTurnHandle,
+    prepare_task: asyncio.Task[_ChatPreparation] | None,
+    repository: AppStateRepository,
+) -> None:
+    """Terminate the pending turn of a cancelled request, even mid-prephase.
+
+    The prephase runs on a worker thread that is not stopped by cancellation, so
+    the request handler waits for it to settle before deciding which turn to
+    finish. This is what prevents a cancelled request from leaving a committed
+    turn stuck in the pending state.
+    """
+    if prepared is None and prepare_task is not None:
+        try:
+            prepared = await asyncio.shield(prepare_task)
+        except asyncio.CancelledError:
+            prepared = None
+        except Exception:
+            prepared = None
+    turn_id = prepared.pending_turn_id if prepared is not None else handle.turn_id
+    if not turn_id:
+        return
+    await asyncio.to_thread(
+        repository.terminate_turn,
+        turn_id,
+        state="cancelled",
+        message="Request cancelled by the client.",
+    )
+
+
+async def _record_chat_error_async(
+    diagnostics: DiagnosticsBuffer | DiagnosticsRepository | None,
+    started_at: float,
+    error_class: str,
+    cache_mode: str,
+) -> None:
+    """Record a failed chat event without a synchronous SQLite write on the loop."""
+    await asyncio.to_thread(_record_chat_error, diagnostics, started_at, error_class, cache_mode)
 
 
 def _semantic_cached_answer(

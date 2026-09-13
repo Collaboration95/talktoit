@@ -9,6 +9,10 @@ field cannot drift on the next migration.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from httpx import ASGITransport, AsyncClient
+
 from app.main import create_app
 from app.state.app_state import APP_STATE_SCHEMA_VERSION, AppStateRepository
 from app.state.diagnostics import DiagnosticsRepository
@@ -43,3 +47,28 @@ async def test_startup_event_fields_are_allowlisted(monkeypatch, tmp_path) -> No
 
     assert set(meta) == {"app_version", "duckdb_version", "schema_version", "app_state_version"}
     assert meta["app_version"]  # non-empty
+
+
+async def test_exact_api_paths_return_json_not_spa_html() -> None:
+    """Unknown /api paths must not fall through to the SPA catch-all."""
+    app = create_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        for path in ("/api", "/api/", "/api/unknown-route"):
+            response = await client.get(path)
+            assert response.status_code == 404, path
+            assert response.headers["content-type"].startswith("application/json"), path
+            assert response.json() == {"detail": "API route not found"}, path
+
+
+def test_runtime_version_tracks_backend_package_metadata() -> None:
+    """APP_VERSION must come from the backend distribution, not a silent fallback."""
+    from app.main import _DISTRIBUTION_NAME, APP_VERSION
+
+    assert _DISTRIBUTION_NAME == "tti-backend"
+    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    declared = next(
+        line.split('"')[1]
+        for line in pyproject.read_text().splitlines()
+        if line.startswith("version = ")
+    )
+    assert APP_VERSION == declared

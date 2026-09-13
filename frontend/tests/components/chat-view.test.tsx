@@ -48,9 +48,11 @@ describe('ChatView', () => {
   it('shows loading state while request is in flight', async () => {
     let resolve: (v: Response) => void
     server.use(
-      http.post('/api/chat', () => new Promise((r) => { resolve = r }).then(() =>
-        HttpResponse.json(WORKOUT_ENVELOPE)
-      )),
+      http.post('/api/chat', () =>
+        new Promise((r) => {
+          resolve = r
+        }).then(() => HttpResponse.json(WORKOUT_ENVELOPE)),
+      ),
     )
     const user = userEvent.setup()
     render(<ChatView />)
@@ -79,10 +81,12 @@ describe('ChatView', () => {
     // GH-19: MSW delays the response; clicking Cancel aborts the request and
     // the turn must land in the cancelled-error state (holding in loading until
     // the abort surfaces is illegal, and a success flash is forbidden).
-    server.use(http.post('/api/chat', async () => {
-      await delay('infinite')
-      return HttpResponse.json(WORKOUT_ENVELOPE)
-    }))
+    server.use(
+      http.post('/api/chat', async () => {
+        await delay('infinite')
+        return HttpResponse.json(WORKOUT_ENVELOPE)
+      }),
+    )
     const user = userEvent.setup()
     render(<ChatView />)
     await user.type(screen.getByRole('textbox'), 'last run')
@@ -268,5 +272,115 @@ describe('ChatView', () => {
     await user.click(screen.getByRole('button', { name: /ask/i }))
     await screen.findByText('Your last run was on June 5.')
     expect(screen.queryByText(/showing a basic summary of your data/i)).not.toBeInTheDocument()
+  })
+
+  it('drops a late conversation load after starting a new conversation', async () => {
+    server.use(
+      http.get('/api/conversations', () =>
+        HttpResponse.json([{ id: 'cv_slow', title: 'Slow', created_at: 'now', updated_at: 'now' }]),
+      ),
+      http.get('/api/conversations/cv_slow/turns', async () => {
+        await delay(60)
+        return HttpResponse.json([
+          {
+            id: 'tr_one',
+            question: 'Old question',
+            state: 'completed',
+            response_json: JSON.stringify(WORKOUT_ENVELOPE),
+            error_message: null,
+          },
+        ])
+      }),
+    )
+    const user = userEvent.setup()
+    render(<ChatView />)
+    await user.click(await screen.findByRole('button', { name: 'Slow' }))
+    // The load is still pending when the user resets to a new conversation.
+    await user.click(screen.getByRole('button', { name: 'New conversation' }))
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(screen.queryByText('Old question')).not.toBeInTheDocument()
+    expect(screen.getByText(/ask a question/i)).toBeInTheDocument()
+  })
+
+  it('resets the transcript when the active conversation is deleted', async () => {
+    server.use(
+      http.get('/api/conversations', () =>
+        HttpResponse.json([
+          { id: 'cv_del', title: 'Delete me', created_at: 'now', updated_at: 'now' },
+        ]),
+      ),
+      http.get('/api/conversations/cv_del/turns', () =>
+        HttpResponse.json([
+          {
+            id: 'tr_one',
+            question: 'Old question',
+            state: 'completed',
+            response_json: JSON.stringify(WORKOUT_ENVELOPE),
+            error_message: null,
+          },
+        ]),
+      ),
+      http.delete('/api/conversations/cv_del', () => HttpResponse.json({ ok: true })),
+    )
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const user = userEvent.setup()
+    render(<ChatView />)
+    await user.click(await screen.findByRole('button', { name: 'Delete me' }))
+    await screen.findByText('Old question')
+    await user.click(screen.getByRole('button', { name: 'Delete Delete me' }))
+    await waitFor(() => expect(screen.queryByText('Old question')).not.toBeInTheDocument())
+    confirm.mockRestore()
+  })
+
+  it('shows the backend problem message for a failed answer', async () => {
+    server.use(
+      http.post('/api/chat', () =>
+        HttpResponse.json(
+          {
+            detail: {
+              code: 'provider_unavailable',
+              message:
+                'The optional language provider is unavailable. Try again or use local mode.',
+            },
+          },
+          { status: 503 },
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<ChatView />)
+    await user.type(screen.getByRole('textbox'), 'last run')
+    await user.click(screen.getByRole('button', { name: /ask/i }))
+    expect(
+      await screen.findByText(
+        'The optional language provider is unavailable. Try again or use local mode.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('surfaces a conversation-create failure in the turn', async () => {
+    server.use(
+      http.post('/api/conversations', () =>
+        HttpResponse.json({ detail: 'Could not create' }, { status: 500 }),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<ChatView />)
+    await user.type(screen.getByRole('textbox'), 'last run')
+    await user.click(screen.getByRole('button', { name: /ask/i }))
+    expect(await screen.findByText(/Request failed: Could not create/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
+
+  it('shows a visible error when the conversation list cannot load', async () => {
+    server.use(
+      http.get('/api/conversations', () =>
+        HttpResponse.json({ detail: 'List unavailable' }, { status: 500 }),
+      ),
+    )
+    render(<ChatView />)
+    expect(
+      await screen.findByText('Could not load conversations: List unavailable'),
+    ).toBeInTheDocument()
   })
 })

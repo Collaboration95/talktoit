@@ -214,7 +214,7 @@ _TOP_RE = re.compile(
 # Top-level attributes are intentionally parsed independently of their input
 # order. Apple exports normally use a stable order, but a V2 byte scan must not
 # silently drop valid observations when a producer reorders attributes.
-_ATTRIBUTE_RE = re.compile(rb'(?P<name>[A-Za-z][A-Za-z0-9:_-]*)="(?P<value>[^"]*)"')
+_ATTRIBUTE_RE = re.compile(rb'(?P<name>[A-Za-z][A-Za-z0-9:_-]*)\s*=\s*"(?P<value>[^"]*)"')
 
 # Record device attribute (separate because it's optional and may contain escaped chars)
 _RECORD_DEVICE_RE = re.compile(rb'device="(?P<device>[^"]*)"')
@@ -225,46 +225,26 @@ _WORKOUT_DEVICE_RE = re.compile(rb'device="(?P<device>[^"]*)"')
 # Child element extraction regex
 # ============================================================================
 
-# MetadataEntry (for Record and Workout)
-_METADATA_RE = re.compile(rb'<MetadataEntry\s+key="(?P<key>[^"]*)"\s+value="(?P<value>[^"]*)"')
+# A start-tag body: a run of quoted values or non-delimiter characters. Quoted
+# values are consumed whole so a '>' inside a value cannot end the tag early.
+_TAG_BODY = rb'(?:"[^"]*"|[^>"])*'
 
-# HRV beats
-_HRV_BEAT_RE = re.compile(
-    rb'<InstantaneousBeatsPerMinute\s+bpm="(?P<bpm>\d+)"\s+time="(?P<time>[^"]*)"'
-)
+# Child elements are matched by their start tag only; attributes are then read
+# by name, so a producer may declare them in any order. Matching the tag body
+# first (rather than a fixed attribute sequence) keeps reordered or partial
+# MetadataEntry / HRV / WorkoutEvent / WorkoutRoute / WorkoutStatistics
+# elements from being silently dropped.
+_METADATA_RE = re.compile(rb"<MetadataEntry\b(?P<body>" + _TAG_BODY + rb")\s*/?>")
 
-# Workout children
-_WORKOUT_EVENT_RE = re.compile(
-    rb"<WorkoutEvent\s+"
-    rb'type="(?P<type>[^"]*)"'
-    rb'(?:\s+date="(?P<date>[^"]*)")?'
-    rb'(?:\s+duration="(?P<duration>[^"]*)")?'
-    rb'(?:\s+durationUnit="(?P<durationUnit>[^"]*)")?'
-    rb"\s*/>"
-)
+_HRV_BEAT_RE = re.compile(rb"<InstantaneousBeatsPerMinute\b(?P<body>" + _TAG_BODY + rb")\s*/?>")
 
-# Match complete WorkoutStatistics elements first
-_WORKOUT_STAT_ELEMENT_RE = re.compile(rb"<WorkoutStatistics[^>]*>", re.DOTALL)
+_WORKOUT_EVENT_RE = re.compile(rb"<WorkoutEvent\b(?P<body>" + _TAG_BODY + rb")\s*/?>")
 
-# Individual attribute extractors for WorkoutStatistics
-_WORKOUT_STAT_ATTR_RES = {
-    "type": re.compile(rb'type="([^"]*)"'),
-    "startDate": re.compile(rb'startDate="([^"]*)"'),
-    "endDate": re.compile(rb'endDate="([^"]*)"'),
-    "average": re.compile(rb'average="([^"]*)"'),
-    "minimum": re.compile(rb'minimum="([^"]*)"'),
-    "maximum": re.compile(rb'maximum="([^"]*)"'),
-    "sum": re.compile(rb'sum="([^"]*)"'),
-    "unit": re.compile(rb'unit="([^"]*)"'),
-}
+_WORKOUT_STAT_ELEMENT_RE = re.compile(rb"<WorkoutStatistics\b(?P<body>" + _TAG_BODY + rb")\s*/?>")
 
 _WORKOUT_ROUTE_RE = re.compile(
-    rb"<WorkoutRoute\s+"
-    rb'(?:sourceName="(?P<sourceName>[^"]*)")?'
-    rb'(?:.*?creationDate="(?P<creationDate>[^"]*)")?'
-    rb'(?:.*?startDate="(?P<startDate>[^"]*)")?'
-    rb'(?:.*?endDate="(?P<endDate>[^"]*)")?'
-    rb'.*?<FileReference\s+path="(?P<path>[^"]*)"',
+    rb"<WorkoutRoute\b(?P<body>" + _TAG_BODY + rb")\s*>"
+    rb"(?:(?!<WorkoutRoute\b).)*?<FileReference\b(?P<file_body>" + _TAG_BODY + rb")\s*/?>",
     re.DOTALL,
 )
 
@@ -724,23 +704,27 @@ def parse_byte_range(
                     }
                     records_batch.append(record)
 
-                    # Extract MetadataEntry children
+                    # Extract MetadataEntry children in any attribute order.
                     for meta_match in _METADATA_RE.finditer(children_bytes):
+                        meta_attrs = _parse_attributes(meta_match.group("body"))
+                        if "key" not in meta_attrs or "value" not in meta_attrs:
+                            continue
                         record_metadata_count += 1
                         record_metadata_batch.append(
                             {
                                 "worker_idx": worker_idx,
                                 "parent_local_id": record_id,
-                                "key": _decode_bytes_to_str(meta_match.group("key")),
-                                "value": _decode_bytes_to_str(meta_match.group("value")),
+                                "key": _decode_bytes_to_str(meta_attrs.group("key")),
+                                "value": _decode_bytes_to_str(meta_attrs.group("value")),
                             }
                         )
 
                     # Extract HRV beats. Apple uses a clock-format time value;
                     # numeric offsets remain supported for older exports.
                     for hrv_match in _HRV_BEAT_RE.finditer(children_bytes):
-                        bpm = _parse_int(_decode_bytes_to_str(hrv_match.group("bpm")))
-                        time_str = _decode_bytes_to_str(hrv_match.group("time"))
+                        hrv_attrs = _parse_attributes(hrv_match.group("body"))
+                        bpm = _parse_int(_decode_bytes_to_str(hrv_attrs.group("bpm")))
+                        time_str = _decode_bytes_to_str(hrv_attrs.group("time"))
                         time_offset = _parse_hrv_time(time_str)
                         if bpm is not None and time_offset is not None:
                             hrv_beats_count += 1
@@ -819,132 +803,105 @@ def parse_byte_range(
                     }
                     workouts_batch.append(workout)
 
-                    # Extract WorkoutEvent children
+                    # Extract WorkoutEvent children in any attribute order.
                     for event_match in _WORKOUT_EVENT_RE.finditer(children_bytes):
+                        event_attrs = _parse_attributes(event_match.group("body"))
+                        if "type" not in event_attrs:
+                            continue
                         workout_events_count += 1
                         workout_events_batch.append(
                             {
                                 "worker_idx": worker_idx,
                                 "parent_local_id": workout_id,
-                                "type": _decode_bytes_to_str(event_match.group("type")),
+                                "type": _decode_bytes_to_str(event_attrs.group("type")),
                                 "date": _parse_timestamp_to_datetime(
-                                    _decode_bytes_to_str(event_match.group("date"))
-                                    if event_match.group("date")
-                                    else None
+                                    _decode_bytes_to_str(event_attrs.group("date")) or None
                                 ),
-                                "duration": (
-                                    _parse_float(
-                                        _decode_bytes_to_str(event_match.group("duration"))
-                                    )
-                                    if event_match.group("duration")
-                                    else None
+                                "duration": _parse_float(
+                                    _decode_bytes_to_str(event_attrs.group("duration"))
                                 ),
                                 "duration_unit": (
-                                    _decode_bytes_to_str(event_match.group("durationUnit"))
-                                    if event_match.group("durationUnit")
+                                    _decode_bytes_to_str(event_attrs.group("durationUnit"))
+                                    if event_attrs.group("durationUnit")
                                     else None
                                 ),
                             }
                         )
 
-                    # Extract WorkoutStatistics children
+                    # Extract WorkoutStatistics children in any attribute order.
                     for elem_match in _WORKOUT_STAT_ELEMENT_RE.finditer(children_bytes):
-                        elem_bytes = elem_match.group(0)
+                        stat_attrs = _parse_attributes(elem_match.group("body"))
                         workout_statistics_count += 1
-
-                        # Extract individual attributes
-                        type_match = _WORKOUT_STAT_ATTR_RES["type"].search(elem_bytes)
-                        start_match = _WORKOUT_STAT_ATTR_RES["startDate"].search(elem_bytes)
-                        end_match = _WORKOUT_STAT_ATTR_RES["endDate"].search(elem_bytes)
-                        avg_match = _WORKOUT_STAT_ATTR_RES["average"].search(elem_bytes)
-                        min_match = _WORKOUT_STAT_ATTR_RES["minimum"].search(elem_bytes)
-                        max_match = _WORKOUT_STAT_ATTR_RES["maximum"].search(elem_bytes)
-                        sum_match = _WORKOUT_STAT_ATTR_RES["sum"].search(elem_bytes)
-                        unit_match = _WORKOUT_STAT_ATTR_RES["unit"].search(elem_bytes)
-
                         workout_statistics_batch.append(
                             {
                                 "worker_idx": worker_idx,
                                 "parent_local_id": workout_id,
-                                "type": _decode_bytes_to_str(type_match.group(1))
-                                if type_match
-                                else "",
+                                "type": _decode_bytes_to_str(stat_attrs.group("type")),
                                 "start_date": _parse_timestamp_to_datetime(
-                                    _decode_bytes_to_str(start_match.group(1))
-                                    if start_match
-                                    else None
+                                    _decode_bytes_to_str(stat_attrs.group("startDate")) or None
                                 ),
                                 "end_date": _parse_timestamp_to_datetime(
-                                    _decode_bytes_to_str(end_match.group(1)) if end_match else None
+                                    _decode_bytes_to_str(stat_attrs.group("endDate")) or None
                                 ),
-                                "average": (
-                                    _parse_float(_decode_bytes_to_str(avg_match.group(1)))
-                                    if avg_match
-                                    else None
+                                "average": _parse_float(
+                                    _decode_bytes_to_str(stat_attrs.group("average"))
                                 ),
-                                "minimum": (
-                                    _parse_float(_decode_bytes_to_str(min_match.group(1)))
-                                    if min_match
-                                    else None
+                                "minimum": _parse_float(
+                                    _decode_bytes_to_str(stat_attrs.group("minimum"))
                                 ),
-                                "maximum": (
-                                    _parse_float(_decode_bytes_to_str(max_match.group(1)))
-                                    if max_match
-                                    else None
+                                "maximum": _parse_float(
+                                    _decode_bytes_to_str(stat_attrs.group("maximum"))
                                 ),
-                                "sum": (
-                                    _parse_float(_decode_bytes_to_str(sum_match.group(1)))
-                                    if sum_match
-                                    else None
-                                ),
+                                "sum": _parse_float(_decode_bytes_to_str(stat_attrs.group("sum"))),
                                 "unit": (
-                                    _decode_bytes_to_str(unit_match.group(1))
-                                    if unit_match
+                                    _decode_bytes_to_str(stat_attrs.group("unit"))
+                                    if stat_attrs.group("unit")
                                     else None
                                 ),
                             }
                         )
 
-                    # Extract WorkoutRoute children
+                    # Extract WorkoutRoute children in any attribute order.
                     for route_match in _WORKOUT_ROUTE_RE.finditer(children_bytes):
+                        route_attrs = _parse_attributes(route_match.group("body"))
+                        file_attrs = _parse_attributes(route_match.group("file_body"))
+                        if "path" not in file_attrs:
+                            continue
                         workout_routes_count += 1
                         workout_routes_batch.append(
                             {
                                 "worker_idx": worker_idx,
                                 "parent_local_id": workout_id,
                                 "source_name": (
-                                    _decode_bytes_to_str(route_match.group("sourceName"))
-                                    if route_match.group("sourceName")
+                                    _decode_bytes_to_str(route_attrs.group("sourceName"))
+                                    if route_attrs.group("sourceName")
                                     else None
                                 ),
                                 "creation_date": _parse_timestamp_to_datetime(
-                                    _decode_bytes_to_str(route_match.group("creationDate"))
-                                    if route_match.group("creationDate")
-                                    else None
+                                    _decode_bytes_to_str(route_attrs.group("creationDate")) or None
                                 ),
                                 "start_date": _parse_timestamp_to_datetime(
-                                    _decode_bytes_to_str(route_match.group("startDate"))
-                                    if route_match.group("startDate")
-                                    else None
+                                    _decode_bytes_to_str(route_attrs.group("startDate")) or None
                                 ),
                                 "end_date": _parse_timestamp_to_datetime(
-                                    _decode_bytes_to_str(route_match.group("endDate"))
-                                    if route_match.group("endDate")
-                                    else None
+                                    _decode_bytes_to_str(route_attrs.group("endDate")) or None
                                 ),
-                                "file_path": _decode_bytes_to_str(route_match.group("path")),
+                                "file_path": _decode_bytes_to_str(file_attrs.group("path")),
                             }
                         )
 
-                    # Extract MetadataEntry children
+                    # Extract MetadataEntry children in any attribute order.
                     for meta_match in _METADATA_RE.finditer(children_bytes):
+                        meta_attrs = _parse_attributes(meta_match.group("body"))
+                        if "key" not in meta_attrs or "value" not in meta_attrs:
+                            continue
                         workout_metadata_count += 1
                         workout_metadata_batch.append(
                             {
                                 "worker_idx": worker_idx,
                                 "parent_local_id": workout_id,
-                                "key": _decode_bytes_to_str(meta_match.group("key")),
-                                "value": _decode_bytes_to_str(meta_match.group("value")),
+                                "key": _decode_bytes_to_str(meta_attrs.group("key")),
+                                "value": _decode_bytes_to_str(meta_attrs.group("value")),
                             }
                         )
 

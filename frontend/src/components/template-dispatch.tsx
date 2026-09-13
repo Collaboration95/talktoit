@@ -6,6 +6,7 @@ import type {
   PeriodSummaryData,
   ComparisonData,
   FallbackData,
+  FallbackTableRow,
 } from '@/types/templates'
 import { WorkoutCard } from '@/templates/workout-card'
 import { RankedList } from '@/templates/ranked-list'
@@ -87,8 +88,22 @@ function normalizeFallback(value: unknown, message?: string): FallbackData {
   const record = isRecord(value) ? value : {}
   return {
     question: typeof record['question'] === 'string' ? record['question'] : '',
-    table: Array.isArray(record['table']) ? (record['table'] as FallbackData['table']) : null,
+    table: normalizeFallbackTable(record['table']),
     text: typeof record['text'] === 'string' ? record['text'] : null,
     ...(message ? { message } : {}),
   }
+}
+
+/** Keep only well-formed key/value rows so a nested row cannot throw on render. */
+function normalizeFallbackTable(value: unknown): FallbackTableRow[] | null {
+  if (!Array.isArray(value)) return null
+  const rows: FallbackTableRow[] = []
+  for (const item of value) {
+    if (!isRecord(item)) continue
+    const key = item['key']
+    const rowValue = item['value']
+    if (key === undefined || key === null || rowValue === undefined || rowValue === null) continue
+    rows.push({ key: String(key), value: String(rowValue) })
+  }
+  return rows.length > 0 ? rows : null
 }

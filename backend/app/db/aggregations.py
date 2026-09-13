@@ -53,13 +53,43 @@ def utc_bounds(start: date, end: date, tz: str = DEFAULT_TZ) -> tuple[datetime, 
     Returns:
         Pair of naive UTC datetimes for ``WHERE start_date >= ? AND start_date < ?``.
     """
+    return utc_day_start(start, tz), utc_day_end(end, tz)
+
+
+def utc_day_start(day: date, tz: str = DEFAULT_TZ) -> datetime:
+    """Return the naive-UTC instant of local midnight starting a local day.
+
+    Args:
+        day: Local calendar day whose start is wanted.
+        tz: IANA timezone name.
+
+    Returns:
+        Naive UTC datetime for an inclusive lower bound comparison.
+    """
     zone = ZoneInfo(tz)
-    utc_start = datetime(start.year, start.month, start.day, tzinfo=zone).astimezone(UTC)
-    # Advance the date first, then construct a new local midnight to avoid DST
-    # arithmetic (adding timedelta to a datetime crosses DST transitions incorrectly).
-    end_next = end + timedelta(days=1)
-    utc_end = datetime(end_next.year, end_next.month, end_next.day, tzinfo=zone).astimezone(UTC)
-    return utc_start.replace(tzinfo=None), utc_end.replace(tzinfo=None)
+    return datetime(day.year, day.month, day.day, tzinfo=zone).astimezone(UTC).replace(tzinfo=None)
+
+
+def utc_day_end(day: date, tz: str = DEFAULT_TZ) -> datetime:
+    """Return the naive-UTC half-open end of a local day (the next midnight).
+
+    The day is advanced before the new local midnight is constructed so DST
+    transitions are never crossed with date arithmetic.
+
+    Args:
+        day: Local calendar day whose end is wanted.
+        tz: IANA timezone name.
+
+    Returns:
+        Naive UTC datetime for an exclusive upper bound comparison.
+    """
+    next_day = day + timedelta(days=1)
+    zone = ZoneInfo(tz)
+    return (
+        datetime(next_day.year, next_day.month, next_day.day, tzinfo=zone)
+        .astimezone(UTC)
+        .replace(tzinfo=None)
+    )
 
 
 def to_local_dt(utc_naive: datetime, tz: str = DEFAULT_TZ) -> datetime:
@@ -251,7 +281,7 @@ def minutes_from_duration(duration: float | None, unit: str | None) -> float | N
     """
     if duration is None:
         return None
-    normalized = unit.casefold() if unit else "min"
+    normalized = unit.strip().casefold() if unit else ""
     if normalized in {"hr", "hour", "hours"}:
         return duration * 60.0
     if normalized in {"sec", "second", "seconds", "s"}:

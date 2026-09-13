@@ -166,3 +166,72 @@ async def test_delete_health_data_requires_health_scope_and_deactivates(
         assert deleted.json()["deleted"] == 1
     assert not resolve_db_path().exists()
     assert repo.get_active() is None
+
+
+async def test_delete_health_with_missing_file_still_clears_the_active_dataset(
+    monkeypatch, tmp_path
+) -> None:
+    """An already-absent database must not leave a dangling active manifest."""
+    monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
+    monkeypatch.setenv("TTI_DB_PATH", str(tmp_path / "health.duckdb"))
+    repo = AppStateRepository()
+    repo.activate(
+        source_bytes=b"",
+        source_size_bytes=0,
+        parser_version="v2",
+        schema_version="1",
+        worker_count=1,
+        coverage_start="2026-01-01",
+        coverage_end="2026-01-31",
+        counts={"records": 1},
+    )
+    assert not resolve_db_path().exists()
+
+    async with _client(monkeypatch, tmp_path) as client:
+        response = await client.request(
+            "DELETE",
+            "/api/settings/health",
+            json={"confirm": True, "scope": "health"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["deleted"] == 0
+    assert repo.get_active() is None
+
+
+async def test_delete_health_reports_a_clear_conflict_when_removal_fails(
+    monkeypatch, tmp_path
+) -> None:
+    """A filesystem failure is a 409 with a safe message and keeps the dataset."""
+    monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
+    monkeypatch.setenv("TTI_DB_PATH", str(tmp_path / "health.duckdb"))
+    repo = AppStateRepository()
+    (tmp_path / "health.duckdb").write_bytes(b"local-database")
+    repo.activate(
+        source_bytes=b"",
+        source_size_bytes=0,
+        parser_version="v2",
+        schema_version="1",
+        worker_count=1,
+        coverage_start="2026-01-01",
+        coverage_end="2026-01-31",
+        counts={"records": 1},
+    )
+
+    from app.api import settings as settings_module
+
+    def _failing_delete() -> int:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(settings_module, "delete_health_database", _failing_delete)
+
+    async with _client(monkeypatch, tmp_path) as client:
+        response = await client.request(
+            "DELETE",
+            "/api/settings/health",
+            json={"confirm": True, "scope": "health"},
+        )
+
+    assert response.status_code == 409
+    assert "could not be removed" in response.json()["detail"]
+    assert repo.get_active() is not None
