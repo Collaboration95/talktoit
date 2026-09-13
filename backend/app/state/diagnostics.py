@@ -26,6 +26,29 @@ from app.state.app_state import SQLITE_BUSY_TIMEOUT_MS, default_state_path
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_REPOSITORIES: dict[Path, DiagnosticsRepository] = {}
+_DEFAULT_REPOSITORIES_LOCK = threading.Lock()
+
+
+def shared_repository() -> DiagnosticsRepository:
+    """Return the process-wide diagnostics repository for the configured path.
+
+    Callers that have no request-scoped repository (dashboard panels, the
+    ingest CLI, benchmarks) must not build one per event: a fresh instance
+    re-runs the migration chain, so one dashboard mount would pay for a
+    migration per panel. Instances are keyed by the configured state path, so a
+    test or process that points TTI_APP_STATE_PATH elsewhere still gets its own
+    store.
+    """
+    path = default_state_path()
+    with _DEFAULT_REPOSITORIES_LOCK:
+        repository = _DEFAULT_REPOSITORIES.get(path)
+        if repository is None:
+            repository = DiagnosticsRepository(path)
+            _DEFAULT_REPOSITORIES[path] = repository
+        return repository
+
+
 # ---------------------------------------------------------------------------
 # Public contract
 # ---------------------------------------------------------------------------
@@ -565,7 +588,7 @@ def safe_record(
     :class:`DiagnosticsBuffer` stages the event for one batched flush.
     """
     try:
-        (repository or DiagnosticsRepository()).record(
+        (repository or shared_repository()).record(
             category,
             name,
             status=status,
