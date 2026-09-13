@@ -742,7 +742,9 @@ def parse_byte_range(
                     workout = {
                         "worker_idx": worker_idx,
                         "local_id": workout_id,
-                        "activity_type": _decode_bytes_to_str(attr_match.group("type")),
+                        "activity_type": _decode_bytes_to_str(
+                            attr_match.group("workoutActivityType")
+                        ),
                         "duration": (
                             _parse_float(_decode_bytes_to_str(attr_match.group("duration")))
                             if attr_match.group("duration")

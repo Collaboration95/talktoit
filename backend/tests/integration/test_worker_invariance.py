@@ -113,5 +113,35 @@ def test_data_consistency_across_worker_counts(sample_xml):
     values_4 = sorted([r[2] for r in records_4 if r[2] is not None])
     assert values_1 == values_4
 
+    workouts_1 = db1.execute(
+        "SELECT activity_type, duration, duration_unit FROM workouts ORDER BY id"
+    ).fetchall()
+    workouts_4 = db4.execute(
+        "SELECT activity_type, duration, duration_unit FROM workouts ORDER BY id"
+    ).fetchall()
+    assert workouts_1 == workouts_4
+    assert {row[0] for row in workouts_1} == {"Running", "Cycling", "TraditionalStrengthTraining"}
+
+    # Child tables must reconcile to identical rows, not just identical counts.
+    child_queries = {
+        "record_metadata": "SELECT record_id, key, value FROM record_metadata "
+        "ORDER BY record_id, key, value",
+        "hrv_beats": "SELECT record_id, bpm, time_offset FROM hrv_beats "
+        "ORDER BY record_id, time_offset",
+        "workout_events": "SELECT workout_id, type, duration, duration_unit FROM workout_events "
+        "ORDER BY workout_id, date",
+        "workout_statistics": "SELECT workout_id, type, average, minimum, maximum, sum, unit "
+        "FROM workout_statistics ORDER BY workout_id, type",
+        "workout_routes": "SELECT workout_id, source_name, file_path FROM workout_routes "
+        "ORDER BY workout_id",
+        "workout_metadata": "SELECT workout_id, key, value FROM workout_metadata "
+        "ORDER BY workout_id, key",
+    }
+    for table, query in child_queries.items():
+        rows_1 = db1.execute(query).fetchall()
+        rows_4 = db4.execute(query).fetchall()
+        assert rows_1, f"{table} should not be empty for the fixture"
+        assert rows_1 == rows_4, f"{table} rows differ between 1 and 4 workers"
+
     db1.close()
     db4.close()

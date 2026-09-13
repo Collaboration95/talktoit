@@ -9,7 +9,7 @@ import duckdb
 from httpx import ASGITransport, AsyncClient
 
 from app.db.connection import resolve_db_path
-from app.ingest.parser import ingest
+from app.ingest.coordinator import ingest_v2 as ingest
 from app.main import create_app
 from app.state.app_state import AppStateRepository
 from app.state.diagnostics import DiagnosticsRepository
