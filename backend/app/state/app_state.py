@@ -353,8 +353,14 @@ class AppStateRepository:
         counts: Mapping[str, int],
         warnings: tuple[str, ...] = (),
         content_hash_prefix: str | None = None,
+        export_root: str | Path | None = None,
     ) -> DatasetVersion:
-        """Atomically write a validated manifest and set it as the active dataset."""
+        """Atomically write a validated manifest and set it as the active dataset.
+
+        When provided, export_root records the local directory the import was
+        read from, so route file references stored relative to the export can be
+        resolved and validated after the import finishes.
+        """
         self._ensure_ready()
         dataset_id = f"ds_{uuid.uuid4().hex}"
         imported_at = _now()
@@ -386,6 +392,12 @@ class AppStateRepository:
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 (dataset_id,),
             )
+            if export_root is not None:
+                conn.execute(
+                    "INSERT INTO app_state(key, value) VALUES ('export_root', ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    (str(export_root),),
+                )
         return self.get_active()  # type: ignore[return-value]
 
     def activate_file(
@@ -724,7 +736,20 @@ class AppStateRepository:
         self._ensure_ready()
         with self._connection() as conn:
             changed = conn.execute("DELETE FROM app_state WHERE key = 'active_dataset_id'").rowcount
+            conn.execute("DELETE FROM app_state WHERE key = 'export_root'")
         return changed == 1
+
+    def get_export_root(self, conn: sqlite3.Connection | None = None) -> Path | None:
+        """Return the export directory recorded for the active dataset, if any."""
+        self._ensure_ready()
+        with self._connection(conn) as connection:
+            row = connection.execute(
+                "SELECT value FROM app_state WHERE key = 'export_root'"
+            ).fetchone()
+        if row is None:
+            return None
+        value = str(row["value"]).strip()
+        return Path(value) if value else None
 
     def create_saved_view(self, title: str, query: Mapping[str, object]) -> str:
         """Persist a validated dashboard scope locally for the active dataset."""
