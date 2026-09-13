@@ -11,9 +11,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -29,6 +31,10 @@ router = APIRouter(prefix="/api/imports", tags=["imports"])
 
 ImportState = Literal["queued", "running", "succeeded", "failed"]
 MAX_IMPORT_BYTES = int(os.environ.get("TTI_IMPORT_MAX_BYTES", str(2 * 1024**3)))
+IMPORT_TIMEOUT_SECONDS = float(os.environ.get("TTI_IMPORT_TIMEOUT_SECONDS", str(60 * 60)))
+MAX_RETAINED_JOBS = 100
+_IMPORT_PROCESSES: dict[str, subprocess.Popen[str]] = {}
+_IMPORT_PROCESS_LOCK = threading.Lock()
 
 
 class ImportJob(BaseModel):
@@ -82,6 +88,8 @@ class ImportJobManager:
         self.jobs: dict[str, _ImportJob] = {}
         self._active_job_id: str | None = None
         self._tasks: set[asyncio.Task[None]] = set()
+        self._tasks_by_job: dict[str, asyncio.Task[None]] = {}
+        self._uploads_by_job: dict[str, Path] = {}
 
     def list(self) -> list[ImportJob]:
         """Return recent jobs, newest first."""
@@ -113,10 +121,20 @@ class ImportJobManager:
             created_at=now,
         )
         self.jobs[job.id] = job
+        if len(self.jobs) > MAX_RETAINED_JOBS:
+            finished = sorted(
+                (item for item in self.jobs.values() if item.state in {"succeeded", "failed"}),
+                key=lambda item: item.created_at,
+            )
+            for stale in finished[: max(0, len(self.jobs) - MAX_RETAINED_JOBS)]:
+                self.jobs.pop(stale.id, None)
         self._active_job_id = job.id
+        self._uploads_by_job[job.id] = upload_path
         task = asyncio.create_task(self._run(job, upload_path))
         self._tasks.add(task)
+        self._tasks_by_job[job.id] = task
         task.add_done_callback(self._tasks.discard)
+        task.add_done_callback(lambda _task, job_id=job.id: self._tasks_by_job.pop(job_id, None))
         return job.public()
 
     async def _run(self, job: _ImportJob, upload_path: Path) -> None:
@@ -137,23 +155,58 @@ class ImportJobManager:
         finally:
             job.completed_at = datetime.now(UTC).isoformat()
             self._active_job_id = None
+            self._uploads_by_job.pop(job.id, None)
             upload_path.unlink(missing_ok=True)
+
+    def cancel(self, job_id: str) -> bool:
+        """Cancel a queued/running job and release the active slot."""
+        job = self.jobs.get(job_id)
+        if job is None or job.state not in {"queued", "running"}:
+            return False
+        task = self._tasks_by_job.get(job_id)
+        upload_path = self._uploads_by_job.get(job_id)
+        if upload_path is not None:
+            _terminate_import_process(upload_path)
+        if task is not None:
+            task.cancel()
+        job.state = "failed"
+        job.progress = 100
+        job.error = "The import was cancelled."
+        job.completed_at = datetime.now(UTC).isoformat()
+        if self._active_job_id == job_id:
+            self._active_job_id = None
+        self._uploads_by_job.pop(job_id, None)
+        return True
 
 
 def _run_import(upload_path: Path) -> dict[str, object]:
     """Run the canonical V2 CLI importer and parse its safe JSON report."""
     backend_root = Path(__file__).resolve().parents[2]
-    completed = subprocess.run(  # noqa: S603
-        [sys.executable, "-m", "app.ingest.run", "--report-json", str(upload_path)],
+    command = [sys.executable, "-m", "app.ingest.run", "--report-json", str(upload_path)]
+    process = subprocess.Popen(  # noqa: S603
+        command,
         cwd=backend_root,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        check=False,
+        start_new_session=True,
     )
-    if completed.returncode != 0:
+    with _IMPORT_PROCESS_LOCK:
+        _IMPORT_PROCESSES[str(upload_path)] = process
+    try:
+        try:
+            stdout, _stderr = process.communicate(timeout=IMPORT_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired as exc:
+            process.kill()
+            process.communicate()
+            raise RuntimeError("import subprocess timed out") from exc
+    finally:
+        with _IMPORT_PROCESS_LOCK:
+            _IMPORT_PROCESSES.pop(str(upload_path), None)
+    if process.returncode != 0:
         raise RuntimeError("import subprocess failed")
 
-    for line in reversed(completed.stdout.splitlines()):
+    for line in reversed(stdout.splitlines()):
         candidate = line.strip()
         if not candidate.startswith("{"):
             continue
@@ -164,6 +217,26 @@ def _run_import(upload_path: Path) -> dict[str, object]:
         if isinstance(report, dict):
             return report
     raise RuntimeError("import report was not produced")
+
+
+def _terminate_import_process(upload_path: Path) -> None:
+    """Terminate a subprocess associated with an upload, if one is running."""
+    with _IMPORT_PROCESS_LOCK:
+        process = _IMPORT_PROCESSES.get(str(upload_path))
+    if process is None or process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except (AttributeError, OSError):
+        process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except (AttributeError, OSError):
+            process.kill()
+        process.wait(timeout=5)
 
 
 async def _write_upload(request: Request, filename: str) -> tuple[Path, int]:
@@ -216,6 +289,17 @@ async def list_imports() -> list[ImportJob]:
 @router.get("/{job_id}", response_model=ImportJob)
 async def get_import(job_id: str) -> ImportJob:
     """Return one import job."""
+    job = import_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Import job not found")
+    return job
+
+
+@router.delete("/{job_id}", response_model=ImportJob)
+async def cancel_import(job_id: str) -> ImportJob:
+    """Cancel a queued or running import job."""
+    if not await asyncio.to_thread(import_jobs.cancel, job_id):
+        raise HTTPException(status_code=409, detail="Import job is not cancellable")
     job = import_jobs.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Import job not found")

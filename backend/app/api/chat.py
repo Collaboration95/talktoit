@@ -362,6 +362,7 @@ def _finalize_chat(
         cached=prepared.cache_hit,
         disambiguated=prepared.disambiguated,
         status="ok",
+        cache_mode=request.cache_mode,
     )
 
 
@@ -444,16 +445,18 @@ async def chat(
         await _terminate_pending(
             prepared, state="cancelled", message="Request cancelled by the client."
         )
-        _record_chat_error(diagnostics_repository, started_at, "cancelled")
+        _record_chat_error(diagnostics_repository, started_at, "cancelled", request.cache_mode)
         raise
     except HTTPException:
-        _record_chat_error(diagnostics_repository, started_at, "http")
+        _record_chat_error(diagnostics_repository, started_at, "http", request.cache_mode)
         raise
     except ProviderUnavailableError as exc:
         await _terminate_pending(
             prepared, state="failed", message="The optional provider is unavailable."
         )
-        _record_chat_error(diagnostics_repository, started_at, "provider_unavailable")
+        _record_chat_error(
+            diagnostics_repository, started_at, "provider_unavailable", request.cache_mode
+        )
         raise _problem(
             503,
             "provider_unavailable",
@@ -462,7 +465,7 @@ async def chat(
         ) from exc
     except TimeoutError as exc:
         await _terminate_pending(prepared, state="failed", message="The request timed out.")
-        _record_chat_error(diagnostics_repository, started_at, "timeout")
+        _record_chat_error(diagnostics_repository, started_at, "timeout", request.cache_mode)
         raise _problem(
             504, "request_timeout", "The request timed out. Please try again.", request_id
         ) from exc
@@ -470,7 +473,9 @@ async def chat(
         await _terminate_pending(
             prepared, state="failed", message="Local health data is unavailable."
         )
-        _record_chat_error(diagnostics_repository, started_at, "data_unavailable")
+        _record_chat_error(
+            diagnostics_repository, started_at, "data_unavailable", request.cache_mode
+        )
         raise _problem(
             503,
             "data_unavailable",
@@ -481,7 +486,7 @@ async def chat(
         await _terminate_pending(
             prepared, state="failed", message="The answer could not be completed."
         )
-        _record_chat_error(diagnostics_repository, started_at, "internal")
+        _record_chat_error(diagnostics_repository, started_at, "internal", request.cache_mode)
         raise _problem(
             500,
             "internal_failure",
@@ -566,6 +571,7 @@ def _record_chat_error(
     diagnostics: DiagnosticsBuffer | DiagnosticsRepository | None,
     started_at: float,
     error_class: str,
+    cache_mode: str,
 ) -> None:
     """Record a failed chat event; diagnostics never break the chat path."""
     timed_record(
@@ -574,7 +580,7 @@ def _record_chat_error(
         "chat_request",
         started_at,
         status=error_class,
-        meta={"plan_mode": "error", "cache_outcome": "error", "cache_mode": ""},
+        meta={"plan_mode": "error", "cache_outcome": "error", "cache_mode": cache_mode},
         counts={"cache_hits": 0, "cache_misses": 0, "result_size_bytes": 0},
     )
 
@@ -587,6 +593,7 @@ def _record_chat_event(
     cached: bool,
     disambiguated: bool,
     status: str,
+    cache_mode: str = "default",
 ) -> None:
     """Record one privacy-safe chat event with cache outcome and latency."""
     payload = response.model_dump_json()
@@ -599,7 +606,7 @@ def _record_chat_event(
         meta={
             "plan_mode": _plan_mode(response, cached, disambiguated),
             "cache_outcome": response.metadata.provenance,
-            "cache_mode": "standard",
+            "cache_mode": cache_mode,
         },
         counts={
             "cache_hits": 1 if cached else 0,

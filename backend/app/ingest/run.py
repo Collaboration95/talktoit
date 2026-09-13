@@ -23,7 +23,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
-from app.db.connection import connect, resolve_db_path
+from app.db.connection import close_open_connections, connect, resolve_db_path
 from app.db.data_profile import get_data_profile
 from app.ingest.coordinator import resolve_worker_count
 from app.observability import configure_logging
@@ -283,6 +283,7 @@ def _main_impl() -> None:
 
     # Only a successfully reconciled staging database replaces the active data.
     # A parser failure leaves the previous target untouched.
+    close_open_connections(target_path)
     _fsync_file_and_directory(staging_path)
     os.replace(staging_path, target_path)
     _fsync_file_and_directory(target_path)

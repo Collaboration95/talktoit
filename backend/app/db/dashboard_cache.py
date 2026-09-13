@@ -17,6 +17,8 @@ two caches can never diverge.
 from __future__ import annotations
 
 import threading
+from collections import OrderedDict
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -35,7 +37,7 @@ class DashboardContext:
     active: DatasetVersion | None
 
 
-@dataclass
+@dataclass(frozen=True)
 class CapabilitiesGlobal:
     """Process-cached global capability facts for one dataset+schema variant."""
 
@@ -44,8 +46,8 @@ class CapabilitiesGlobal:
 
 
 _CACHE_MAX_ENTRIES = 4
-_cache: dict[str, DataProfile] = {}
-_cap_cache: dict[tuple[str, bool], CapabilitiesGlobal] = {}
+_cache: OrderedDict[str, DataProfile] = OrderedDict()
+_cap_cache: OrderedDict[tuple[str, bool], CapabilitiesGlobal] = OrderedDict()
 _cache_lock = threading.Lock()
 
 
@@ -65,12 +67,15 @@ def resolve_dashboard_context(
         return DashboardContext(profile=get_data_profile(conn), active=None)
     with _cache_lock:
         hit = _cache.get(active.id)
+        if hit is not None:
+            _cache.move_to_end(active.id)
     if hit is None:
         fresh = get_data_profile(conn)
         with _cache_lock:
             _cache[active.id] = fresh
+            _cache.move_to_end(active.id)
             while len(_cache) > _CACHE_MAX_ENTRIES:
-                _cache.pop(next(iter(_cache)))
+                _cache.popitem(last=False)
         hit = fresh
     return DashboardContext(profile=hit, active=active)
 
@@ -89,7 +94,14 @@ def get_cached_capabilities_global(
     if dataset_id is None:
         return None
     with _cache_lock:
-        return _cap_cache.get((dataset_id, text_values_available))
+        key = (dataset_id, text_values_available)
+        value = _cap_cache.get(key)
+        if value is not None:
+            _cap_cache.move_to_end(key)
+            return CapabilitiesGlobal(
+                record_health=deepcopy(value.record_health), counts=dict(value.counts)
+            )
+        return None
 
 
 def put_cached_capabilities_global(
@@ -99,6 +111,9 @@ def put_cached_capabilities_global(
     if dataset_id is None:
         return
     with _cache_lock:
-        _cap_cache[(dataset_id, text_values_available)] = value
+        _cap_cache[(dataset_id, text_values_available)] = CapabilitiesGlobal(
+            record_health=deepcopy(value.record_health), counts=dict(value.counts)
+        )
+        _cap_cache.move_to_end((dataset_id, text_values_available))
         while len(_cap_cache) > _CACHE_MAX_ENTRIES * 2:
-            _cap_cache.pop(next(iter(_cap_cache)))
+            _cap_cache.popitem(last=False)

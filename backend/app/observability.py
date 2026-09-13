@@ -11,9 +11,8 @@ it defensively:
 
 - ``_REDACT_EVENT_TOKENS``: credential/path/SQL substrings are scrubbed from
   *free-form event text* to make a bad `format` literal harmless.
-- ``_REDACT_VALUE_TOKENS``: the full diagnostics content blacklist is applied
-  to *structured ``payload`` values* (the place a developer could accidentally
-  pass a question or a route row).
+- Structured payload keys are checked against the diagnostics content blacklist;
+  values are scrubbed only when they look like secrets, paths, or SQL.
 
 Callers should never rely on the redaction — it only guards against a future
 slip. Event names are stable words (``"ingest.worker_complete"``), never user
@@ -36,7 +35,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
-from app.state.diagnostics import FORBIDDEN_CONTENT_TOKENS
+from app.state.diagnostics import FORBIDDEN_META_KEYS
 
 # Context attribute name read by :class:`JsonFormatter`.
 PAYLOAD_ATTR = "payload"
@@ -61,7 +60,81 @@ _REDACT_EVENT_PATTERNS = tuple(
 
 # Structured *payload value* tokens: the same list the diagnostics store
 # tests against, so an operational log can never diverge from the allowlist.
-_REDACT_VALUE_TOKENS = FORBIDDEN_CONTENT_TOKENS
+_REDACT_SECRET_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\bBearer\s+[A-Za-z0-9._~+/=-]+",
+        r"\b(?:api[_-]?key|token|secret)\s*[=:]\s*[^\s,}]+",
+        r"(?:^|\s)/(?:Users|home|private|tmp|var)/[^\s]+",
+        r"\b(?:SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b",
+    )
+)
+_REDACT_CONTENT_PATTERNS = tuple(
+    re.compile(rf"(?<![A-Za-z0-9_]){re.escape(token)}(?![A-Za-z0-9_])", re.IGNORECASE)
+    for token in (
+        "question",
+        "record_id",
+        "workout_id",
+        "conversation_id",
+        "dataset_version_id",
+        "start_date",
+        "heart_rate",
+        "gpx",
+        "api_key",
+        "authorization",
+        "bearer",
+        ".xml",
+        "SELECT ",
+        "INSERT INTO",
+        "FROM workouts",
+        "route",
+    )
+)
+_FORBIDDEN_KEY_NAMES = frozenset(item.casefold() for item in FORBIDDEN_META_KEYS)
+_LOG_ALLOWED_KEYS = frozenset(
+    item.casefold()
+    for item in {
+        "mode",
+        "workers",
+        "worker",
+        "records",
+        "record_metadata",
+        "hrv_beats",
+        "workouts",
+        "workout_events",
+        "workout_statistics",
+        "workout_routes",
+        "workout_metadata",
+        "activity_summaries",
+        "ranges",
+        "size_bytes",
+        "bytes",
+        "start_byte",
+        "count",
+        "index",
+        "total",
+        "duration_s",
+        "seconds",
+        "total_seconds",
+        "duration_ms",
+        "table",
+        "metric",
+        "state",
+        "stage",
+        "shards",
+        "row_group",
+        "compression",
+        "outcome",
+        "started",
+        "already_running",
+        "running",
+        "binary_available",
+        "healthy",
+        "error_class",
+        "ok",
+        "leak",
+    }
+)
 
 
 def _iso(epoch_seconds: float) -> str:
@@ -76,20 +149,25 @@ def _redact_text(value: str, patterns: Iterable[re.Pattern[str]] = _REDACT_EVENT
     return value
 
 
-def _redact_value(value: object) -> object:
-    """Recursively redact structured values carrying a forbidden token.
-
-    Strings are matched case-insensitively against the diagnostics blacklist;
-    dicts/lists are rebuilt with their values scrubbed. Other types keep their
-    identity (numbers, booleans, None are safe by construction).
-    """
+def _redact_value(value: object, *, key: str | None = None) -> object:
+    """Redact secret-shaped values and content supplied under forbidden keys."""
+    if key is not None and key.casefold() in _FORBIDDEN_KEY_NAMES:
+        return REDACTED
     if isinstance(value, str):
-        lowered = value.casefold()
-        if any(token.casefold() in lowered for token in _REDACT_VALUE_TOKENS):
+        if (key is None or key.casefold() == "leak") and any(
+            pattern.search(value) for pattern in _REDACT_CONTENT_PATTERNS
+        ):
             return REDACTED
+        for pattern in _REDACT_SECRET_PATTERNS:
+            value = pattern.sub(REDACTED, value)
         return value
     if isinstance(value, dict):
-        return {key: _redact_value(item) for key, item in value.items()}
+        return {
+            str(item_key): _redact_value(item, key=str(item_key))
+            for item_key, item in value.items()
+            if str(item_key).casefold() in _LOG_ALLOWED_KEYS
+            and str(item_key).casefold() not in _FORBIDDEN_KEY_NAMES
+        }
     if isinstance(value, list | tuple):
         return type(value)(_redact_value(item) for item in value)
     return value
