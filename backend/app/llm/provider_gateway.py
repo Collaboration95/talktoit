@@ -100,6 +100,9 @@ class ProviderGateway:
         self._clock = clock or time.monotonic
         self._consecutive_failures = 0
         self._circuit_open_until = 0.0
+        # The gateway is process-owned and shared by concurrent requests; the
+        # circuit state must not be read while another task mutates it.
+        self._circuit_lock = threading.Lock()
         self._active_calls = 0
         self._active_lock = threading.Lock()
 
@@ -179,18 +182,21 @@ class ProviderGateway:
 
     def _circuit_is_open(self) -> bool:
         """Return whether transient failures currently suppress provider calls."""
-        return self._clock() < self._circuit_open_until
+        with self._circuit_lock:
+            return self._clock() < self._circuit_open_until
 
     def _record_failure(self) -> None:
         """Record one retryable failure and open the circuit at the threshold."""
-        self._consecutive_failures += 1
-        if self._consecutive_failures >= self.circuit_failure_threshold:
-            self._circuit_open_until = self._clock() + self.circuit_reset_seconds
+        with self._circuit_lock:
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= self.circuit_failure_threshold:
+                self._circuit_open_until = self._clock() + self.circuit_reset_seconds
 
     def _record_success(self) -> None:
         """Close the circuit and clear transient failure state after success."""
-        self._consecutive_failures = 0
-        self._circuit_open_until = 0.0
+        with self._circuit_lock:
+            self._consecutive_failures = 0
+            self._circuit_open_until = 0.0
 
     async def aclose(self) -> None:
         """Close the process-owned async HTTP client when FastAPI stops."""
@@ -312,11 +318,20 @@ def _schedule_gateway_close(gateway: ProviderGateway) -> None:
 
 
 def clear_gateway_cache() -> None:
-    """Clear the cached gateways (for tests)."""
+    """Clear the cached gateways (for tests), deferring in-flight clients.
+
+    A gateway with calls still in flight stays cached so clearing never closes
+    the client out from under a running request; it is closed when it drains or
+    when the cache evicts it.
+    """
+    drained: list[ProviderGateway] = []
     with _gateway_cache_lock:
-        gateways = list(_gateway_cache.values())
-        _gateway_cache.clear()
-    for gateway in gateways:
+        for key, gateway in list(_gateway_cache.items()):
+            if gateway.active_calls:
+                continue
+            _gateway_cache.pop(key)
+            drained.append(gateway)
+    for gateway in drained:
         _schedule_gateway_close(gateway)
 
 
