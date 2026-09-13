@@ -8,6 +8,7 @@ import {
   listConversations,
   renameConversation,
   type Conversation,
+  type StoredTurn,
 } from '@/api/conversations'
 import type { ChatEnvelope } from '@/types/templates'
 import { TemplateDispatch } from '@/components/template-dispatch'
@@ -45,12 +46,18 @@ function FallbackNotice() {
   )
 }
 
+/** Return a safe, human-readable message for a failed local request. */
+function messageOf(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback
+}
+
 /** Top-level chat page component: input → loading → template result. */
 export function ChatView() {
   const [turns, setTurns] = useState<ChatTurn[]>([])
   const [conversationId, setConversationId] = useState<string>()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [conversationSearch, setConversationSearch] = useState('')
+  const [conversationError, setConversationError] = useState<string | null>(null)
   const backendDown = useBackendHealth()
   const inFlight = useRef(new Map<string, AbortController>())
   const conversationRef = useRef<string | undefined>(undefined)
@@ -68,10 +75,47 @@ export function ChatView() {
   // Health check on mount is shared with the dashboard view via
   // useBackendHealth (R1-12).
 
+  /** Invalidate any pending conversation load so a late response cannot land. */
+  const invalidatePendingLoads = useCallback(() => {
+    selectionGeneration.current += 1
+    return selectionGeneration.current
+  }, [])
+
+  /** Abort live turns and reset to the idle transcript of a new conversation. */
+  const resetTranscript = useCallback(() => {
+    invalidatePendingLoads()
+    conversationRef.current = undefined
+    conversationCreation.current = null
+    for (const controller of inFlight.current.values()) controller.abort()
+    inFlight.current.clear()
+    setConversationId(undefined)
+    setTurns([])
+  }, [invalidatePendingLoads])
+
+  /** Refresh the sidebar list, surfacing a failure instead of dropping it. */
+  const refreshConversationList = useCallback(async () => {
+    try {
+      setConversations(await listConversations(conversationSearch))
+      setConversationError(null)
+    } catch (err) {
+      setConversationError(messageOf(err, 'Could not load conversations.'))
+    }
+  }, [conversationSearch])
+
   useEffect(() => {
+    let active = true
     listConversations(conversationSearch)
-      .then(setConversations)
-      .catch(() => undefined)
+      .then((items) => {
+        if (!active) return
+        setConversations(items)
+        setConversationError(null)
+      })
+      .catch((err: unknown) => {
+        if (active) setConversationError(messageOf(err, 'Could not load conversations.'))
+      })
+    return () => {
+      active = false
+    }
   }, [conversationId, conversationSearch])
 
   useEffect(() => {
@@ -91,23 +135,28 @@ export function ChatView() {
 
   const handleQuestion = useCallback(
     async (question: string) => {
-      const isNewConversation = !conversationRef.current && !conversationId
-      if (isNewConversation && conversationCreation.current === null) {
-        conversationCreation.current = createConversation(question.slice(0, 80))
-      }
-      const creation = conversationCreation.current
-      const activeConversation = conversationRef.current ?? conversationId ?? (await creation!)
-      if (conversationCreation.current === creation) conversationCreation.current = null
-      conversationRef.current = activeConversation
-      if (isNewConversation) {
-        setConversationId(activeConversation)
-        setConversations(await listConversations())
-      }
       const turnId = newTurnId()
       setTurns((current) => [...current, { id: turnId, status: 'loading', question }])
       const controller = new AbortController()
       inFlight.current.set(turnId, controller)
       try {
+        let activeConversation = conversationRef.current ?? conversationId
+        if (!activeConversation) {
+          // Resolve the conversation inside the handled block so a create
+          // failure becomes a visible turn error instead of a stray rejection.
+          if (conversationCreation.current === null) {
+            conversationCreation.current = createConversation(question.slice(0, 80))
+          }
+          const creation = conversationCreation.current
+          try {
+            activeConversation = await creation
+          } finally {
+            if (conversationCreation.current === creation) conversationCreation.current = null
+          }
+          conversationRef.current = activeConversation
+          setConversationId(activeConversation)
+          await refreshConversationList()
+        }
         const envelope = await askQuestion(question, {
           conversationId: activeConversation,
           signal: controller.signal,
@@ -123,8 +172,8 @@ export function ChatView() {
         const message = controller.signal.aborted
           ? 'This request was cancelled.'
           : err instanceof ChatApiError
-            ? `Request failed (${err.status}). Please try again.`
-            : 'Something went wrong. Please try again.'
+            ? messageOf(err, 'The answer could not be completed. Please try again.')
+            : messageOf(err, 'Something went wrong. Please try again.')
         setTurns((current) =>
           current.map((turn) =>
             turn.id === turnId ? { id: turnId, status: 'error' as const, question, message } : turn,
@@ -134,7 +183,7 @@ export function ChatView() {
         inFlight.current.delete(turnId)
       }
     },
-    [conversationId],
+    [conversationId, refreshConversationList],
   )
 
   const cancelActiveRequest = useCallback(() => {
@@ -156,74 +205,99 @@ export function ChatView() {
 
   const isLoading = turns.some((turn) => turn.status === 'loading')
 
-  const selectConversation = useCallback(async (id: string) => {
-    const generation = ++selectionGeneration.current
-    for (const controller of inFlight.current.values()) controller.abort()
-    inFlight.current.clear()
-    const stored = await getConversationTurns(id)
-    if (generation !== selectionGeneration.current) return
-    conversationRef.current = id
-    setConversationId(id)
-    setTurns(
-      stored.map((turn, index) => {
-        const id = turn.id
-        if (turn.state === 'completed' && turn.response_json) {
-          return {
-            id,
-            status: 'success' as const,
-            question: turn.question,
-            envelope: JSON.parse(turn.response_json) as ChatEnvelope,
-            expanded: index === stored.length - 1,
+  const selectConversation = useCallback(
+    async (id: string) => {
+      const generation = invalidatePendingLoads()
+      for (const controller of inFlight.current.values()) controller.abort()
+      inFlight.current.clear()
+      conversationCreation.current = null
+      let stored: StoredTurn[]
+      try {
+        stored = await getConversationTurns(id)
+      } catch (err) {
+        if (generation === selectionGeneration.current) {
+          setConversationError(messageOf(err, 'Could not load that conversation.'))
+        }
+        return
+      }
+      if (generation !== selectionGeneration.current) return
+      conversationRef.current = id
+      setConversationId(id)
+      setTurns(
+        stored.map((turn, index) => {
+          const turnId = turn.id
+          if (turn.state === 'completed' && turn.response_json) {
+            return {
+              id: turnId,
+              status: 'success' as const,
+              question: turn.question,
+              envelope: JSON.parse(turn.response_json) as ChatEnvelope,
+              expanded: index === stored.length - 1,
+            }
           }
-        }
-        return {
-          id,
-          status: 'error' as const,
-          question: turn.question,
-          message:
-            turn.error_message ??
-            (turn.state === 'cancelled'
-              ? 'This request was cancelled.'
-              : 'This request could not be completed.'),
-        }
-      }),
-    )
-  }, [])
+          return {
+            id: turnId,
+            status: 'error' as const,
+            question: turn.question,
+            message:
+              turn.error_message ??
+              (turn.state === 'cancelled'
+                ? 'This request was cancelled.'
+                : 'This request could not be completed.'),
+          }
+        }),
+      )
+    },
+    [invalidatePendingLoads],
+  )
 
   const removeConversation = useCallback(
     async (id: string) => {
       if (!window.confirm('Delete this local conversation? Health data will not be affected.'))
         return
-      await deleteConversation(id)
-      if (conversationId === id) {
-        setConversationId(undefined)
-        setTurns([])
+      const wasActive = conversationId === id || conversationRef.current === id
+      invalidatePendingLoads()
+      try {
+        await deleteConversation(id)
+      } catch (err) {
+        setConversationError(messageOf(err, 'Could not delete this conversation.'))
+        return
       }
-      setConversations(await listConversations())
+      if (wasActive) resetTranscript()
+      await refreshConversationList()
     },
-    [conversationId],
+    [conversationId, invalidatePendingLoads, refreshConversationList, resetTranscript],
   )
 
   const archiveConversationFromWorkspace = useCallback(
     async (id: string) => {
-      await archiveConversation(id)
-      if (conversationId === id) {
-        setConversationId(undefined)
-        setTurns([])
+      const wasActive = conversationId === id || conversationRef.current === id
+      invalidatePendingLoads()
+      try {
+        await archiveConversation(id)
+      } catch (err) {
+        setConversationError(messageOf(err, 'Could not archive this conversation.'))
+        return
       }
-      setConversations(await listConversations())
+      if (wasActive) resetTranscript()
+      await refreshConversationList()
     },
-    [conversationId],
+    [conversationId, invalidatePendingLoads, refreshConversationList, resetTranscript],
   )
 
   const renameConversationFromWorkspace = useCallback(
     async (conversation: Conversation) => {
       const title = window.prompt('Rename this local conversation', conversation.title)?.trim()
       if (!title || title === conversation.title) return
-      await renameConversation(conversation.id, title)
-      setConversations(await listConversations(conversationSearch))
+      try {
+        await renameConversation(conversation.id, title)
+      } catch (err) {
+        setConversationError(messageOf(err, 'Could not rename this conversation.'))
+        return
+      }
+      await refreshConversationList()
     },
-    [conversationSearch],
+    [refreshConversationList],
   )
 
   const copyAnswer = useCallback((narrative: string) => {
@@ -257,17 +331,7 @@ export function ChatView() {
       <div className="space-y-4">
         <div className="flex items-center justify-between text-sm">
           <span className="text-gray-500">{conversations.length} local conversations</span>
-          <button
-            onClick={() => {
-              for (const controller of inFlight.current.values()) controller.abort()
-              inFlight.current.clear()
-              conversationRef.current = undefined
-              conversationCreation.current = null
-              setConversationId(undefined)
-              setTurns([])
-            }}
-            className="text-blue-600"
-          >
+          <button onClick={() => resetTranscript()} className="text-blue-600">
             New conversation
           </button>
         </div>
@@ -279,6 +343,7 @@ export function ChatView() {
           placeholder="Search local conversations"
           className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         />
+        {conversationError ? <p className="text-xs text-red-600">{conversationError}</p> : null}
         {conversations.length > 0 ? (
           <ul className="flex flex-wrap gap-2" aria-label="Local conversations">
             {conversations.map((conversation) => (
