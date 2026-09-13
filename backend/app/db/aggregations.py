@@ -238,7 +238,9 @@ def compute_delta(
 def minutes_from_duration(duration: float | None, unit: str | None) -> float | None:
     """Convert a duration value to minutes.
 
-    Apple Health exports always use ``"min"``; ``"hr"`` is the fallback unit.
+    Apple Health exports commonly use ``min`` or ``hr``. Seconds are accepted
+    explicitly; unknown units return ``None`` so callers do not silently label
+    an unsupported value as minutes.
 
     Args:
         duration: The numeric duration value, or ``None``.
@@ -249,6 +251,11 @@ def minutes_from_duration(duration: float | None, unit: str | None) -> float | N
     """
     if duration is None:
         return None
-    if unit == "hr":
+    normalized = unit.casefold() if unit else "min"
+    if normalized in {"hr", "hour", "hours"}:
         return duration * 60.0
-    return duration
+    if normalized in {"sec", "second", "seconds", "s"}:
+        return duration / 60.0
+    if normalized in {"min", "minute", "minutes"}:
+        return duration
+    return None
