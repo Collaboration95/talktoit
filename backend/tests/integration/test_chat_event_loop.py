@@ -86,3 +86,49 @@ async def test_chat_offloads_db_work_and_keeps_the_event_loop_live(
     body = response.json()
     assert body["template_id"] == "workout_card"
     assert body["metadata"]["provenance"] == "deterministic_local"
+
+
+@pytest.mark.asyncio
+async def test_cancelled_prephase_terminates_the_pending_turn(
+    db_file: Path, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """A cancellation during the off-thread prephase must not strand a pending turn."""
+    monkeypatch.setenv("TTI_DB_PATH", str(db_file))
+    monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
+    monkeypatch.setenv("TTI_PROVIDER_MODE", "local_only")
+    monkeypatch.setenv("TTI_LOCAL_AUTOSTART", "0")
+
+    from app.api import chat as chat_module
+
+    real_profile = chat_module.get_data_profile
+    entered = threading.Event()
+    release = threading.Event()
+
+    def _blocking_profile(conn: duckdb.DuckDBPyConnection):
+        entered.set()
+        assert release.wait(timeout=10)
+        return real_profile(conn)
+
+    monkeypatch.setattr(chat_module, "get_data_profile", _blocking_profile)
+
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            created = await client.post("/api/conversations", json={"title": "Cancelled"})
+            conversation_id = created.json()["id"]
+            chat_task = asyncio.create_task(
+                client.post(
+                    "/api/chat",
+                    json={"question": "Show my last run", "conversation_id": conversation_id},
+                )
+            )
+            assert await asyncio.to_thread(entered.wait, 10), "prephase never started"
+
+            chat_task.cancel()
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await chat_task
+
+            turns = await client.get(f"/api/conversations/{conversation_id}/turns")
+
+    states = [turn["state"] for turn in turns.json()]
+    assert states == ["cancelled"]

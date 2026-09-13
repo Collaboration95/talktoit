@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import date
 
 import duckdb
 
 import app.state.app_state as app_state
-from app.api.chat import _prepare_chat, _semantic_cached_answer
+from app.api.chat import _finalize_chat, _prepare_chat, _semantic_cached_answer
 from app.db.data_profile import DataProfile
 from app.llm.cache_keys import CACHE_KEY_VERSION, build_cache_key
-from app.models.chat import ChatRequest
+from app.models.chat import ChatRequest, ChatResponse, ResponseMetadata
 from app.state.app_state import CACHE_MAX_ENTRIES, AppStateRepository
 
 
@@ -255,6 +256,57 @@ def test_semantic_cache_does_not_reuse_fallback_turn(tmp_path) -> None:
         {"tool_name": "get_last_workout", "arguments": {"activity_type": "Running"}},
     )
     assert result is None
+
+
+def _workout_card_response() -> ChatResponse:
+    return ChatResponse(
+        template_id="workout_card",
+        data={
+            "activity_type": "Running",
+            "date": "2026-06-01T00:00:00+00:00",
+            "duration_minutes": 30.0,
+            "avg_heart_rate": None,
+            "max_heart_rate": None,
+            "distance_meters": None,
+            "distance_unit": "m",
+            "energy_burned_kj": None,
+            "elevation_ascent_meters": None,
+        },
+        narrative="ok",
+        metadata=ResponseMetadata(provenance="deterministic_local"),
+    )
+
+
+def test_finalize_chat_never_writes_a_fallback_template_to_cache(tmp_path, monkeypatch) -> None:
+    """The write path rejects a fallback envelope even with local provenance."""
+    repo = AppStateRepository(tmp_path / "state.sqlite")
+    dataset_id = _activate_dataset(repo, coverage_end="2026-08-31", content_prefix="write")
+    profile = DataProfile(
+        first_date=date(2026, 1, 1),
+        latest_date=date(2026, 8, 15),
+        workout_types=("Running",),
+        metrics=(),
+    )
+    monkeypatch.setattr("app.api.chat.get_data_profile", lambda _conn: profile)
+    conn = duckdb.connect(":memory:")
+    request = ChatRequest(question="what did i eat")
+    prepared = _prepare_chat(request, conn, repo)
+    assert prepared.cache_hit is False
+
+    fallback = ChatResponse(
+        template_id="fallback",
+        data={"question": "what did i eat", "table": None, "text": "No local answer."},
+        narrative="No local answer.",
+        metadata=ResponseMetadata(provenance="deterministic_local"),
+    )
+    _finalize_chat(prepared, request, fallback, time.perf_counter())
+    assert repo.get_cached_entry(prepared.cache_key, dataset_id) is None
+    if prepared.canonical_key is not None:
+        assert repo.get_cached_entry(prepared.canonical_key, dataset_id) is None
+
+    # A real answer through the same prepared state is still cacheable.
+    _finalize_chat(prepared, request, _workout_card_response(), time.perf_counter())
+    assert repo.get_cached_entry(prepared.cache_key, dataset_id) is not None
 
 
 def test_fresh_cache_mode_skips_read_and_write(tmp_path) -> None:

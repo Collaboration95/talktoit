@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SYNTHETIC TEST FIXTURE — attribute-order independence.
+  Contains no real health data. Same shape as sample.xml, but every top-level
+  Record/Workout declares its attributes in a deliberately shuffled order.
+  V2 ingestion must not depend on an export-specific attribute order.
+-->
+<HealthData locale="en_SG">
+  <ExportDate value="2026-06-01 12:00:00 +0800"/>
+  <Me HKCharacteristicTypeIdentifierBiologicalSex="HKBiologicalSexMale"/>
+
+  <Record value="8523" unit="count" endDate="2026-06-01 23:59:59 +0800" startDate="2026-06-01 00:00:00 +0800" sourceVersion="1.0" sourceName="iPhone" type="HKQuantityTypeIdentifierStepCount" creationDate="2026-06-01 09:00:00 +0800"/>
+  <Record creationDate="2026-06-05 07:15:00 +0800" type="HKQuantityTypeIdentifierHeartRate" value="65" unit="count/min" endDate="2026-06-05 07:15:00 +0800" startDate="2026-06-05 07:15:00 +0800" sourceVersion="1.0" sourceName="Apple Watch"/>
+
+  <Workout endDate="2026-06-05 07:45:30 +0800" durationUnit="min" duration="45.5" startDate="2026-06-05 07:00:00 +0800" sourceVersion="1.0" sourceName="Apple Watch" workoutActivityType="Running" creationDate="2026-06-05 07:00:00 +0800" device="&lt;&lt;HKDevice: 0x0&gt;, name:Apple Watch, hw:Watch6,9, os:10.0">
+    <MetadataEntry key="HKTimeZone" value="Asia/Singapore"/>
+    <WorkoutEvent type="Lap" date="2026-06-05 07:22:45 +0800" duration="22.75" durationUnit="min"/>
+    <WorkoutStatistics type="HKQuantityTypeIdentifierHeartRate" startDate="2026-06-05 07:00:00 +0800" endDate="2026-06-05 07:45:30 +0800" average="148" minimum="72" maximum="178" unit="count/min"/>
+    <WorkoutRoute sourceName="Apple Watch" creationDate="2026-06-05 07:45:31 +0800" startDate="2026-06-05 07:00:00 +0800" endDate="2026-06-05 07:45:30 +0800">
+      <FileReference path="/workout-routes/route_reordered.gpx"/>
+    </WorkoutRoute>
+  </Workout>
+
+  <Workout workoutActivityType="Cycling" duration="120.0" sourceName="Strava" sourceVersion="361.0.1" startDate="2026-06-08 18:00:00 +0800" durationUnit="min" endDate="2026-06-08 20:00:00 +0800" creationDate="2026-06-08 18:00:00 +0800">
+    <MetadataEntry key="HKWorkoutBrandName" value="Strava"/>
+    <WorkoutStatistics type="HKQuantityTypeIdentifierDistanceCycling" startDate="2026-06-08 18:00:00 +0800" endDate="2026-06-08 20:00:00 +0800" sum="45000" unit="m"/>
+  </Workout>
+</HealthData>

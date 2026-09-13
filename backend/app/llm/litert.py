@@ -19,6 +19,7 @@ import signal
 import subprocess
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
@@ -42,6 +43,8 @@ STOP_ON_EXIT_ENV_VAR = "TTI_LOCAL_STOP_ON_EXIT"
 AUTOSTART_TIMEOUT_DEFAULT_SECONDS = 3.0
 AUTOSTART_TIMEOUT_MAX_SECONDS = 30.0
 _LIFECYCLE_LOCK = threading.Lock()
+# Children this process spawned and still owns, so stop() can reap them.
+_OWNED_CHILDREN: dict[int, subprocess.Popen[bytes]] = {}
 
 
 def _litert_base_url() -> str:
@@ -107,14 +110,68 @@ def log_path() -> Path:
 
 def _read_pid() -> int | None:
     """Return the pid from the pidfile, or None if absent/invalid."""
+    owned = _read_owned_process()
+    return owned.pid if owned is not None else None
+
+
+@dataclass(frozen=True)
+class _OwnedProcess:
+    """A recorded pid plus the identity token that proves it is still ours."""
+
+    pid: int
+    start_token: str | None
+
+
+def _read_owned_process() -> _OwnedProcess | None:
+    """Return the recorded process, tolerating a legacy bare-pid pidfile."""
     pidfile = pidfile_path()
     if not pidfile.exists():
         return None
     try:
         text = pidfile.read_text().strip()
-        return int(text) if text else None
-    except (ValueError, OSError):
+    except OSError:
         return None
+    if not text:
+        return None
+    pid_text, _, token = text.partition(" ")
+    try:
+        pid = int(pid_text)
+    except ValueError:
+        return None
+    return _OwnedProcess(pid=pid, start_token=token.strip() or None)
+
+
+def _process_table_field(pid: int, field: str) -> str | None:
+    """Return one collapsed ps field for a pid, or None when unavailable."""
+    try:
+        result = subprocess.run(  # noqa: S603 - querying the local process table
+            ["ps", "-p", str(pid), "-o", f"{field}="],  # noqa: S607
+            capture_output=True,
+            text=True,
+            timeout=1.0,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    value = " ".join(result.stdout.split())
+    return value or None
+
+
+def _write_owned_pidfile(pid: int) -> None:
+    """Record the pid and its start time so a recycled pid is never adopted."""
+    token = _process_table_field(pid, "lstart")
+    pidfile_path().write_text(f"{pid} {token}" if token else str(pid))
+
+
+def _unlink_pidfile_if_owned_by(pid: int) -> None:
+    """Drop the pidfile only when it still describes this pid."""
+    owned = _read_owned_process()
+    if owned is None or owned.pid != pid:
+        return
+    try:
+        pidfile_path().unlink()
+    except OSError:
+        pass
 
 
 def _is_running(pid: int) -> bool:
@@ -132,8 +189,8 @@ def _is_running(pid: int) -> bool:
 
 def status() -> dict[str, object]:
     """Return the current LiteRT server status."""
-    pid = _read_pid()
-    running = _is_running(pid) if pid is not None else False
+    owned = _read_owned_process()
+    running = owned is not None and _owns_process(owned)
     base_url = _litert_base_url()
     model = _litert_model()
     binary = resolve_litert_binary()
@@ -141,7 +198,7 @@ def status() -> dict[str, object]:
     log = log_path()
     return {
         "running": running,
-        "pid": pid if running else None,
+        "pid": owned.pid if owned is not None and running else None,
         "base_url": base_url,
         "model": model,
         "binary": binary,
@@ -246,9 +303,9 @@ def _start_locked(
     pidfile = pidfile_path()
     log = log_path()
 
-    # If a stale pidfile exists for a dead process, remove it.
-    pid = _read_pid()
-    if pid is not None and not _is_running(pid):
+    # If a stale pidfile exists for a process we do not own, remove it.
+    owned = _read_owned_process()
+    if owned is not None and not _owns_process(owned):
         try:
             pidfile.unlink()
         except OSError:
@@ -280,15 +337,15 @@ def _start_locked(
         except OSError:
             pass
 
-    # Own the pid: only the spawner may later kill it.
+    _OWNED_CHILDREN[proc.pid] = proc
+
+    # Own the pid: only the spawner may later kill it. The pidfile records the
+    # process start time alongside the pid so a recycled pid is never adopted.
     try:
-        pidfile.write_text(str(proc.pid))
+        _write_owned_pidfile(proc.pid)
     except OSError as exc:
-        proc.terminate()
-        try:
-            proc.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+        _OWNED_CHILDREN.pop(proc.pid, None)
+        _reap_process(proc)
         return {
             "started": False,
             "error": f"Cannot write pidfile: {exc}",
@@ -306,11 +363,8 @@ def _start_locked(
         # If the process died early, surface it and drop the pidfile we just
         # wrote so the next caller is not misled by a stale pid.
         if proc.poll() is not None:
-            try:
-                if pidfile.read_text().strip() == str(proc.pid):
-                    pidfile.unlink()
-            except OSError:
-                pass
+            _OWNED_CHILDREN.pop(proc.pid, None)
+            _unlink_pidfile_if_owned_by(proc.pid)
             return {
                 "started": False,
                 "error": f"litert-lm exited with code {proc.returncode}",
@@ -338,40 +392,71 @@ def stop(timeout_seconds: float = 5.0) -> dict[str, object]:
         return _stop_locked(timeout_seconds)
 
 
-def _owns_process(pid: int) -> bool:
-    """Check that a pidfile process still runs the configured LiteRT command."""
-    binary = resolve_litert_binary()
-    expected_name = Path(binary).name if binary else "litert-lm"
-    try:
-        result = subprocess.run(  # noqa: S603 - querying the local process table
-            ["ps", "-p", str(pid), "-o", "command="],  # noqa: S607
-            capture_output=True,
-            text=True,
-            timeout=1.0,
-            check=False,
-        )
-        command = result.stdout.strip()
-    except (OSError, subprocess.SubprocessError):
+def _owns_process(owned: _OwnedProcess) -> bool:
+    """Return whether the recorded pid is still the LiteRT process we started.
+
+    A recycled pid is rejected by the recorded start time, and the command is
+    matched on whole tokens, so an unrelated process that merely mentions the
+    binary name (for example a log-file path) is never signalled.
+    """
+    if not _is_running(owned.pid):
         return False
-    return bool(command) and (expected_name in command or "litert-lm" in command)
+    if owned.start_token is not None:
+        current = _process_table_field(owned.pid, "lstart")
+        if current is None or current != owned.start_token:
+            return False
+    command = _process_table_field(owned.pid, "command")
+    if command is None:
+        return False
+    binary = resolve_litert_binary()
+    expected = Path(binary).name if binary else "litert-lm"
+    return expected in {Path(token).name for token in command.split()}
+
+
+def _reap_owned_child(pid: int) -> None:
+    """Reap a child this process spawned earlier so it cannot linger as a zombie."""
+    proc = _OWNED_CHILDREN.pop(pid, None)
+    if proc is None:
+        return
+    try:
+        proc.wait(timeout=2)
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+
+
+def _reap_process(proc: subprocess.Popen[bytes], timeout_seconds: float = 2.0) -> None:
+    """Terminate (then kill) a child we just spawned and reap it."""
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=timeout_seconds)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+    if proc.poll() is None:
+        proc.kill()
+    try:
+        proc.wait(timeout=timeout_seconds)
+    except (subprocess.TimeoutExpired, OSError):
+        pass
 
 
 def _stop_locked(timeout_seconds: float = 5.0) -> dict[str, object]:
     """Stop LiteRT while the lifecycle lock is held."""
-    pid = _read_pid()
-    if pid is None:
+    owned = _read_owned_process()
+    if owned is None:
         return {"stopped": False, "reason": "no pidfile", **status()}
-    if not _is_running(pid):
+    if not _is_running(owned.pid):
         try:
             pidfile_path().unlink()
         except OSError:
             pass
         return {"stopped": False, "reason": "not running", **status()}
-    if not _owns_process(pid):
+    if not _owns_process(owned):
         return {"stopped": False, "reason": "pidfile is not owned by LiteRT", **status()}
 
     try:
-        os.kill(pid, signal.SIGTERM)
+        os.kill(owned.pid, signal.SIGTERM)
     except ProcessLookupError:
         try:
             pidfile_path().unlink()
@@ -384,17 +469,19 @@ def _stop_locked(timeout_seconds: float = 5.0) -> dict[str, object]:
     # Wait for graceful shutdown.
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        if not _is_running(pid):
+        if not _is_running(owned.pid):
             break
         time.sleep(0.2)
     else:
         # Force kill if still alive.
         try:
-            os.kill(pid, signal.SIGKILL)
+            os.kill(owned.pid, signal.SIGKILL)
         except OSError:
             pass
         time.sleep(0.2)
 
+    # Reap the child we spawned so it cannot linger as a zombie.
+    _reap_owned_child(owned.pid)
     try:
         pidfile_path().unlink()
     except OSError:

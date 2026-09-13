@@ -48,7 +48,29 @@ class CapabilitiesGlobal:
 _CACHE_MAX_ENTRIES = 4
 _cache: OrderedDict[str, DataProfile] = OrderedDict()
 _cap_cache: OrderedDict[tuple[str, bool], CapabilitiesGlobal] = OrderedDict()
+# One lock per dataset so concurrent cold panels collapse to a single profile
+# scan instead of each paying for the same expensive query.
+_scan_locks: dict[str, threading.Lock] = {}
+_SCAN_LOCK_MAX_ENTRIES = 16
 _cache_lock = threading.Lock()
+
+
+def _scan_lock(dataset_id: str) -> threading.Lock:
+    """Return the single-flight scan lock for one dataset (bounded, never held)."""
+    with _cache_lock:
+        lock = _scan_locks.get(dataset_id)
+        if lock is None:
+            lock = threading.Lock()
+            _scan_locks[dataset_id] = lock
+            while len(_scan_locks) > _SCAN_LOCK_MAX_ENTRIES:
+                for candidate_id, candidate in list(_scan_locks.items()):
+                    if candidate_id == dataset_id or candidate.locked():
+                        continue
+                    _scan_locks.pop(candidate_id, None)
+                    break
+                else:
+                    break
+        return lock
 
 
 def resolve_dashboard_context(
@@ -69,14 +91,23 @@ def resolve_dashboard_context(
         hit = _cache.get(active.id)
         if hit is not None:
             _cache.move_to_end(active.id)
-    if hit is None:
-        fresh = get_data_profile(conn)
+    if hit is not None:
+        return DashboardContext(profile=hit, active=active)
+
+    # Cold miss: only the first thread scans; the others wait and reuse it.
+    with _scan_lock(active.id):
         with _cache_lock:
-            _cache[active.id] = fresh
-            _cache.move_to_end(active.id)
-            while len(_cache) > _CACHE_MAX_ENTRIES:
-                _cache.popitem(last=False)
-        hit = fresh
+            hit = _cache.get(active.id)
+            if hit is not None:
+                _cache.move_to_end(active.id)
+        if hit is None:
+            fresh = get_data_profile(conn)
+            with _cache_lock:
+                _cache[active.id] = fresh
+                _cache.move_to_end(active.id)
+                while len(_cache) > _CACHE_MAX_ENTRIES:
+                    _cache.popitem(last=False)
+            hit = fresh
     return DashboardContext(profile=hit, active=active)
 
 
@@ -85,6 +116,7 @@ def clear_dashboard_cache() -> None:
     with _cache_lock:
         _cache.clear()
         _cap_cache.clear()
+        _scan_locks.clear()
 
 
 def get_cached_capabilities_global(

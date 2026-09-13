@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SYNTHETIC TEST FIXTURE — child-element attribute-order independence.
+  Contains no real health data. Every child element (MetadataEntry,
+  InstantaneousBeatsPerMinute, WorkoutEvent, WorkoutStatistics, WorkoutRoute)
+  declares its attributes in a deliberately shuffled order. The byte scanner
+  must read attributes by name rather than position.
+-->
+<HealthData locale="en_SG">
+  <ExportDate value="2026-06-01 12:00:00 +0800"/>
+  <Record type="HKQuantityTypeIdentifierHeartRateVariabilitySDNN" sourceName="Apple Watch" sourceVersion="1.0" unit="ms" creationDate="2026-06-05 03:00:00 +0800" startDate="2026-06-05 02:55:00 +0800" endDate="2026-06-05 03:00:00 +0800" value="45.2">
+    <HeartRateVariabilityMetadataList>
+      <InstantaneousBeatsPerMinute time="4:53:04.58 PM" bpm="58"/>
+      <InstantaneousBeatsPerMinute time="4:53:05.61 PM" bpm="59"/>
+    </HeartRateVariabilityMetadataList>
+    <MetadataEntry value="0" key="HKMetadataKeyHeartRateMotionContext"/>
+  </Record>
+
+  <Workout endDate="2026-06-05 07:45:30 +0800" durationUnit="min" duration="45.5" workoutActivityType="Running" startDate="2026-06-05 07:00:00 +0800" sourceName="Apple Watch" sourceVersion="1.0" creationDate="2026-06-05 07:00:00 +0800">
+    <MetadataEntry value="Asia/Singapore" key="HKTimeZone"/>
+    <MetadataEntry value="10.5" key="HKAverageMETs"/>
+    <WorkoutEvent durationUnit="min" duration="22.75" date="2026-06-05 07:22:45 +0800" type="Lap"/>
+    <WorkoutStatistics unit="kJ" sum="2500" endDate="2026-06-05 07:45:30 +0800" startDate="2026-06-05 07:00:00 +0800" type="HKQuantityTypeIdentifierActiveEnergyBurned"/>
+    <WorkoutStatistics unit="count/min" maximum="178" minimum="72" average="148" endDate="2026-06-05 07:45:30 +0800" startDate="2026-06-05 07:00:00 +0800" type="HKQuantityTypeIdentifierHeartRate"/>
+    <WorkoutRoute endDate="2026-06-05 07:45:30 +0800" startDate="2026-06-05 07:00:00 +0800" creationDate="2026-06-05 07:45:31 +0800" sourceName="Apple Watch">
+      <FileReference path="/workout-routes/route_reordered.gpx"/>
+    </WorkoutRoute>
+  </Workout>
+</HealthData>

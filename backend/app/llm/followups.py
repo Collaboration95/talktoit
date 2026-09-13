@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
@@ -101,14 +100,10 @@ def followup_disambiguation(
 
 
 def _activity_type_from_question(question: str) -> str | None:
-    """Map a deliberately small safe activity vocabulary to tool arguments."""
-    resolved = activity_type_from_question(question)
-    if resolved is not None:
-        return resolved
-    if re.search(r"\b(?:run|running|runs|jog|jogging)\b", question):
-        return "Running"
-    if re.search(r"\b(?:bike|biking|cycle|cycling|ride|riding|rides)\b", question):
-        return "Cycling"
-    if re.search(r"\b(?:gym|weights?|weightlifting|strength)\b", question):
-        return "TraditionalStrengthTraining"
-    return None
+    """Map the shared conservative activity vocabulary to tool arguments.
+
+    The follow-up path reuses the single shared matcher instead of keeping its
+    own word list: a second list is how a bare "weight" mention turned into a
+    strength-workout follow-up.
+    """
+    return activity_type_from_question(question)

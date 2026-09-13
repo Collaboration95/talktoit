@@ -38,6 +38,7 @@ def activity_type_from_question(question: str) -> str | None:
         "which",
         "show",
         "me",
+        "only",
         "this",
         "that",
         "highest",
