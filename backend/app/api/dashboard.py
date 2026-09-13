@@ -140,6 +140,7 @@ _SQL_SLEEP_STAGE_RECORDS = """
 SELECT start_date, end_date, text_value
 FROM records
 WHERE type = 'HKCategoryTypeIdentifierSleepAnalysis'
+  AND source_name != 'AutoSleep'
   AND start_date >= ? AND start_date < ?
 ORDER BY start_date
 """

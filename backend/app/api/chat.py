@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.api.deps import get_app_state_repository, get_diagnostics_repository
 from app.db.connection import connect
-from app.db.data_profile import get_data_profile
+from app.db.data_profile import DataProfile, get_data_profile
 from app.llm.cache_keys import build_cache_key
 from app.llm.followups import FollowupContext, followup_disambiguation, resolve_followup
 from app.llm.local_planner import plan_local_question
@@ -132,6 +132,7 @@ class _ChatPreparation:
     use_exact_cache: bool
     followup_plan: dict[str, Any] | None
     canonical_plan: dict[str, Any] | None
+    data_profile: DataProfile | None
     cache_hit: bool
     disambiguated: bool
     response: ChatResponse | None
@@ -168,6 +169,7 @@ def _prepare_chat(
         needed (cache or disambiguation hit), otherwise ``None``.
     """
     pending_turn_id: str | None = None
+    data_profile: DataProfile | None = None
     with repository.session() as store:
         if request.conversation_id:
             pending_turn_id = repository.create_pending_turn(
@@ -189,7 +191,8 @@ def _prepare_chat(
         disambiguation: str | None = None
         if cached is None:
             # ── Cache miss: only this path pays for the profile scan ────────
-            local_plan = plan_local_question(request.question, get_data_profile(conn))
+            data_profile = get_data_profile(conn)
+            local_plan = plan_local_question(request.question, data_profile)
             if request.conversation_id and active is not None:
                 conversation = repository.get_conversation(request.conversation_id, conn=store)
                 if conversation and conversation.get("dataset_version_id") == active.id:
@@ -279,6 +282,7 @@ def _prepare_chat(
         use_exact_cache=use_exact_cache,
         followup_plan=followup_plan,
         canonical_plan=canonical_plan,
+        data_profile=data_profile,
         cache_hit=cached is not None,
         disambiguated=disambiguation is not None,
         response=response,
@@ -341,13 +345,16 @@ def _finalize_chat(
                     conn=store,
                 )
         if request.conversation_id:
-            prepared.repository.finish_turn(
-                prepared.pending_turn_id or "",
+            if not prepared.pending_turn_id:
+                raise RuntimeError("Pending chat turn is missing")
+            if not prepared.repository.finish_turn(
+                prepared.pending_turn_id,
                 response_json=encoded,
                 cache_outcome=response.metadata.provenance,
                 canonical_plan=prepared.canonical_plan,
                 conn=store,
-            )
+            ):
+                raise RuntimeError("Pending chat turn could not be completed")
     _record_chat_event(
         diagnostics,
         started_at,
@@ -401,6 +408,8 @@ async def chat(
             )
             response = prepared.response
             if response is None:
+                if prepared.data_profile is None:
+                    raise RuntimeError("Chat data profile was not prepared")
                 orchestrator = ChatOrchestrator(
                     client=gateway.client,
                     conn=conn,
@@ -411,7 +420,10 @@ async def chat(
                 # Only this await stays on the loop; the orchestrator offloads its
                 # DuckDB profile query and tool dispatch to worker threads.
                 response = await orchestrator.answer(
-                    request.question, plan_override=prepared.followup_plan
+                    request.question,
+                    plan_override=prepared.canonical_plan,
+                    data_profile=prepared.data_profile,
+                    local_plan_checked=True,
                 )
             await asyncio.to_thread(
                 _finalize_chat, prepared, request, response, started_at, diagnostics
@@ -429,24 +441,18 @@ async def chat(
             )
         return response
     except asyncio.CancelledError:
-        if prepared is not None and prepared.pending_turn_id is not None:
-            prepared.repository.terminate_turn(
-                prepared.pending_turn_id,
-                state="cancelled",
-                message="Request cancelled by the client.",
-            )
+        await _terminate_pending(
+            prepared, state="cancelled", message="Request cancelled by the client."
+        )
         _record_chat_error(diagnostics_repository, started_at, "cancelled")
         raise
     except HTTPException:
         _record_chat_error(diagnostics_repository, started_at, "http")
         raise
     except ProviderUnavailableError as exc:
-        if prepared is not None and prepared.pending_turn_id is not None:
-            prepared.repository.terminate_turn(
-                prepared.pending_turn_id,
-                state="failed",
-                message="The optional provider is unavailable.",
-            )
+        await _terminate_pending(
+            prepared, state="failed", message="The optional provider is unavailable."
+        )
         _record_chat_error(diagnostics_repository, started_at, "provider_unavailable")
         raise _problem(
             503,
@@ -455,21 +461,15 @@ async def chat(
             request_id,
         ) from exc
     except TimeoutError as exc:
-        if prepared is not None and prepared.pending_turn_id is not None:
-            prepared.repository.terminate_turn(
-                prepared.pending_turn_id, state="failed", message="The request timed out."
-            )
+        await _terminate_pending(prepared, state="failed", message="The request timed out.")
         _record_chat_error(diagnostics_repository, started_at, "timeout")
         raise _problem(
             504, "request_timeout", "The request timed out. Please try again.", request_id
         ) from exc
     except duckdb.Error as exc:
-        if prepared is not None and prepared.pending_turn_id is not None:
-            prepared.repository.terminate_turn(
-                prepared.pending_turn_id,
-                state="failed",
-                message="Local health data is unavailable.",
-            )
+        await _terminate_pending(
+            prepared, state="failed", message="Local health data is unavailable."
+        )
         _record_chat_error(diagnostics_repository, started_at, "data_unavailable")
         raise _problem(
             503,
@@ -478,12 +478,9 @@ async def chat(
             request_id,
         ) from exc
     except Exception as exc:
-        if prepared is not None and prepared.pending_turn_id is not None:
-            prepared.repository.terminate_turn(
-                prepared.pending_turn_id,
-                state="failed",
-                message="The answer could not be completed.",
-            )
+        await _terminate_pending(
+            prepared, state="failed", message="The answer could not be completed."
+        )
         _record_chat_error(diagnostics_repository, started_at, "internal")
         raise _problem(
             500,
@@ -507,6 +504,20 @@ def _record_semantic_event(
         status="ok",
         meta={"outcome": outcome, "state": "ok"},
         counts={"candidates_considered": considered},
+    )
+
+
+async def _terminate_pending(
+    prepared: _ChatPreparation | None, *, state: str, message: str
+) -> None:
+    """Finish a pending turn without running a synchronous SQLite write on the loop."""
+    if prepared is None or prepared.pending_turn_id is None:
+        return
+    await asyncio.to_thread(
+        prepared.repository.terminate_turn,
+        prepared.pending_turn_id,
+        state=state,
+        message=message,
     )
 
 

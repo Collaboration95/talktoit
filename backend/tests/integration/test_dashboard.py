@@ -369,6 +369,16 @@ async def test_http_sleep(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_http_sleep_and_stages_share_auto_sleep_filter(client: AsyncClient) -> None:
+    """The two sleep endpoints describe the same source population."""
+    sleep = await client.get("/api/dashboard/sleep?start=2026-06-05&end=2026-06-05")
+    stages = await client.get("/api/dashboard/sleep/stages?start=2026-06-05&end=2026-06-05")
+    assert sleep.status_code == stages.status_code == 200
+    stage_total = stages.json()["total_asleep_hours"]
+    assert stage_total in [point["value"] for point in sleep.json()["series"]]
+
+
+@pytest.mark.asyncio
 async def test_http_capabilities(client: AsyncClient) -> None:
     """GET /api/dashboard/capabilities returns named capability flags."""
     r = await client.get("/api/dashboard/capabilities")
