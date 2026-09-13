@@ -106,13 +106,24 @@ def _plan_mode(response: ChatResponse, cached: bool, disambiguated: bool) -> str
     return "fallback"
 
 
+def _cacheable_response(response: ChatResponse) -> bool:
+    """Return whether an envelope may be stored and replayed as a cached success.
+
+    Degraded fallback templates and provider fallbacks must never be promoted
+    to a cached answer. The write path and the read path share this predicate so
+    an envelope can never be cache-eligible on one side and rejected on the
+    other.
+    """
+    return response.template_id != "fallback" and response.metadata.provenance != "fallback"
+
+
 def _cacheable_envelope(raw: str) -> bool:
-    """Reject legacy degraded envelopes before they can poison a cache hit."""
+    """Reject stored degraded envelopes before they can poison a cache hit."""
     try:
         payload = ChatResponse.model_validate_json(raw)
     except Exception:
         return False
-    return payload.template_id != "fallback" and payload.metadata.provenance not in {"fallback"}
+    return _cacheable_response(payload)
 
 
 @dataclass
@@ -323,7 +334,7 @@ def _finalize_chat(
             and request.cache_mode != "fresh"
             and not prepared.disambiguated
             and prepared.followup_plan is None
-            and response.metadata.provenance not in {"fallback"}
+            and _cacheable_response(response)
         )
         if cacheable:
             if active is None:
