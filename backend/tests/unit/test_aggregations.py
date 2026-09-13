@@ -177,3 +177,14 @@ def test_minutes_from_duration_hr():
 def test_minutes_from_duration_none():
     assert minutes_from_duration(None, "min") is None
     assert minutes_from_duration(None, None) is None
+
+
+def test_minutes_from_duration_accepts_explicit_variants():
+    assert minutes_from_duration(2.0, "hours") == pytest.approx(120.0)
+    assert minutes_from_duration(90.0, "seconds") == pytest.approx(1.5)
+    assert minutes_from_duration(1.0, "MIN") == pytest.approx(1.0)
+
+
+def test_minutes_from_duration_unknown_unit_is_unavailable():
+    assert minutes_from_duration(5.0, "furlong") is None
+    assert minutes_from_duration(5.0, None) is None

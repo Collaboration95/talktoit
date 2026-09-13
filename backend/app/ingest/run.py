@@ -22,9 +22,10 @@ import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
+from types import ModuleType
 
 from app.db.connection import close_open_connections, connect, resolve_db_path
-from app.db.data_profile import get_data_profile
+from app.db.data_profile import DataProfile, get_data_profile
 from app.ingest.coordinator import resolve_worker_count
 from app.observability import configure_logging
 from app.state.app_state import AppStateRepository
@@ -35,29 +36,37 @@ from app.state.diagnostics import safe_record
 def _advisory_import_lock(target_path: Path) -> Generator[None, None, None]:
     """Serialize imports targeting one database file.
 
-    ``flock`` is advisory and automatically released if a process exits.  A
-    small fallback keeps the CLI usable on platforms without ``fcntl``; the
-    staging swap remains atomic there, just without cross-process exclusion.
+    flock is advisory and automatically released if a process exits. When the
+    platform provides fcntl the lock is required: an unexpected flock failure
+    fails the import closed rather than silently racing the staging swap. Only
+    a platform without fcntl falls back to a plain, still-atomic swap without
+    cross-process exclusion.
     """
     lock_path = target_path.with_name(f"{target_path.name}.import.lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     handle = lock_path.open("a+")
+    fcntl = _load_fcntl()
+    locked = False
     try:
-        try:
-            import fcntl
-
+        if fcntl is not None:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        except (ImportError, OSError):
-            pass
+            locked = True
         yield
     finally:
         try:
-            import fcntl
+            if locked and fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
 
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-        except (ImportError, OSError):
-            pass
-        handle.close()
+
+def _load_fcntl() -> ModuleType | None:
+    """Import fcntl when the platform provides file locking."""
+    try:
+        import fcntl
+    except ImportError:
+        return None
+    return fcntl
 
 
 def _fsync_file_and_directory(path: Path) -> None:
@@ -69,6 +78,45 @@ def _fsync_file_and_directory(path: Path) -> None:
         os.fsync(directory_fd)
     finally:
         os.close(directory_fd)
+
+
+def _read_data_profile(target_path: Path) -> DataProfile:
+    """Read the coverage profile of the database that just became active."""
+    profile_conn = connect(target_path, read_only=True)
+    try:
+        return get_data_profile(profile_conn)
+    finally:
+        profile_conn.close()
+
+
+@contextmanager
+def _activated_database(staging_path: Path, target_path: Path) -> Generator[None, None, None]:
+    """Swap a staged database in atomically, rolling back if activation fails.
+
+    The previous database is parked beside the target so a failure while the
+    manifest is written restores it, keeping data and manifest consistent. A
+    failure before the swap removes the staged file instead of orphaning it.
+    """
+    backup_path = target_path.with_name(f"{target_path.name}.previous")
+    backup_path.unlink(missing_ok=True)
+    replaced = False
+    try:
+        _fsync_file_and_directory(staging_path)
+        if target_path.exists():
+            os.replace(target_path, backup_path)
+        os.replace(staging_path, target_path)
+        replaced = True
+        _fsync_file_and_directory(target_path)
+        yield
+    except BaseException:
+        if replaced:
+            target_path.unlink(missing_ok=True)
+        staging_path.unlink(missing_ok=True)
+        if backup_path.exists():
+            os.replace(backup_path, target_path)
+        raise
+    finally:
+        backup_path.unlink(missing_ok=True)
 
 
 _active_import_lock: object | None = None
@@ -279,29 +327,31 @@ def _main_impl() -> None:
         )
         raise
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception:
+            # A failed close must not strand a fully built staging database.
+            staging_path.unlink(missing_ok=True)
+            raise
 
     # Only a successfully reconciled staging database replaces the active data.
-    # A parser failure leaves the previous target untouched.
+    # The swap rolls back to the previous database if activation fails, so the
+    # manifest and the data it describes can never disagree. Connections to the
+    # previous file are closed first so a running API re-opens the new database.
     close_open_connections(target_path)
-    _fsync_file_and_directory(staging_path)
-    os.replace(staging_path, target_path)
-    _fsync_file_and_directory(target_path)
-    profile_conn = connect(target_path, read_only=True)
-    try:
-        profile = get_data_profile(profile_conn)
-    finally:
-        profile_conn.close()
-    manifest = AppStateRepository().activate_file(
-        xml_path,
-        parser_version=parser_version,
-        schema_version="1",
-        worker_count=resolved_workers,
-        coverage_start=profile.first_date.isoformat() if profile.first_date else None,
-        coverage_end=profile.latest_date.isoformat() if profile.latest_date else None,
-        counts={key: int(value) for key, value in stats.items() if isinstance(value, int)},
-        warnings=manifest_warnings,
-    )
+    with _activated_database(staging_path, target_path):
+        profile = _read_data_profile(target_path)
+        manifest = AppStateRepository().activate_file(
+            xml_path,
+            parser_version=parser_version,
+            schema_version="1",
+            worker_count=resolved_workers,
+            coverage_start=profile.first_date.isoformat() if profile.first_date else None,
+            coverage_end=profile.latest_date.isoformat() if profile.latest_date else None,
+            counts={key: int(value) for key, value in stats.items() if isinstance(value, int)},
+            warnings=manifest_warnings,
+            export_root=str(xml_path.resolve().parent),
+        )
     safe_record(
         None,
         "import",
