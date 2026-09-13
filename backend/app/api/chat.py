@@ -149,11 +149,25 @@ class _ChatPreparation:
     response: ChatResponse | None
 
 
+@dataclass
+class _PendingTurnHandle:
+    """Worker-to-handler channel for a turn committed during the prephase.
+
+    The prephase runs on a worker thread, so a client cancellation can arrive
+    after the pending turn was committed but before the handler sees the
+    prepared state. The worker publishes the id here so the cancellation path
+    can always terminate the turn it created.
+    """
+
+    turn_id: str | None = None
+
+
 def _prepare_chat(
     request: ChatRequest,
     conn: duckdb.DuckDBPyConnection,
     repository: AppStateRepository,
     diagnostics: DiagnosticsBuffer | DiagnosticsRepository | None = None,
+    handle: _PendingTurnHandle | None = None,
 ) -> _ChatPreparation:
     """Run every blocking local read/write for one request on a worker thread.
 
@@ -174,6 +188,8 @@ def _prepare_chat(
         conn: The request-lifetime DuckDB connection (used here only).
         repository: The app-owned app-state repository.
         diagnostics: Request-scoped diagnostics collector, if available.
+        handle: Optional channel that publishes the pending turn id as soon as
+            it is committed, so a cancelled request can still finish it.
 
     Returns:
         The prepared state; ``response`` is set when no provider call is
@@ -186,6 +202,8 @@ def _prepare_chat(
             pending_turn_id = repository.create_pending_turn(
                 request.conversation_id, request.question, request.cache_mode, conn=store
             )
+            if handle is not None:
+                handle.turn_id = pending_turn_id
         active = repository.get_active(conn=store)
         cache_key = build_cache_key("exact", request.question)
         use_exact_cache = request.parent_turn_id is None
@@ -410,13 +428,22 @@ async def chat(
         HTTPException: A stable, privacy-safe problem envelope for runtime failures.
     """
     prepared: _ChatPreparation | None = None
+    pending_handle = _PendingTurnHandle()
+    prepare_task: asyncio.Task[_ChatPreparation] | None = None
     request_id = request.request_id or f"req_{uuid.uuid4().hex[:12]}"
     started_at = time.perf_counter()
     try:
         with diagnostics_repository.buffer() as diagnostics:
-            prepared = await asyncio.to_thread(
-                _prepare_chat, request, conn, repository, diagnostics
+            # Shield the off-thread prephase so a cancellation cannot abandon a
+            # pending turn the worker is still committing.
+            task = asyncio.create_task(
+                asyncio.to_thread(
+                    _prepare_chat, request, conn, repository, diagnostics, pending_handle
+                )
             )
+            prepare_task = task
+            prepared_state = await asyncio.shield(task)
+            prepared = prepared_state
             response = prepared.response
             if response is None:
                 if prepared.data_profile is None:
@@ -452,19 +479,17 @@ async def chat(
             )
         return response
     except asyncio.CancelledError:
-        await _terminate_pending(
-            prepared, state="cancelled", message="Request cancelled by the client."
-        )
-        _record_chat_error(diagnostics_repository, started_at, "cancelled")
+        await _cancel_pending_turn(prepared, pending_handle, prepare_task, repository)
+        await _record_chat_error_async(diagnostics_repository, started_at, "cancelled")
         raise
     except HTTPException:
-        _record_chat_error(diagnostics_repository, started_at, "http")
+        await _record_chat_error_async(diagnostics_repository, started_at, "http")
         raise
     except ProviderUnavailableError as exc:
         await _terminate_pending(
             prepared, state="failed", message="The optional provider is unavailable."
         )
-        _record_chat_error(diagnostics_repository, started_at, "provider_unavailable")
+        await _record_chat_error_async(diagnostics_repository, started_at, "provider_unavailable")
         raise _problem(
             503,
             "provider_unavailable",
@@ -473,7 +498,7 @@ async def chat(
         ) from exc
     except TimeoutError as exc:
         await _terminate_pending(prepared, state="failed", message="The request timed out.")
-        _record_chat_error(diagnostics_repository, started_at, "timeout")
+        await _record_chat_error_async(diagnostics_repository, started_at, "timeout")
         raise _problem(
             504, "request_timeout", "The request timed out. Please try again.", request_id
         ) from exc
@@ -481,7 +506,7 @@ async def chat(
         await _terminate_pending(
             prepared, state="failed", message="Local health data is unavailable."
         )
-        _record_chat_error(diagnostics_repository, started_at, "data_unavailable")
+        await _record_chat_error_async(diagnostics_repository, started_at, "data_unavailable")
         raise _problem(
             503,
             "data_unavailable",
@@ -492,7 +517,7 @@ async def chat(
         await _terminate_pending(
             prepared, state="failed", message="The answer could not be completed."
         )
-        _record_chat_error(diagnostics_repository, started_at, "internal")
+        await _record_chat_error_async(diagnostics_repository, started_at, "internal")
         raise _problem(
             500,
             "internal_failure",
@@ -530,6 +555,46 @@ async def _terminate_pending(
         state=state,
         message=message,
     )
+
+
+async def _cancel_pending_turn(
+    prepared: _ChatPreparation | None,
+    handle: _PendingTurnHandle,
+    prepare_task: asyncio.Task[_ChatPreparation] | None,
+    repository: AppStateRepository,
+) -> None:
+    """Terminate the pending turn of a cancelled request, even mid-prephase.
+
+    The prephase runs on a worker thread that is not stopped by cancellation, so
+    the request handler waits for it to settle before deciding which turn to
+    finish. This is what prevents a cancelled request from leaving a committed
+    turn stuck in the pending state.
+    """
+    if prepared is None and prepare_task is not None:
+        try:
+            prepared = await asyncio.shield(prepare_task)
+        except asyncio.CancelledError:
+            prepared = None
+        except Exception:
+            prepared = None
+    turn_id = prepared.pending_turn_id if prepared is not None else handle.turn_id
+    if not turn_id:
+        return
+    await asyncio.to_thread(
+        repository.terminate_turn,
+        turn_id,
+        state="cancelled",
+        message="Request cancelled by the client.",
+    )
+
+
+async def _record_chat_error_async(
+    diagnostics: DiagnosticsBuffer | DiagnosticsRepository | None,
+    started_at: float,
+    error_class: str,
+) -> None:
+    """Record a failed chat event without a synchronous SQLite write on the loop."""
+    await asyncio.to_thread(_record_chat_error, diagnostics, started_at, error_class)
 
 
 def _semantic_cached_answer(

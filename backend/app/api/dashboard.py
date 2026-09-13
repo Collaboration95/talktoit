@@ -110,16 +110,10 @@ LIMIT ?
 """
 )
 
-_SQL_SLEEP_RECORDS = """
-SELECT start_date, end_date
-FROM records
-WHERE type = 'HKCategoryTypeIdentifierSleepAnalysis'
-  AND source_name != 'AutoSleep'
-  AND start_date >= ? AND start_date < ?
-ORDER BY start_date
-"""
-
-_SQL_SLEEP_STAGE_RECORDS = """
+# The sleep trend and the sleep-stage panel read the same rows through this one
+# query, so their source policy cannot drift: measured sleep intervals only,
+# excluding AutoSleep's metadata-only summary records.
+_SQL_SLEEP_ROWS = """
 SELECT start_date, end_date, text_value
 FROM records
 WHERE type = 'HKCategoryTypeIdentifierSleepAnalysis'
@@ -605,13 +599,13 @@ def get_sleep(
     start_date, end_date = _resolve_window(context.profile, start, end, days=30)
 
     utc_start, utc_end = utc_bounds(start_date, end_date, DEFAULT_TZ)
-    rows = conn.execute(_SQL_SLEEP_RECORDS, [utc_start, utc_end]).fetchall()
+    rows = conn.execute(_SQL_SLEEP_ROWS, [utc_start, utc_end]).fetchall()
 
     # Apple Health commonly stores overlapping in-bed, awake, and stage
     # intervals.  The raw category value is not persisted, so sum-of-rows
     # double-counts sleep. Merge intervals instead to report elapsed time.
     bucket_intervals: dict[str, list[tuple[datetime, datetime]]] = {}
-    for start_dt_utc, end_dt_utc in rows:
+    for start_dt_utc, end_dt_utc, _text_value in rows:
         local_start = to_local_dt(start_dt_utc, DEFAULT_TZ)
         local_end = to_local_dt(end_dt_utc, DEFAULT_TZ)
         key = bucket_key(local_start.date(), granularity)  # type: ignore[arg-type]
@@ -657,7 +651,7 @@ def get_sleep_stages(
     start_date, end_date = _resolve_window(context.profile, start, end, days=30)
     utc_start, utc_end = utc_bounds(start_date, end_date, DEFAULT_TZ)
     try:
-        rows = conn.execute(_SQL_SLEEP_STAGE_RECORDS, [utc_start, utc_end]).fetchall()
+        rows = conn.execute(_SQL_SLEEP_ROWS, [utc_start, utc_end]).fetchall()
     except duckdb.BinderException:
         # Imports that predate typed category values cannot supply stage
         # labels; fall through to the existing no-labels response below.
