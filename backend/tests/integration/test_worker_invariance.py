@@ -113,5 +113,14 @@ def test_data_consistency_across_worker_counts(sample_xml):
     values_4 = sorted([r[2] for r in records_4 if r[2] is not None])
     assert values_1 == values_4
 
+    workouts_1 = db1.execute(
+        "SELECT activity_type, duration, duration_unit FROM workouts ORDER BY id"
+    ).fetchall()
+    workouts_4 = db4.execute(
+        "SELECT activity_type, duration, duration_unit FROM workouts ORDER BY id"
+    ).fetchall()
+    assert workouts_1 == workouts_4
+    assert {row[0] for row in workouts_1} == {"Running", "Cycling", "TraditionalStrengthTraining"}
+
     db1.close()
     db4.close()

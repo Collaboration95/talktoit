@@ -18,7 +18,7 @@ import duckdb
 import pytest
 
 from app.db.connection import connect
-from app.ingest.parser import ingest
+from app.ingest.coordinator import ingest_v2 as ingest
 from app.llm.orchestrator import ChatOrchestrator
 from app.main import app
 from app.state.diagnostics import DiagnosticsRepository

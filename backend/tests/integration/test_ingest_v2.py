@@ -39,6 +39,16 @@ def test_v2_ingest_row_counts(sample_xml_path, temp_db):
     assert stats["workout_metadata"] == 12
     assert stats["activity_summaries"] == 5
 
+    activities = temp_db.execute(
+        "SELECT activity_type, duration, duration_unit FROM workouts ORDER BY id"
+    ).fetchall()
+    assert activities == [
+        ("Running", 45.5, "min"),
+        ("TraditionalStrengthTraining", 60.0, "min"),
+        ("Cycling", 120.0, "min"),
+    ]
+    assert temp_db.execute("SELECT COUNT(*) FROM hrv_beats").fetchone()[0] == 7
+
     # Verify timing stats are present
     assert "parse_time_seconds" in stats
     assert "load_time_seconds" in stats

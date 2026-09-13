@@ -12,6 +12,7 @@ Environment variables:
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import os
@@ -32,42 +33,25 @@ def main() -> None:
     """Parse CLI args and run ingestion."""
     configure_logging(level=logging.INFO)
 
-    # Parse arguments
-    legacy_mode = False
-    dry_run_report = False
-    report_json = False
-    xml_path_str = None
-    workers_override = None
-
-    for i, arg in enumerate(sys.argv[1:], start=1):
-        if arg == "--legacy":
-            legacy_mode = True
-        elif arg == "--dry-run-report":
-            dry_run_report = True
-        elif arg == "--report-json":
-            report_json = True
-        elif arg == "--workers" and i < len(sys.argv) - 1:
-            workers_override = int(sys.argv[i + 1])
-            sys.argv[i + 1] = ""  # Mark as consumed
-        elif not arg.startswith("-") and arg != "":
-            xml_path_str = arg
-
-    if xml_path_str is None:
-        print("Usage: python -m app.ingest.run <export.xml> [options]", file=sys.stderr)
-        print("\nOptions:", file=sys.stderr)
-        print("  --legacy       Use the original lxml-based parser", file=sys.stderr)
-        print("  --workers N    Number of parallel workers (default: auto)", file=sys.stderr)
-        print(
-            "  --report-json  Print a non-sensitive completed-import report as JSON",
-            file=sys.stderr,
-        )
-        print("\nEnvironment variables:", file=sys.stderr)
-        print("  TTI_INGEST_WORKERS      Number of parallel workers", file=sys.stderr)
-        print("  TTI_INGEST_SHARDS       Custom shard directory", file=sys.stderr)
-        print("  TTI_INGEST_ROWGROUP     Parquet row group size", file=sys.stderr)
-        print("  TTI_INGEST_COMPRESSION  Parquet compression codec", file=sys.stderr)
-        print("  TTI_INGEST_PARITY       Run parity check (0 or 1)", file=sys.stderr)
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        prog="python -m app.ingest.run",
+        description="Import an Apple Health export into the local DuckDB database.",
+    )
+    parser.add_argument("xml_path", type=Path)
+    parser.add_argument("--legacy", action="store_true", help="Use the original lxml parser")
+    parser.add_argument("--dry-run-report", action="store_true", help="Print a validation report")
+    parser.add_argument(
+        "--report-json", action="store_true", help="Print a completed-import report"
+    )
+    parser.add_argument(
+        "--workers", type=int, default=None, help="Number of V2 workers (default: auto)"
+    )
+    args = parser.parse_args()
+    legacy_mode = bool(args.legacy)
+    dry_run_report = bool(args.dry_run_report)
+    report_json = bool(args.report_json)
+    xml_path_str = str(args.xml_path)
+    workers_override = args.workers
 
     xml_path = Path(xml_path_str)
     if not xml_path.exists():
@@ -110,8 +94,7 @@ def main() -> None:
         extra={"payload": {"mode": "legacy" if legacy_mode else "v2"}},
     )
     if not legacy_mode:
-        workers = workers_override or int(os.environ.get("TTI_INGEST_WORKERS", "0")) or "auto"
-        logger.info("ingest.config.workers", extra={"payload": {"workers": workers}})
+        logger.info("ingest.config.workers", extra={"payload": {"workers": resolved_workers}})
         logger.info(
             "ingest.config.options",
             extra={
