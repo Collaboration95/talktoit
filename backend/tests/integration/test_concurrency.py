@@ -17,9 +17,9 @@ from unittest.mock import AsyncMock, MagicMock
 import duckdb
 import pytest
 
-from app.db.connection import connect
+from app.api.chat import _get_gateway
 from app.ingest.coordinator import ingest_v2 as ingest
-from app.llm.orchestrator import ChatOrchestrator
+from app.llm.provider_gateway import ProviderGateway
 from app.main import app
 from app.state.diagnostics import DiagnosticsRepository
 
@@ -35,6 +35,10 @@ PANEL_PATHS = [
     "/api/dashboard/sleep/stages",
     "/api/dashboard/capabilities",
 ]
+
+# Both questions are resolved by the deterministic planner, so the chat path
+# must answer them without ever touching the (stub) provider.
+CHAT_QUESTIONS = ("Show my last run", "Top running workouts by distance")
 
 
 @pytest.fixture
@@ -76,17 +80,27 @@ async def test_parallel_chat_and_dashboard_shared_sqlite_no_lock(
             return [response.status_code for response in statuses]
 
     async def run_chat() -> list[str]:
-        orchestrator = ChatOrchestrator(client=_local_only_client(), conn=connect(read_only=True))
-        template_ids = []
-        for question in ("Show my last run", "Top running workouts by distance"):
-            template_ids.append((await orchestrator.answer(question)).template_id)
-        return template_ids
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            responses = [
+                await client.post("/api/chat", json={"question": question})
+                for question in CHAT_QUESTIONS
+            ]
+            assert [response.status_code for response in responses] == [200, 200]
+            return [response.json()["template_id"] for response in responses]
 
-    # Run the real lifespan first: in production it migrates both stores once at
-    # startup before any request is served, which is what makes the shared-store
-    # writes below safe to parallelize.
-    async with app.router.lifespan_context(app):
-        panels, chat_a, chat_b = await asyncio.gather(run_dashboard(), run_chat(), run_chat())
+    # Only the optional provider is stubbed; every other dependency - the
+    # lifespan-owned repositories, the request-scoped DuckDB connections, the
+    # orchestrator and its tool dispatch - is exercised through the real HTTP path.
+    gateway = ProviderGateway(_local_only_client(), provider="local", mode="local_only")
+    app.dependency_overrides[_get_gateway] = lambda: gateway
+    try:
+        # Run the real lifespan first: in production it migrates both stores once
+        # at startup before any request is served, which is what makes the
+        # shared-store writes below safe to parallelize.
+        async with app.router.lifespan_context(app):
+            panels, chat_a, chat_b = await asyncio.gather(run_dashboard(), run_chat(), run_chat())
+    finally:
+        app.dependency_overrides.pop(_get_gateway, None)
 
     # Every panel answered; no 500s from locked SQLite or torn connections.
     assert panels == [200] * len(PANEL_PATHS)
@@ -100,3 +114,4 @@ async def test_parallel_chat_and_dashboard_shared_sqlite_no_lock(
     repo = DiagnosticsRepository()
     assert repo.count("panel") >= len(PANEL_PATHS)
     assert repo.count("query") >= 2
+    assert repo.count("chat") >= 2
