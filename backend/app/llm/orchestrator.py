@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import openai
 
-from app.db.data_profile import get_data_profile
+from app.db.data_profile import DataProfile, get_data_profile
 from app.db.queries import get_fallback
 from app.llm.client import DEFAULT_MODEL
 from app.llm.local_planner import plan_local_question
@@ -199,7 +199,11 @@ class ChatOrchestrator:
         self.diagnostics_repository = diagnostics_repository
 
     async def answer(
-        self, question: str, plan_override: dict[str, Any] | None = None
+        self,
+        question: str,
+        plan_override: dict[str, Any] | None = None,
+        data_profile: DataProfile | None = None,
+        local_plan_checked: bool = False,
     ) -> ChatResponse:
         """Process a question and return a structured chat response.
 
@@ -211,6 +215,8 @@ class ChatOrchestrator:
             question: The natural-language health question from the user.
             plan_override: Optional validated deterministic plan from a local
                 follow-up resolver.
+            data_profile: Optional profile prepared by the API prephase.
+            local_plan_checked: Whether the prephase already attempted local planning.
 
         Returns:
             A :class:`ChatResponse` envelope with ``template_id``, ``data``,
@@ -221,31 +227,16 @@ class ChatOrchestrator:
             on worker threads via ``asyncio.to_thread``; only the optional
             remote provider calls are awaited on the event loop.
         """
-        data_profile = await asyncio.to_thread(get_data_profile, self.conn)
+        if data_profile is None:
+            data_profile = await asyncio.to_thread(get_data_profile, self.conn)
         today = (data_profile.latest_date or date.today()).isoformat()
-        planner_prompt = _PLANNER_PROMPT.format(
-            today=today,
-            data_context=data_profile.planner_summary(),
-            tool_catalog=render_tool_catalog(),
-            tool_names=", ".join(TOOL_NAMES),
-        )
-        planner_messages: list[dict[str, Any]] = [
-            {"role": "system", "content": planner_prompt},
-            {
-                "role": "user",
-                "content": json.dumps(
-                    planning_projection(question, data_profile.planner_summary()),
-                    separators=(",", ":"),
-                ),
-            },
-        ]
 
         # ── Stage 1: deterministic local plan ────────────────────────────────
         # A recognised question must not touch the optional provider. This is
         # both the privacy boundary and the fast path for ordinary use.
-        local_plan = _validated_plan(plan_override) or _validated_plan(
-            plan_local_question(question, data_profile)
-        )
+        local_plan = _validated_plan(plan_override)
+        if local_plan is None and not local_plan_checked:
+            local_plan = _validated_plan(plan_local_question(question, data_profile))
         if local_plan is not None:
             tool_name, args = local_plan
             safe_record(
@@ -272,6 +263,22 @@ class ChatOrchestrator:
             )
 
         # ── Stage 2: optional remote plan for unresolved wording ────────────
+        planner_prompt = _PLANNER_PROMPT.format(
+            today=today,
+            data_context=data_profile.planner_summary(),
+            tool_catalog=render_tool_catalog(),
+            tool_names=", ".join(TOOL_NAMES),
+        )
+        planner_messages: list[dict[str, Any]] = [
+            {"role": "system", "content": planner_prompt},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    planning_projection(question, data_profile.planner_summary()),
+                    separators=(",", ":"),
+                ),
+            },
+        ]
         plan: dict[str, Any] | None = None
         plan_started = time.perf_counter()
         try:
