@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
 
+from app.llm.vocabulary import activity_type_from_question
+
 
 @dataclass(frozen=True)
 class FollowupContext:
@@ -98,11 +100,10 @@ def followup_disambiguation(
 
 
 def _activity_type_from_question(question: str) -> str | None:
-    """Map a deliberately small safe activity vocabulary to tool arguments."""
-    if "run" in question or "jog" in question:
-        return "Running"
-    if "cycl" in question or "bike" in question:
-        return "Cycling"
-    if any(word in question for word in ("gym", "strength", "weight")):
-        return "TraditionalStrengthTraining"
-    return None
+    """Map the shared conservative activity vocabulary to tool arguments.
+
+    The follow-up path reuses the single shared matcher instead of keeping its
+    own word list: a second list is how a bare "weight" mention turned into a
+    strength-workout follow-up.
+    """
+    return activity_type_from_question(question)
