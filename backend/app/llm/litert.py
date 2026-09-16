@@ -409,8 +409,29 @@ def _owns_process(owned: _OwnedProcess) -> bool:
     if command is None:
         return False
     binary = resolve_litert_binary()
-    expected = Path(binary).name if binary else "litert-lm"
-    return expected in {Path(token).name for token in command.split()}
+    expected_names = {"litert-lm"}
+    if binary:
+        binary_path = Path(binary)
+        expected_names.add(binary_path.name)
+        try:
+            expected_names.add(binary_path.resolve().name)
+        except OSError:
+            pass
+    # macOS may report the framework executable (`Python`) while the launch
+    # path is a versioned interpreter (`python3`/`python3.13`). Compare exact
+    # whole-token names after dropping only a trailing interpreter version so
+    # that unrelated command arguments still cannot claim ownership.
+    expected_variants = {name.casefold() for name in expected_names}
+    expected_variants.update(name.rstrip("0123456789.").casefold() for name in expected_names)
+    command_variants = {
+        variant
+        for token in command.split()
+        for variant in (
+            Path(token).name.casefold(),
+            Path(token).name.rstrip("0123456789.").casefold(),
+        )
+    }
+    return bool(expected_variants.intersection(command_variants))
 
 
 def _reap_owned_child(pid: int) -> None:
