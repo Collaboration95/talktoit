@@ -81,3 +81,13 @@ def test_ambiguous_references_return_concise_local_turn_choices() -> None:
     assert followup_disambiguation("Compare that", [], "ds_one") == (
         "I could not find a current-dataset result to use for that follow-up."
     )
+
+
+def test_non_reference_words_do_not_trigger_followup_disambiguation() -> None:
+    """A substring such as ``it`` in ``activity`` is not a pronoun reference."""
+    contexts = [
+        FollowupContext("ds_one", "get_trend", {}, "tr_one", "Show steps"),
+        FollowupContext("ds_one", "get_trend", {}, "tr_two", "Show resting HR"),
+    ]
+
+    assert followup_disambiguation("Show activity by day", contexts, "ds_one") is None

@@ -20,6 +20,7 @@ from app.api.deps import get_app_state_repository, get_diagnostics_repository
 from app.db.connection import connect, lease_connection
 from app.db.data_profile import DataProfile, get_data_profile
 from app.llm.cache_keys import build_cache_key
+from app.llm.cache_policy import cacheable_envelope, cacheable_response
 from app.llm.followups import FollowupContext, followup_disambiguation, resolve_followup
 from app.llm.local_planner import plan_local_question
 from app.llm.orchestrator import ChatOrchestrator
@@ -109,26 +110,6 @@ def _plan_mode(response: ChatResponse, cached: bool, disambiguated: bool) -> str
     return "fallback"
 
 
-def _cacheable_response(response: ChatResponse) -> bool:
-    """Return whether an envelope may be stored and replayed as a cached success.
-
-    Degraded fallback templates and provider fallbacks must never be promoted
-    to a cached answer. The write path and the read path share this predicate so
-    an envelope can never be cache-eligible on one side and rejected on the
-    other.
-    """
-    return response.template_id != "fallback" and response.metadata.provenance != "fallback"
-
-
-def _cacheable_envelope(raw: str) -> bool:
-    """Reject stored degraded envelopes before they can poison a cache hit."""
-    try:
-        payload = ChatResponse.model_validate_json(raw)
-    except Exception:
-        return False
-    return _cacheable_response(payload)
-
-
 @dataclass
 class _ChatPreparation:
     """Everything one chat request needs, prepared off the event loop.
@@ -216,7 +197,7 @@ def _prepare_chat(
             entry = repository.get_cached_entry(cache_key, active.id, conn=store)
             if entry is not None:
                 candidate, canonical_plan = entry
-                if _cacheable_envelope(candidate):
+                if cacheable_envelope(candidate):
                     cached = candidate
         canonical_key: str | None = None
         followup_plan: dict[str, Any] | None = None
@@ -269,7 +250,7 @@ def _prepare_chat(
                 hit = repository.get_cached_entry(canonical_key, active.id, conn=store)
                 if hit is not None:
                     candidate, cached_plan = hit
-                    if _cacheable_envelope(candidate):
+                    if cacheable_envelope(candidate):
                         cached, canonical_plan = candidate, cached_plan
         else:
             canonical_key = build_cache_key("canonical", canonical_plan) if canonical_plan else None
@@ -355,7 +336,7 @@ def _finalize_chat(
             and request.cache_mode != "fresh"
             and not prepared.disambiguated
             and prepared.followup_plan is None
-            and _cacheable_response(response)
+            and cacheable_response(response)
         )
         if cacheable:
             if active is None:
@@ -648,7 +629,7 @@ def _semantic_cached_answer(
     if not isinstance(response_json, str) or not response_json:
         return None
     prior = ChatResponse.model_validate_json(response_json)
-    if not _cacheable_envelope(response_json):
+    if not cacheable_envelope(response_json):
         return None
     prior.metadata.provenance = "semantic_cached"
     _record_semantic_event(diagnostics, verdict.considered, "identical")

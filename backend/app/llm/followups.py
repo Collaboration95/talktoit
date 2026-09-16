@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
 
-from app.llm.vocabulary import activity_type_from_question
+from app.llm.vocabulary import activity_type_from_question, contains_word
 
 
 @dataclass(frozen=True)
@@ -83,10 +84,7 @@ def followup_disambiguation(
     a provider prompt.
     """
     lower = question.casefold()
-    if not any(
-        phrase in lower
-        for phrase in ("that", "it", "prior period", "group", "only", "open selected")
-    ):
+    if not _contains_followup_reference(lower):
         return None
     if active_dataset_version_id is None:
         return "Start with a current-dataset result, then ask the follow-up again."
@@ -107,3 +105,10 @@ def _activity_type_from_question(question: str) -> str | None:
     strength-workout follow-up.
     """
     return activity_type_from_question(question)
+
+
+def _contains_followup_reference(question: str) -> bool:
+    """Return whether a question contains a whole-word follow-up reference."""
+    return any(contains_word(question, word) for word in ("that", "it", "group", "only")) or (
+        re.search(r"\b(?:prior\s+period|open\s+selected)\b", question) is not None
+    )

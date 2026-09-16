@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import json
+from datetime import date
+
+import duckdb
 
 from app.cli import chat as chat_cli
-from app.models.chat import ChatResponse
+from app.db.data_profile import DataProfile
+from app.llm.cache_keys import build_cache_key
+from app.models.chat import ChatResponse, ResponseMetadata
+from app.state.app_state import AppStateRepository
 
 
 def test_cli_prints_json_output(monkeypatch, capsys) -> None:
@@ -218,3 +224,130 @@ def test_ensure_local_server_hints_when_binary_missing(monkeypatch, capsys) -> N
     err = capsys.readouterr().err
     assert "litert-lm is not installed" in err
     assert "Settings" in err
+
+
+def _activate_dataset(repo: AppStateRepository) -> str:
+    """Create a minimal active dataset for CLI cache lifecycle tests."""
+    dataset = repo.activate(
+        source_bytes=b"",
+        source_size_bytes=1,
+        parser_version="v2",
+        schema_version="1",
+        worker_count=1,
+        coverage_start="2026-06-01",
+        coverage_end="2026-06-30",
+        counts={"records": 1},
+        content_hash_prefix="cli-cache",
+    )
+    assert dataset is not None
+    return dataset.id
+
+
+def _fallback_response(question: str) -> ChatResponse:
+    """Build a valid degraded response that must not enter the answer cache."""
+    return ChatResponse(
+        template_id="fallback",
+        data={"question": question, "table": None, "text": "Provider unavailable."},
+        narrative="Provider unavailable.",
+        metadata=ResponseMetadata(provenance="fallback"),
+    )
+
+
+def test_cli_does_not_serve_or_write_degraded_cache_entries(tmp_path, monkeypatch) -> None:
+    """A recovered CLI provider must not replay or persist a fallback response."""
+    import asyncio
+
+    repo = AppStateRepository(tmp_path / "state.sqlite")
+    dataset_id = _activate_dataset(repo)
+    question = "Show my last run"
+    key = build_cache_key("exact", question)
+    repo.put_cached_response(key, dataset_id, _fallback_response(question).model_dump_json())
+    calls: list[str] = []
+
+    class _Gateway:
+        client = object()
+        model = "test"
+
+    class _Orchestrator:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        async def answer(self, received_question: str, plan_override=None) -> ChatResponse:
+            assert plan_override is None
+            calls.append(received_question)
+            return _fallback_response(received_question)
+
+    monkeypatch.setattr(chat_cli, "migrate", lambda _db_path=None: False)
+    monkeypatch.setattr(chat_cli, "connect", lambda *_args, **_kwargs: duckdb.connect(":memory:"))
+    monkeypatch.setattr(chat_cli, "AppStateRepository", lambda: repo)
+    monkeypatch.setattr(chat_cli, "get_gateway_for_config", lambda _config: _Gateway())
+    monkeypatch.setattr(chat_cli, "ChatOrchestrator", _Orchestrator)
+    monkeypatch.setattr(chat_cli, "_ensure_local_server", lambda _config: None)
+    monkeypatch.setattr(
+        chat_cli,
+        "get_data_profile",
+        lambda _conn: DataProfile(
+            first_date=date(2026, 6, 1),
+            latest_date=date(2026, 6, 30),
+            workout_types=("Running",),
+            metrics=(),
+        ),
+    )
+
+    response = asyncio.run(chat_cli._ask_question(question))
+
+    assert calls == [question]
+    assert response.metadata.provenance == "fallback"
+    stored = repo.get_cached_entry(key, dataset_id)
+    assert stored is not None
+    assert stored[0] == _fallback_response(question).model_dump_json()
+
+    uncached_question = "What did I eat?"
+    asyncio.run(chat_cli._ask_question(uncached_question))
+
+    assert calls == [question, uncached_question]
+    assert repo.get_cached_entry(build_cache_key("exact", uncached_question), dataset_id) is None
+
+
+def test_cli_leaves_shared_gateway_open(tmp_path, monkeypatch) -> None:
+    """A CLI request borrows the process-cached gateway instead of closing it."""
+    import asyncio
+
+    repo = AppStateRepository(tmp_path / "state.sqlite")
+    _activate_dataset(repo)
+
+    class _Gateway:
+        client = object()
+        model = "test"
+
+        def __init__(self) -> None:
+            self.closed = False
+
+        async def aclose(self) -> None:
+            self.closed = True
+
+    gateway = _Gateway()
+
+    class _Orchestrator:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        async def answer(self, question: str, plan_override=None) -> ChatResponse:
+            assert plan_override is None
+            return _fallback_response(question)
+
+    monkeypatch.setattr(chat_cli, "migrate", lambda _db_path=None: False)
+    monkeypatch.setattr(chat_cli, "connect", lambda *_args, **_kwargs: duckdb.connect(":memory:"))
+    monkeypatch.setattr(chat_cli, "AppStateRepository", lambda: repo)
+    monkeypatch.setattr(chat_cli, "get_gateway_for_config", lambda _config: gateway)
+    monkeypatch.setattr(chat_cli, "ChatOrchestrator", _Orchestrator)
+    monkeypatch.setattr(chat_cli, "_ensure_local_server", lambda _config: None)
+    monkeypatch.setattr(
+        chat_cli,
+        "get_data_profile",
+        lambda _conn: DataProfile(None, None, (), ()),
+    )
+
+    asyncio.run(chat_cli._ask_question("What did I eat?"))
+
+    assert gateway.closed is False

@@ -13,6 +13,7 @@ from app.db.connection import connect
 from app.db.data_profile import get_data_profile
 from app.db.migrate import migrate
 from app.llm.cache_keys import build_cache_key
+from app.llm.cache_policy import cacheable_envelope, cacheable_response
 from app.llm.followups import FollowupContext, resolve_followup
 from app.llm.local_planner import plan_local_question
 from app.llm.orchestrator import ChatOrchestrator
@@ -157,7 +158,9 @@ async def _ask_question(
             if active is not None and cache_mode != "fresh" and use_exact_cache:
                 entry = repository.get_cached_entry(exact_key, active.id, conn=store)
                 if entry is not None:
-                    cached, canonical_plan = entry
+                    candidate, candidate_plan = entry
+                    if cacheable_envelope(candidate):
+                        cached, canonical_plan = candidate, candidate_plan
             canonical_key: str | None = None
             followup_plan: dict[str, object] | None = None
             if cached is None:
@@ -198,7 +201,9 @@ async def _ask_question(
                 if active is not None and canonical_key and cache_mode != "fresh":
                     hit = repository.get_cached_entry(canonical_key, active.id, conn=store)
                     if hit is not None:
-                        cached, canonical_plan = hit
+                        candidate, candidate_plan = hit
+                        if cacheable_envelope(candidate):
+                            cached, canonical_plan = candidate, candidate_plan
             else:
                 canonical_key = (
                     build_cache_key("canonical", canonical_plan) if canonical_plan else None
@@ -216,7 +221,10 @@ async def _ask_question(
                 response.metadata.coverage_start = active.coverage_start
                 response.metadata.coverage_end = active.coverage_end
                 response.metadata.generated_at = active.activated_at
-                if cache_mode != "fresh":
+                cacheable = (
+                    cache_mode != "fresh" and followup_plan is None and cacheable_response(response)
+                )
+                if cacheable:
                     encoded = response.model_dump_json()
                     if use_exact_cache:
                         repository.put_cached_response(
@@ -250,7 +258,6 @@ async def _ask_question(
             )
         raise
     finally:
-        await gateway.aclose()
         conn.close()
 
 
