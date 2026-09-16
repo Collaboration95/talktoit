@@ -55,6 +55,7 @@ function decodeMetadata(value: unknown): ChatEnvelope['metadata'] | null {
   if (!isNullableString(value['coverage_start'])) return null
   if (!isNullableString(value['coverage_end'])) return null
   if (!isNullableString(value['generated_at'])) return null
+  if (!isNullableString(value['turn_id'])) return null
 
   return {
     api_version: 'v1',
@@ -71,6 +72,7 @@ function decodeMetadata(value: unknown): ChatEnvelope['metadata'] | null {
     ...(value['generated_at'] !== undefined
       ? { generated_at: value['generated_at'] as string | null }
       : {}),
+    ...(value['turn_id'] !== undefined ? { turn_id: value['turn_id'] as string | null } : {}),
   }
 }
 

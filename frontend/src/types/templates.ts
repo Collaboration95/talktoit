@@ -16,6 +16,7 @@ export interface ChatEnvelope {
     coverage_start?: string | null
     coverage_end?: string | null
     generated_at?: string | null
+    turn_id?: string | null
   }
 }
 

@@ -25,6 +25,7 @@ export async function askQuestion(
   question: string,
   options: {
     conversationId?: string
+    parentTurnId?: string
     cacheMode?: 'default' | 'fresh'
     signal?: AbortSignal
   } = {},
@@ -35,6 +36,7 @@ export async function askQuestion(
     body: JSON.stringify({
       question,
       ...(options.conversationId ? { conversation_id: options.conversationId } : {}),
+      ...(options.parentTurnId ? { parent_turn_id: options.parentTurnId } : {}),
       ...(options.cacheMode ? { cache_mode: options.cacheMode } : {}),
     } satisfies ChatRequest),
     ...(options.signal ? { signal: options.signal } : {}),
