@@ -496,6 +496,17 @@ def normalize_metric_id(metric_id: str) -> str:
     """Normalize only declared catalog aliases, preserving unknown values for rejection."""
     candidate = metric_id.strip()
     folded = candidate.casefold()
+    declared_aliases = {
+        "activeenergy": "active_energy",
+        "active energy": "active_energy",
+        "restinghr": "resting_hr",
+        "resting heart rate": "resting_hr",
+        "resting_heart_rate": "resting_hr",
+        "stepcount": "steps",
+        "step count": "steps",
+    }
+    if folded in declared_aliases:
+        return declared_aliases[folded]
     for key, definition in METRIC_CATALOG.items():
         if folded in {key.casefold(), definition.label.casefold()}:
             return key

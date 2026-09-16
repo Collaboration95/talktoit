@@ -92,6 +92,7 @@ def test_tool_catalog_includes_required_argument_contracts() -> None:
         ("Steps", "steps"),
         ("steps", "steps"),
         ("HKQuantityTypeIdentifierStepCount", "HKQuantityTypeIdentifierStepCount"),
+        ("RestingHR", "resting_hr"),
     ],
 )
 def test_normalize_metric_id_accepts_declared_steps_aliases(alias: str, expected: str) -> None:
