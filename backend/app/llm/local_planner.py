@@ -8,7 +8,7 @@ sending any additional health data off-device.
 from __future__ import annotations
 
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from app.db.data_profile import DataProfile
@@ -30,6 +30,16 @@ def _month_bounds(value: date) -> tuple[date, date]:
 
 def _period_for_question(question: str, as_of: date) -> tuple[date, date, str] | None:
     lower = question.lower()
+    month_match = re.search(
+        r"\b(?:in|for|during)?\s*"
+        r"(january|february|march|april|may|june|july|august|september|october|november|december)\s+"
+        r"(\d{4})\b",
+        lower,
+    )
+    if month_match:
+        month = datetime.strptime(f"{month_match.group(1)} {month_match.group(2)}", "%B %Y").date()
+        start, end = _month_bounds(month)
+        return start, end, start.strftime("%B %Y")
     if re.search(r"\blast month\b", lower):
         current_start, _current_end = _month_bounds(as_of)
         previous_day = current_start - timedelta(days=1)
@@ -53,6 +63,32 @@ def _period_for_question(question: str, as_of: date) -> tuple[date, date, str] |
         start = as_of - timedelta(days=as_of.weekday())
         return start, as_of, f"{start:%b %-d}-{as_of:%b %-d}"
     return None
+
+
+def _trend_metric(question: str) -> str | None:
+    lower = question.casefold()
+    if "resting heart" in lower or "resting hr" in lower:
+        return "HKQuantityTypeIdentifierRestingHeartRate"
+    if re.search(r"\bsteps?\b", lower):
+        return "steps"
+    if re.search(r"\bhrv\b", lower):
+        return "hrv"
+    if "active energy" in lower:
+        return "active_energy"
+    return None
+
+
+def _requested_granularity(question: str) -> str:
+    lower = question.casefold()
+    if re.search(r"\b(?:daily|day|days)\b", lower):
+        return "day"
+    if re.search(r"\b(?:monthly|month|months)\b", lower):
+        return "month"
+    return "week"
+
+
+def _fallback_plan(text: str) -> dict[str, Any]:
+    return {"tool_name": "get_fallback_answer", "arguments": {"text": text}}
 
 
 def _comparison_plan(
@@ -98,34 +134,58 @@ def plan_local_question(question: str, profile: DataProfile) -> dict[str, Any] |
     activity_type = _activity_type(question)
     period = _period_for_question(question, as_of)
 
+    trend_metric = _trend_metric(question)
+
+    if contains_word(lower, "compare") and trend_metric is not None:
+        return _fallback_plan(
+            "Comparing health metrics between periods is not supported yet. "
+            "I can show a trend for that metric instead."
+        )
+
     if contains_word(lower, "compare") and (
         contains_word(lower, "month") or contains_word(lower, "week")
     ):
         granularity = "week" if contains_word(lower, "week") else "month"
         return _comparison_plan(question, as_of, activity_type, granularity)
 
-    if "resting heart" in lower or "resting hr" in lower:
+    if trend_metric is not None:
         start, end, _label = period or (as_of - timedelta(days=89), as_of, "Latest 90 days")
         return {
             "tool_name": "get_trend",
             "arguments": {
-                "metric_id": "HKQuantityTypeIdentifierRestingHeartRate",
-                "granularity": "week",
+                "metric_id": trend_metric,
+                "granularity": _requested_granularity(question),
                 "start_date": start.isoformat(),
                 "end_date": end.isoformat(),
             },
         }
 
-    if "training volume" in lower or "training summary" in lower:
+    if (
+        "training volume" in lower
+        or "training summary" in lower
+        or (
+            activity_type is not None
+            and ("volume" in lower or re.search(r"\bhow many\b", lower) is not None)
+        )
+        or (activity_type is None and re.search(r"\bhow many workouts?\b", lower) is not None)
+    ):
         start, end, _label = period or (as_of - timedelta(days=6), as_of, "Latest 7 days")
+        arguments: dict[str, Any] = {"start_date": start.isoformat(), "end_date": end.isoformat()}
+        if activity_type is not None:
+            arguments["activity_type"] = activity_type
         return {
             "tool_name": "get_period_summary",
-            "arguments": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+            "arguments": arguments,
         }
 
     if activity_type is not None and any(
         phrase in lower for phrase in ("top", "longest", "highest heart", "highest hr")
     ):
+        if "pace" in lower:
+            return _fallback_plan(
+                "Ranking workouts by pace is not supported yet. "
+                "I can rank them by distance, duration, heart rate, or energy."
+            )
         if "distance" in lower:
             metric = "distance"
         elif "heart" in lower or " hr" in lower:
@@ -134,20 +194,40 @@ def plan_local_question(question: str, profile: DataProfile) -> dict[str, Any] |
             metric = "energy"
         else:
             metric = "duration"
-        arguments: dict[str, Any] = {"activity_type": activity_type, "metric": metric, "n": 5}
-        if "which" in lower:
+        count_match = re.search(r"\btop\s+(\d{1,3})\b", lower)
+        arguments: dict[str, Any] = {
+            "activity_type": activity_type,
+            "metric": metric,
+            "n": int(count_match.group(1)) if count_match else 5,
+        }
+        if "which" in lower and count_match is None:
             arguments["n"] = 1
         if period is not None:
             start, end, _label = period
             arguments.update({"start_date": start.isoformat(), "end_date": end.isoformat()})
         return {"tool_name": "get_top_workouts", "arguments": arguments}
 
-    if activity_type is not None and any(
-        phrase in lower for phrase in ("last", "latest", "most recent")
-    ):
-        arguments: dict[str, Any] = {"activity_type": activity_type}
+    # A period word is a scope, not evidence that the user asked for a latest
+    # workout.  Only explicit singular latest-workout wording reaches this
+    # branch; plural period-only requests are left for an honest fallback.
+    asks_for_latest_workout = re.search(
+        r"\b(?:last|latest)\s+(?:long\s+)?(?:run|ride|workout|session)\b"
+        r"|\bmost recent\s+(?:run|ride|session)\b",
+        lower,
+    )
+    if asks_for_latest_workout:
+        arguments = {"activity_type": activity_type} if activity_type is not None else {}
         if "long" in lower:
             arguments["min_duration_minutes"] = 30
+        if period is not None:
+            start, end, _label = period
+            arguments.update({"start_date": start.isoformat(), "end_date": end.isoformat()})
         return {"tool_name": "get_last_workout", "arguments": arguments}
+
+    if activity_type is not None and period is not None:
+        return _fallback_plan(
+            f"I can summarize {activity_type} workouts for that period, but I need to know "
+            "whether you want a count, distance, duration, or energy."
+        )
 
     return None

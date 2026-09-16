@@ -58,6 +58,7 @@ class ResponseMetadata(BaseModel):
     coverage_start: str | None = None
     coverage_end: str | None = None
     generated_at: str | None = None
+    turn_id: str | None = None
 
 
 class ChatResponse(BaseModel):

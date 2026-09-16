@@ -11,7 +11,7 @@ import duckdb
 import app.state.app_state as app_state
 from app.api.chat import _finalize_chat, _prepare_chat, _semantic_cached_answer
 from app.db.data_profile import DataProfile
-from app.llm.cache_keys import CACHE_KEY_VERSION, build_cache_key
+from app.llm.cache_keys import CACHE_KEY_VERSION, build_cache_key, generation_identity
 from app.models.chat import ChatRequest, ChatResponse, ResponseMetadata
 from app.state.app_state import CACHE_MAX_ENTRIES, AppStateRepository
 
@@ -33,7 +33,7 @@ def test_canonical_cache_key_can_share_equivalent_local_intent(tmp_path) -> None
 
 
 def test_versioned_cache_keys_normalize_equivalent_intent_without_sharing_different_facts() -> None:
-    assert CACHE_KEY_VERSION == "chat-cache-v2"
+    assert CACHE_KEY_VERSION == "chat-cache-v3"
     assert build_cache_key("exact", "  Last RUN  ") == build_cache_key("exact", "last run")
     plan = {
         "tool_name": "get_trend",
@@ -47,6 +47,9 @@ def test_versioned_cache_keys_normalize_equivalent_intent_without_sharing_differ
             "arguments": {"metric_id": "HKQuantityTypeIdentifierRestingHeartRate"},
         },
     ) != build_cache_key("canonical", plan)
+    assert build_cache_key(
+        "exact", "last run", generation_identity="local:model-a"
+    ) != build_cache_key("exact", "last run", generation_identity="local:model-b")
 
 
 def test_lru_cache_eviction_is_bounded_and_does_not_touch_turns(tmp_path) -> None:
@@ -102,7 +105,11 @@ def test_valid_cache_serves_stale_value_until_the_dataset_revalidates(tmp_path) 
     """A cached answer is valid for its dataset id; a new dataset invalidates it."""
     repo = AppStateRepository(tmp_path / "state.sqlite")
     old_dataset_id = _activate_dataset(repo, coverage_end="2026-06-01", content_prefix="aaaa")
-    key = build_cache_key("exact", "show my last run")
+    key = build_cache_key(
+        "exact",
+        "show my last run",
+        generation_identity=generation_identity(repo.get_provider_config()),
+    )
 
     # Cache is warm for the old dataset: subsequent hits serve the stored
     # (now stale) value without recomputation — provenance is the caller's job.
@@ -148,7 +155,11 @@ def test_prepare_chat_cache_hit_skips_profile_scan(tmp_path, monkeypatch) -> Non
     """GH-6: an exact cache hit never pays for the DuckDB profile scan."""
     repo = AppStateRepository(tmp_path / "state.sqlite")
     dataset_id = _activate_dataset(repo, coverage_end="2026-08-31", content_prefix="cccc")
-    key = build_cache_key("exact", "show my last run")
+    key = build_cache_key(
+        "exact",
+        "show my last run",
+        generation_identity=generation_identity(repo.get_provider_config()),
+    )
     plan = {"tool_name": "get_last_workout", "arguments": {"activity_type": "Running"}}
     repo.put_cached_response(
         key, dataset_id, _cached_envelope("cached answer"), canonical_plan=plan
@@ -165,7 +176,9 @@ def test_prepare_chat_cache_hit_skips_profile_scan(tmp_path, monkeypatch) -> Non
     assert prepared.response is not None
     assert prepared.response.metadata.provenance == "cached"
     assert prepared.canonical_plan == plan
-    assert prepared.canonical_key == build_cache_key("canonical", plan)
+    assert prepared.canonical_key == build_cache_key(
+        "canonical", plan, generation_identity=generation_identity(repo.get_provider_config())
+    )
 
 
 def test_prepare_chat_rejects_legacy_fallback_cache_entry(tmp_path, monkeypatch) -> None:

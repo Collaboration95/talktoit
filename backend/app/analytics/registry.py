@@ -70,8 +70,10 @@ class WorkoutDetailInput(BaseModel):
 class LatestWorkoutInput(BaseModel):
     """Validated local latest-workout request after activity-name resolution."""
 
-    activity_type: str = Field(min_length=1, max_length=160)
+    activity_type: str | None = Field(default=None, min_length=1, max_length=160)
     min_duration_minutes: float | None = Field(default=None, ge=0)
+    start: date | None = None
+    end: date | None = None
 
 
 class RankedWorkoutsInput(BaseModel):
@@ -90,6 +92,7 @@ class PeriodSummaryInput(BaseModel):
     start: date
     end: date
     title: str | None = Field(default=None, max_length=160)
+    activity_type: str | None = Field(default=None, min_length=1, max_length=160)
 
 
 class ComparisonInput(BaseModel):
@@ -191,7 +194,7 @@ QUERY_REGISTRY: dict[str, QueryDefinition] = {
         "not_found",
         "success",
         "unavailable",
-        ("activity_type", "min_duration_minutes"),
+        ("activity_type", "min_duration_minutes", "start", "end"),
         ("workouts",),
         "One latest local workout is selected after validated activity resolution.",
         "No record-interval aggregation applies to one workout event.",
@@ -223,7 +226,7 @@ QUERY_REGISTRY: dict[str, QueryDefinition] = {
         "zero_summary",
         "success",
         "unavailable",
-        ("start", "end", "title"),
+        ("start", "end", "title", "activity_type"),
         ("workouts",),
         "Workout statistics are normalized from the selected local workout rows.",
         "Each workout contributes once to a period summary.",
@@ -350,7 +353,13 @@ def execute_period_summary(conn: object, values: dict[str, object]) -> PeriodSum
     from app.db import queries
 
     args = PeriodSummaryInput.model_validate(values)
-    return queries.get_period_summary(conn, args.start, args.end, title=args.title)  # type: ignore[arg-type]
+    return queries.get_period_summary(  # type: ignore[arg-type]
+        conn,  # type: ignore[arg-type]
+        args.start,
+        args.end,
+        title=args.title,
+        activity_type=args.activity_type,
+    )
 
 
 def execute_comparison(conn: object, values: dict[str, object]) -> ComparisonData:
@@ -379,6 +388,8 @@ def execute_latest_workout(conn: object, values: dict[str, object]) -> WorkoutCa
         conn,  # type: ignore[arg-type]
         args.activity_type,
         args.min_duration_minutes,
+        start=args.start,
+        end=args.end,
     )
 
 

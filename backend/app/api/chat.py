@@ -19,7 +19,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from app.api.deps import get_app_state_repository, get_diagnostics_repository
 from app.db.connection import connect, lease_connection
 from app.db.data_profile import DataProfile, get_data_profile
-from app.llm.cache_keys import build_cache_key
+from app.llm.cache_keys import build_cache_key, generation_identity
+from app.llm.cache_policy import cacheable_envelope, cacheable_response
 from app.llm.followups import FollowupContext, followup_disambiguation, resolve_followup
 from app.llm.local_planner import plan_local_question
 from app.llm.orchestrator import ChatOrchestrator
@@ -109,26 +110,6 @@ def _plan_mode(response: ChatResponse, cached: bool, disambiguated: bool) -> str
     return "fallback"
 
 
-def _cacheable_response(response: ChatResponse) -> bool:
-    """Return whether an envelope may be stored and replayed as a cached success.
-
-    Degraded fallback templates and provider fallbacks must never be promoted
-    to a cached answer. The write path and the read path share this predicate so
-    an envelope can never be cache-eligible on one side and rejected on the
-    other.
-    """
-    return response.template_id != "fallback" and response.metadata.provenance != "fallback"
-
-
-def _cacheable_envelope(raw: str) -> bool:
-    """Reject stored degraded envelopes before they can poison a cache hit."""
-    try:
-        payload = ChatResponse.model_validate_json(raw)
-    except Exception:
-        return False
-    return _cacheable_response(payload)
-
-
 @dataclass
 class _ChatPreparation:
     """Everything one chat request needs, prepared off the event loop.
@@ -201,6 +182,8 @@ def _prepare_chat(
     pending_turn_id: str | None = None
     data_profile: DataProfile | None = None
     with repository.session() as store:
+        provider_config = repository.get_provider_config(conn=store)
+        cache_identity = generation_identity(provider_config)
         if request.conversation_id:
             pending_turn_id = repository.create_pending_turn(
                 request.conversation_id, request.question, request.cache_mode, conn=store
@@ -208,7 +191,7 @@ def _prepare_chat(
             if handle is not None:
                 handle.turn_id = pending_turn_id
         active = repository.get_active(conn=store)
-        cache_key = build_cache_key("exact", request.question)
+        cache_key = build_cache_key("exact", request.question, generation_identity=cache_identity)
         use_exact_cache = request.parent_turn_id is None
         cached: str | None = None
         canonical_plan: dict[str, Any] | None = None
@@ -216,7 +199,7 @@ def _prepare_chat(
             entry = repository.get_cached_entry(cache_key, active.id, conn=store)
             if entry is not None:
                 candidate, canonical_plan = entry
-                if _cacheable_envelope(candidate):
+                if cacheable_envelope(candidate):
                     cached = candidate
         canonical_key: str | None = None
         followup_plan: dict[str, Any] | None = None
@@ -263,16 +246,31 @@ def _prepare_chat(
                         disambiguation = followup_disambiguation(
                             request.question, contexts, active.id
                         )
-            canonical_plan = local_plan or followup_plan
-            canonical_key = build_cache_key("canonical", canonical_plan) if canonical_plan else None
+            # An explicitly selected parent answer is stronger context than a
+            # generic local parse.  For example, "daily instead" has no
+            # metric of its own; letting the local planner win can silently
+            # substitute its default metric instead of editing the selected
+            # trend.  Only use this precedence when the follow-up resolver
+            # recognized the scoped request; otherwise preserve normal local
+            # planning for a new question.
+            canonical_plan = followup_plan or local_plan
+            canonical_key = (
+                build_cache_key("canonical", canonical_plan, generation_identity=cache_identity)
+                if canonical_plan
+                else None
+            )
             if active is not None and canonical_key and request.cache_mode != "fresh":
                 hit = repository.get_cached_entry(canonical_key, active.id, conn=store)
                 if hit is not None:
                     candidate, cached_plan = hit
-                    if _cacheable_envelope(candidate):
+                    if cacheable_envelope(candidate):
                         cached, canonical_plan = candidate, cached_plan
         else:
-            canonical_key = build_cache_key("canonical", canonical_plan) if canonical_plan else None
+            canonical_key = (
+                build_cache_key("canonical", canonical_plan, generation_identity=cache_identity)
+                if canonical_plan
+                else None
+            )
         response: ChatResponse | None = None
         if cached is not None:
             response = ChatResponse.model_validate_json(cached)
@@ -342,6 +340,11 @@ def _finalize_chat(
         started_at: Monotonic start time for the diagnostics event.
         diagnostics: Request-scoped diagnostics collector, if available.
     """
+    # A completed conversation turn is the only safe parent reference for a
+    # future bounded follow-up. It is assigned before serialization so the
+    # live browser and restored history agree on the same server identifier.
+    if prepared.pending_turn_id is not None:
+        response.metadata.turn_id = prepared.pending_turn_id
     active = prepared.active
     if active is not None:
         response.metadata.dataset_version_id = active.id
@@ -355,7 +358,7 @@ def _finalize_chat(
             and request.cache_mode != "fresh"
             and not prepared.disambiguated
             and prepared.followup_plan is None
-            and _cacheable_response(response)
+            and cacheable_response(response)
         )
         if cacheable:
             if active is None:
@@ -467,6 +470,16 @@ async def chat(
                     data_profile=prepared.data_profile,
                     local_plan_checked=True,
                 )
+                # The model may have resolved a plan only after the prephase.
+                # Persist/cache the exact validated plan it actually executed,
+                # rather than the prephase's absent guess.
+                if orchestrator.executed_plan is not None:
+                    prepared.canonical_plan = orchestrator.executed_plan
+                    prepared.canonical_key = build_cache_key(
+                        "canonical",
+                        prepared.canonical_plan,
+                        generation_identity=generation_identity(repository.get_provider_config()),
+                    )
             await asyncio.to_thread(
                 _finalize_chat, prepared, request, response, started_at, diagnostics
             )
@@ -648,7 +661,7 @@ def _semantic_cached_answer(
     if not isinstance(response_json, str) or not response_json:
         return None
     prior = ChatResponse.model_validate_json(response_json)
-    if not _cacheable_envelope(response_json):
+    if not cacheable_envelope(response_json):
         return None
     prior.metadata.provenance = "semantic_cached"
     _record_semantic_event(diagnostics, verdict.considered, "identical")

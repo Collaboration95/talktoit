@@ -107,3 +107,80 @@ def test_week_comparison_uses_monday_based_ranges() -> None:
     assert plan is not None
     assert plan["arguments"]["this_start"] == "2026-06-15"
     assert plan["arguments"]["last_start"] == "2026-06-08"
+
+
+def test_preserves_explicit_top_n_dates_and_daily_trend_granularity() -> None:
+    ranking = plan_local_question("Top 10 cycling workouts by duration this year", _profile())
+    assert ranking is not None
+    assert ranking["arguments"]["n"] == 10
+    assert ranking["arguments"]["start_date"] == "2026-01-01"
+
+    explicit_count = plan_local_question("Which top 10 cycling workouts by duration?", _profile())
+    assert explicit_count is not None
+    assert explicit_count["arguments"]["n"] == 10
+
+    trend = plan_local_question("Plot steps by day for June 2026", _profile())
+    assert trend == {
+        "tool_name": "get_trend",
+        "arguments": {
+            "metric_id": "steps",
+            "granularity": "day",
+            "start_date": "2026-06-01",
+            "end_date": "2026-06-30",
+        },
+    }
+
+
+def test_scopes_summaries_and_latest_workouts_to_explicit_constraints() -> None:
+    summary = plan_local_question("Show running volume last year", _profile())
+    assert summary == {
+        "tool_name": "get_period_summary",
+        "arguments": {
+            "start_date": "2025-01-01",
+            "end_date": "2025-12-31",
+            "activity_type": "Running",
+        },
+    }
+    latest = plan_local_question("Show my last run in May 2025", _profile())
+    assert latest == {
+        "tool_name": "get_last_workout",
+        "arguments": {
+            "activity_type": "Running",
+            "start_date": "2025-05-01",
+            "end_date": "2025-05-31",
+        },
+    }
+    assert plan_local_question("Show my last workout", _profile()) == {
+        "tool_name": "get_last_workout",
+        "arguments": {},
+    }
+
+
+def test_returns_an_honest_fallback_for_unsupported_requested_metrics() -> None:
+    assert plan_local_question("Top runs by pace", _profile()) == {
+        "tool_name": "get_fallback_answer",
+        "arguments": {
+            "text": "Ranking workouts by pace is not supported yet. "
+            "I can rank them by distance, duration, heart rate, or energy."
+        },
+    }
+    comparison_question = "Compare resting heart rate this month vs last month"
+    comparison = plan_local_question(comparison_question, _profile())
+    assert comparison == {
+        "tool_name": "get_fallback_answer",
+        "arguments": {
+            "text": "Comparing health metrics between periods is not supported yet. "
+            "I can show a trend for that metric instead."
+        },
+    }
+
+
+def test_does_not_treat_a_period_only_workout_request_as_latest() -> None:
+    plan = plan_local_question("Show runs last week", _profile())
+    assert plan == {
+        "tool_name": "get_fallback_answer",
+        "arguments": {
+            "text": "I can summarize Running workouts for that period, but I need to know "
+            "whether you want a count, distance, duration, or energy."
+        },
+    }

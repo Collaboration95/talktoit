@@ -19,6 +19,7 @@ from httpx import ASGITransport, AsyncClient
 from app.ingest.coordinator import ingest_v2 as ingest
 from app.llm.orchestrator import ChatOrchestrator
 from app.main import create_app
+from app.state.app_state import AppStateRepository
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "sample.xml"
 
@@ -90,7 +91,8 @@ async def test_get_last_workout_returns_workout_card(
     assert "activity_type" in response.data
     assert response.data["activity_type"] == "Running"
     assert response.data["duration_minutes"] == pytest.approx(45.5)
-    assert response.narrative == "Here is your most recent workout."
+    assert "Running" in response.narrative
+    assert "8.5 km" in response.narrative
     assert response.metadata.provenance == "deterministic_local"
     client.chat.completions.create.assert_not_awaited()
 
@@ -154,11 +156,11 @@ async def test_narrative_prompt_uses_compact_tool_result(
 
     narrative_messages = client.chat.completions.create.await_args_list[1].kwargs["messages"]
     prompt_content = narrative_messages[1]["content"]
-    assert '"duration_minutes":61' in prompt_content
-    assert '"avg_heart_rate":157' in prompt_content
-    assert '"max_heart_rate":171' in prompt_content
-    assert '"distance_meters":10020' in prompt_content
-    assert '"energy_burned_kj":886' in prompt_content
+    assert '"duration":{"value":61,"unit":"min"}' in prompt_content
+    assert '"average_heart_rate":{"value":157,"unit":"bpm"}' in prompt_content
+    assert '"max_heart_rate":{"value":171,"unit":"bpm"}' in prompt_content
+    assert '"distance":{"value":10.0,"unit":"km"}' in prompt_content
+    assert '"energy":{"value":886,"unit":"kJ"}' in prompt_content
     assert '"gps_route"' not in prompt_content
 
 
@@ -212,7 +214,7 @@ async def test_deterministic_plan_does_not_depend_on_invalid_remote_output(
     response = await orchestrator.answer("Show my last run")
 
     assert response.template_id == "workout_card"
-    assert response.narrative == "Here is your most recent workout."
+    assert "Running" in response.narrative
     client.chat.completions.create.assert_not_awaited()
 
 
@@ -352,3 +354,123 @@ async def test_chat_endpoint_integration(
     assert "data" in body
     assert "narrative" in body
     assert body["template_id"] == "workout_card"
+
+
+async def test_chat_endpoint_persists_executed_remote_plan(
+    db: duckdb.DuckDBPyConnection, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """A model-resolved plan must be recorded for later local follow-ups."""
+    monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
+    repository = AppStateRepository()
+    dataset = repository.activate(
+        source_bytes=b"",
+        source_size_bytes=1,
+        parser_version="v2",
+        schema_version="1",
+        worker_count=1,
+        coverage_start="2026-06-01",
+        coverage_end="2026-06-10",
+        counts={"records": 1},
+        content_hash_prefix="remote-plan",
+    )
+    assert dataset is not None
+    conversation_id = repository.create_conversation("Remote plan", dataset.id)
+    stub_client = _make_stub_client(
+        "get_last_workout", {"activity_type": "Running"}, "Test narrative."
+    )
+    app = create_app()
+    from app.api.chat import _get_conn, _get_gateway
+    from app.llm.provider_gateway import ProviderGateway
+
+    app.dependency_overrides[_get_conn] = lambda: (yield db)
+    app.dependency_overrides[_get_gateway] = lambda: ProviderGateway(
+        stub_client, mode="remote_planning_and_narration"
+    )
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/chat",
+                json={
+                    "question": "Tell me about a running session",
+                    "conversation_id": conversation_id,
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["metadata"]["turn_id"]
+    turns = repository.get_turns(conversation_id)
+    assert json.loads(turns[-1]["canonical_plan_json"]) == {
+        "tool_name": "get_last_workout",
+        "arguments": {"activity_type": "Running"},
+    }
+
+
+async def test_scoped_daily_followup_preserves_selected_trend_metric(
+    db: duckdb.DuckDBPyConnection, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """An explicit parent turn must beat a generic local interpretation."""
+    monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
+    repository = AppStateRepository()
+    dataset = repository.activate(
+        source_bytes=b"",
+        source_size_bytes=1,
+        parser_version="v2",
+        schema_version="1",
+        worker_count=1,
+        coverage_start="2026-06-01",
+        coverage_end="2026-06-10",
+        counts={"records": 1},
+        content_hash_prefix="scoped-followup",
+    )
+    assert dataset is not None
+    conversation_id = repository.create_conversation("Heart rate", dataset.id)
+    parent_turn_id = repository.create_pending_turn(
+        conversation_id, "Show my resting heart rate trend", "default"
+    )
+    parent_plan = {
+        "tool_name": "get_trend",
+        "arguments": {
+            "metric_id": "HKQuantityTypeIdentifierRestingHeartRate",
+            "granularity": "week",
+            "start_date": "2026-01-01",
+            "end_date": "2026-06-10",
+        },
+    }
+    repository.finish_turn(
+        parent_turn_id,
+        response_json='{"template_id":"trend_chart"}',
+        cache_outcome="miss",
+        canonical_plan=parent_plan,
+    )
+    stub_client = _make_stub_client("get_fallback_answer", {"text": "unused"}, "unused")
+    app = create_app()
+    from app.api.chat import _get_conn, _get_gateway
+    from app.llm.provider_gateway import ProviderGateway
+
+    app.dependency_overrides[_get_conn] = lambda: (yield db)
+    app.dependency_overrides[_get_gateway] = lambda: ProviderGateway(
+        stub_client, mode="remote_planning_and_narration"
+    )
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/chat",
+                json={
+                    "question": "daily instead",
+                    "conversation_id": conversation_id,
+                    "parent_turn_id": parent_turn_id,
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["metadata"]["provenance"] == "deterministic_local"
+    stored_plan = json.loads(repository.get_turns(conversation_id)[-1]["canonical_plan_json"])
+    assert stored_plan["arguments"]["metric_id"] == "HKQuantityTypeIdentifierRestingHeartRate"
+    assert stored_plan["arguments"]["granularity"] == "day"
+    stub_client.chat.completions.create.assert_not_awaited()

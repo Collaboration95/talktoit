@@ -12,7 +12,11 @@ def test_compare_to_prior_period_resolves_from_one_active_context() -> None:
             FollowupContext(
                 "ds_one",
                 "get_period_summary",
-                {"start_date": "2024-02-01", "end_date": "2024-02-07"},
+                {
+                    "start_date": "2024-02-01",
+                    "end_date": "2024-02-07",
+                    "activity_type": "Running",
+                },
             )
         ],
         "ds_one",
@@ -20,6 +24,7 @@ def test_compare_to_prior_period_resolves_from_one_active_context() -> None:
     assert result is not None
     assert result["tool_name"] == "get_comparison"
     assert result["arguments"]["last_start"] == "2024-01-25"
+    assert result["arguments"]["activity_type"] == "Running"
 
 
 def test_ambiguous_or_stale_context_never_resolves() -> None:
@@ -69,6 +74,34 @@ def test_regroup_trend_and_restrict_ranked_workouts_use_structured_arguments() -
     assert ranked["arguments"]["activity_type"] == "Running"
 
 
+def test_daily_instead_preserves_the_prior_trend_scope() -> None:
+    trend = resolve_followup(
+        "Daily instead",
+        [
+            FollowupContext(
+                "ds_one",
+                "get_trend",
+                {
+                    "metric_id": "steps",
+                    "granularity": "week",
+                    "start_date": "2024-02-01",
+                    "end_date": "2024-02-07",
+                },
+            )
+        ],
+        "ds_one",
+    )
+    assert trend == {
+        "tool_name": "get_trend",
+        "arguments": {
+            "metric_id": "steps",
+            "granularity": "day",
+            "start_date": "2024-02-01",
+            "end_date": "2024-02-07",
+        },
+    }
+
+
 def test_ambiguous_references_return_concise_local_turn_choices() -> None:
     contexts = [
         FollowupContext("ds_one", "get_trend", {}, "tr_one", "Show steps"),
@@ -81,3 +114,13 @@ def test_ambiguous_references_return_concise_local_turn_choices() -> None:
     assert followup_disambiguation("Compare that", [], "ds_one") == (
         "I could not find a current-dataset result to use for that follow-up."
     )
+
+
+def test_non_reference_words_do_not_trigger_followup_disambiguation() -> None:
+    """A substring such as ``it`` in ``activity`` is not a pronoun reference."""
+    contexts = [
+        FollowupContext("ds_one", "get_trend", {}, "tr_one", "Show steps"),
+        FollowupContext("ds_one", "get_trend", {}, "tr_two", "Show resting HR"),
+    ]
+
+    assert followup_disambiguation("Show activity by day", contexts, "ds_one") is None

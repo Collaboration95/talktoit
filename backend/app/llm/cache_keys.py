@@ -7,13 +7,23 @@ import json
 from collections.abc import Mapping
 from typing import Any, Literal
 
-CACHE_KEY_VERSION = "chat-cache-v2"
+CACHE_KEY_VERSION = "chat-cache-v3"
 """Bump when a local fact, formatter, privacy, or response contract changes."""
+
+
+def generation_identity(config: Mapping[str, object]) -> str:
+    """Return a stable effective provider identity for answer-cache isolation."""
+    return ":".join(
+        str(config.get(key, ""))
+        for key in ("provider", "mode", "model", "base_url", "litert_model", "litert_base_url")
+    )
 
 
 def build_cache_key(
     kind: Literal["exact", "canonical"],
     value: str | Mapping[str, Any],
+    *,
+    generation_identity: str = "deterministic-local",
 ) -> str:
     """Hash cache dependencies in a stable, inspectable local envelope.
 
@@ -25,8 +35,10 @@ def build_cache_key(
         "kind": kind,
         "timezone": "Asia/Singapore",
         "response_contract": "chat-v1",
-        "formatter_contract": "health-format-v1",
-        "privacy_projection": "compact-local-v1",
+        "formatter_contract": "health-format-v2",
+        "planner_contract": "typed-plan-v1",
+        "narration_projection": "template-facts-v2",
+        "generation_identity": generation_identity,
     }
     if kind == "exact":
         payload["normalized_question"] = str(value).strip().casefold()

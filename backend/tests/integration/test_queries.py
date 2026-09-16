@@ -67,6 +67,17 @@ def test_get_last_workout_can_require_a_long_session(db: duckdb.DuckDBPyConnecti
     assert result.duration_minutes == pytest.approx(45.5)
 
 
+def test_get_last_workout_supports_unscoped_and_date_scoped_queries(
+    db: duckdb.DuckDBPyConnection,
+) -> None:
+    latest = get_last_workout(db)
+    may = get_last_workout(db, start=date(2026, 5, 1), end=date(2026, 5, 31))
+
+    assert latest is not None
+    assert latest.activity_type == "Cycling"
+    assert may is None
+
+
 # ---------------------------------------------------------------------------
 # get_top_workouts
 # ---------------------------------------------------------------------------
@@ -272,6 +283,15 @@ def test_get_period_summary_june_all(db: duckdb.DuckDBPyConnection) -> None:
     assert by_label["Total Duration"] == pytest.approx(225.5)
     # 2500 + 1800 + 3800 = 8100 kJ
     assert by_label["Active Energy"] == pytest.approx(8100.0)
+
+
+def test_get_period_summary_filters_to_an_activity_type(db: duckdb.DuckDBPyConnection) -> None:
+    result = get_period_summary(db, date(2026, 6, 1), date(2026, 6, 10), activity_type="Running")
+
+    by_label = {metric.label: metric.value for metric in result.metrics}
+    assert by_label["Workouts"] == 1
+    assert by_label["Total Distance"] == pytest.approx(8.5)
+    assert by_label["Total Duration"] == pytest.approx(45.5)
 
 
 def test_get_period_summary_no_workouts(db: duckdb.DuckDBPyConnection) -> None:

@@ -7,59 +7,21 @@ callers must not interpolate tool payloads directly into provider messages.
 
 from __future__ import annotations
 
-from datetime import date, datetime
-from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
+from app.llm.answer_facts import NARRATION_FACTS_VERSION, narration_facts
+
 PLANNING_PROJECTION_VERSION = "v1"
-NARRATION_PROJECTION_VERSION = "v1"
+NARRATION_PROJECTION_VERSION = NARRATION_FACTS_VERSION
 
-_ALLOWED_FACT_KEYS = frozenset(
-    {
-        "activity_type",
-        "avg_heart_rate",
-        "calories",
-        "count",
-        "date",
-        "distance_meters",
-        "distance_unit",
-        "duration_minutes",
-        "end_date",
-        "energy_burned_kj",
-        "elevation_ascent_meters",
-        "label",
-        "max_heart_rate",
-        "metric",
-        "period",
-        "start_date",
-        "total_distance_meters",
-        "total_duration_minutes",
-        "unit",
-        "value",
-        "workouts",
-    }
-)
-
-
-def _compact_value(value: object) -> str | int | float | list[object] | dict[str, object] | None:
-    if isinstance(value, str | bool) or value is None:
-        return value
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-    if isinstance(value, date | datetime):
-        return value.isoformat()
-    if isinstance(value, list):
-        return [item for item in (_compact_value(item) for item in value) if item is not None]
-    if isinstance(value, dict):
-        return {
-            key: compacted
-            for key, item in value.items()
-            if key in _ALLOWED_FACT_KEYS
-            if (compacted := _compact_value(item)) is not None
-        }
-    return None
+_TOOL_TEMPLATE_IDS = {
+    "get_last_workout": "workout_card",
+    "get_top_workouts": "ranked_list",
+    "get_trend": "trend_chart",
+    "get_period_summary": "period_summary",
+    "get_comparison": "comparison",
+    "get_fallback_answer": "fallback",
+}
 
 
 def planning_projection(question: str, data_context: str) -> dict[str, str]:
@@ -72,13 +34,23 @@ def planning_projection(question: str, data_context: str) -> dict[str, str]:
 
 
 def narration_projection(
-    question: str, tool_name: str, payload: dict[str, Any]
+    question: str,
+    tool_name: str,
+    payload: dict[str, Any],
+    *,
+    template_id: str | None = None,
 ) -> dict[str, object]:
-    """Return compact template facts, excluding all unrecognised payload keys."""
-    facts = _compact_value(payload)
+    """Return compact template facts, excluding all unrecognised payload keys.
+
+    Tool names remain accepted for compatibility at this LLM boundary.  New
+    callers should pass the actual ``template_id`` returned by dispatch: a
+    successful tool can legitimately return the terminal fallback template.
+    Without it, the stable tool-to-template mapping preserves legacy callers.
+    """
+    facts = narration_facts(template_id or _TOOL_TEMPLATE_IDS.get(tool_name, ""), payload)
     return {
         "projection_version": NARRATION_PROJECTION_VERSION,
         "question": question,
         "tool_name": tool_name,
-        "facts": facts if isinstance(facts, dict) else {},
+        "facts": facts,
     }
