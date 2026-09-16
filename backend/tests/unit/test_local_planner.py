@@ -115,6 +115,10 @@ def test_preserves_explicit_top_n_dates_and_daily_trend_granularity() -> None:
     assert ranking["arguments"]["n"] == 10
     assert ranking["arguments"]["start_date"] == "2026-01-01"
 
+    explicit_count = plan_local_question("Which top 10 cycling workouts by duration?", _profile())
+    assert explicit_count is not None
+    assert explicit_count["arguments"]["n"] == 10
+
     trend = plan_local_question("Plot steps by day for June 2026", _profile())
     assert trend == {
         "tool_name": "get_trend",
@@ -167,5 +171,16 @@ def test_returns_an_honest_fallback_for_unsupported_requested_metrics() -> None:
         "arguments": {
             "text": "Comparing health metrics between periods is not supported yet. "
             "I can show a trend for that metric instead."
+        },
+    }
+
+
+def test_does_not_treat_a_period_only_workout_request_as_latest() -> None:
+    plan = plan_local_question("Show runs last week", _profile())
+    assert plan == {
+        "tool_name": "get_fallback_answer",
+        "arguments": {
+            "text": "I can summarize Running workouts for that period, but I need to know "
+            "whether you want a count, distance, duration, or energy."
         },
     }

@@ -11,7 +11,7 @@ import json
 from datetime import date
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.analytics.metric_catalog import METRIC_CATALOG
 from app.analytics.registry import (
@@ -26,7 +26,84 @@ from app.db.data_profile import resolve_activity_type
 from app.models.templates import FallbackData
 
 
-class _FallbackToolInput(BaseModel):
+class _StrictToolInput(BaseModel):
+    """Base wire contract for model-supplied tool arguments."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+def _validate_date_range(start_date: date | None, end_date: date | None) -> None:
+    """Reject reversed local date windows before a query is dispatched."""
+    if start_date is not None and end_date is not None and start_date > end_date:
+        raise ValueError("start_date must not be after end_date")
+
+
+class _LastWorkoutToolInput(_StrictToolInput):
+    activity_type: str | None = Field(default=None, min_length=1, max_length=160)
+    min_duration_minutes: float | None = Field(default=None, ge=0)
+    start_date: date | None = None
+    end_date: date | None = None
+
+    @model_validator(mode="after")
+    def ordered_dates(self) -> _LastWorkoutToolInput:
+        _validate_date_range(self.start_date, self.end_date)
+        return self
+
+
+class _TopWorkoutsToolInput(_StrictToolInput):
+    activity_type: str = Field(min_length=1, max_length=160)
+    metric: Literal["distance", "duration", "avg_hr", "energy"]
+    n: int = Field(default=5, ge=1, le=100)
+    start_date: date | None = None
+    end_date: date | None = None
+
+    @model_validator(mode="after")
+    def ordered_dates(self) -> _TopWorkoutsToolInput:
+        _validate_date_range(self.start_date, self.end_date)
+        return self
+
+
+class _TrendToolInput(_StrictToolInput):
+    metric_id: str = Field(min_length=1, max_length=160)
+    granularity: Literal["day", "week", "month"]
+    start_date: date
+    end_date: date
+
+    @model_validator(mode="after")
+    def ordered_dates(self) -> _TrendToolInput:
+        _validate_date_range(self.start_date, self.end_date)
+        return self
+
+
+class _PeriodSummaryToolInput(_StrictToolInput):
+    start_date: date
+    end_date: date
+    title: str | None = Field(default=None, max_length=160)
+    activity_type: str | None = Field(default=None, min_length=1, max_length=160)
+
+    @model_validator(mode="after")
+    def ordered_dates(self) -> _PeriodSummaryToolInput:
+        _validate_date_range(self.start_date, self.end_date)
+        return self
+
+
+class _ComparisonToolInput(_StrictToolInput):
+    this_start: date
+    this_end: date
+    last_start: date
+    last_end: date
+    this_label: str = Field(min_length=1, max_length=160)
+    last_label: str = Field(min_length=1, max_length=160)
+    activity_type: str | None = Field(default=None, min_length=1, max_length=160)
+
+    @model_validator(mode="after")
+    def ordered_dates(self) -> _ComparisonToolInput:
+        if self.this_start > self.this_end or self.last_start > self.last_end:
+            raise ValueError("comparison period start must not be after its end")
+        return self
+
+
+class _FallbackToolInput(_StrictToolInput):
     """Validated, bounded fallback text returned by a provider."""
 
     text: str = Field(default="", max_length=500)
@@ -249,6 +326,7 @@ def _tool_get_last_workout(
     Returns:
         Tuple of (template_id, data_dict).
     """
+    args = _LastWorkoutToolInput.model_validate(args).model_dump(mode="json")
     requested_type = args.get("activity_type")
     activity_type = resolve_activity_type(conn, requested_type) if requested_type else None
     raw_min_duration = args.get("min_duration_minutes")
@@ -285,6 +363,7 @@ def _tool_get_top_workouts(
     Returns:
         Tuple of (template_id, data_dict).
     """
+    args = _TopWorkoutsToolInput.model_validate(args).model_dump(mode="json")
     activity_type: str = resolve_activity_type(conn, args["activity_type"])
     metric: Literal["distance", "duration", "avg_hr", "energy"] = args["metric"]
     n: int = args.get("n", 5)
@@ -309,6 +388,7 @@ def _tool_get_trend(
     Returns:
         Tuple of (template_id, data_dict).
     """
+    args = _TrendToolInput.model_validate(args).model_dump(mode="json")
     metric_id = normalize_metric_id(args["metric_id"])
     granularity: Literal["day", "week", "month"] = args["granularity"]
     start = date.fromisoformat(args["start_date"])
@@ -333,6 +413,7 @@ def _tool_get_period_summary(
     Returns:
         Tuple of (template_id, data_dict).
     """
+    args = _PeriodSummaryToolInput.model_validate(args).model_dump(mode="json")
     start = date.fromisoformat(args["start_date"])
     end = date.fromisoformat(args["end_date"])
     title: str | None = args.get("title")
@@ -357,6 +438,7 @@ def _tool_get_comparison(
     Returns:
         Tuple of (template_id, data_dict).
     """
+    args = _ComparisonToolInput.model_validate(args).model_dump(mode="json")
     this_start = date.fromisoformat(args["this_start"])
     this_end = date.fromisoformat(args["this_end"])
     last_start = date.fromisoformat(args["last_start"])
@@ -395,7 +477,7 @@ def _tool_get_fallback_answer(
     Returns:
         Tuple of (template_id, data_dict).
     """
-    parsed = _FallbackToolInput.model_validate({"text": str(args.get("text", ""))})
+    parsed = _FallbackToolInput.model_validate(args)
     result = queries.get_fallback(question, text=parsed.text.strip())
     return ("fallback", result.model_dump(mode="json"))
 

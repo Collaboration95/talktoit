@@ -200,20 +200,22 @@ def plan_local_question(question: str, profile: DataProfile) -> dict[str, Any] |
             "metric": metric,
             "n": int(count_match.group(1)) if count_match else 5,
         }
-        if "which" in lower:
+        if "which" in lower and count_match is None:
             arguments["n"] = 1
         if period is not None:
             start, end, _label = period
             arguments.update({"start_date": start.isoformat(), "end_date": end.isoformat()})
         return {"tool_name": "get_top_workouts", "arguments": arguments}
 
-    # Keep the broad “most recent workout” wording for the model planner: it
-    # may carry conversational context that tells it how to scope the request.
-    # The explicit “last workout” command is safely unscoped.
-    asks_for_latest_workout = re.search(r"\blast workout\b", lower)
-    if (activity_type is not None or asks_for_latest_workout) and any(
-        phrase in lower for phrase in ("last", "latest", "most recent")
-    ):
+    # A period word is a scope, not evidence that the user asked for a latest
+    # workout.  Only explicit singular latest-workout wording reaches this
+    # branch; plural period-only requests are left for an honest fallback.
+    asks_for_latest_workout = re.search(
+        r"\b(?:last|latest)\s+(?:long\s+)?(?:run|ride|workout|session)\b"
+        r"|\bmost recent\s+(?:run|ride|session)\b",
+        lower,
+    )
+    if asks_for_latest_workout:
         arguments = {"activity_type": activity_type} if activity_type is not None else {}
         if "long" in lower:
             arguments["min_duration_minutes"] = 30
@@ -221,5 +223,11 @@ def plan_local_question(question: str, profile: DataProfile) -> dict[str, Any] |
             start, end, _label = period
             arguments.update({"start_date": start.isoformat(), "end_date": end.isoformat()})
         return {"tool_name": "get_last_workout", "arguments": arguments}
+
+    if activity_type is not None and period is not None:
+        return _fallback_plan(
+            f"I can summarize {activity_type} workouts for that period, but I need to know "
+            "whether you want a count, distance, duration, or energy."
+        )
 
     return None

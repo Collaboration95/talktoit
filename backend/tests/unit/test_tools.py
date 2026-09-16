@@ -112,3 +112,28 @@ def test_dispatch_tool_normalizes_steps_alias(db: duckdb.DuckDBPyConnection) -> 
     )
     assert template_id == "trend_chart"
     assert data["metric_label"] == "Steps"
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "args"),
+    [
+        (
+            "get_trend",
+            {
+                "metric_id": "Steps",
+                "granularity": "day",
+                "start_date": "2026-06-30",
+                "end_date": "2026-06-01",
+            },
+        ),
+        (
+            "get_top_workouts",
+            {"activity_type": "Running", "metric": "distance", "ignored": "value"},
+        ),
+    ],
+)
+def test_dispatch_tool_rejects_invalid_or_extra_arguments_before_query(
+    db: duckdb.DuckDBPyConnection, tool_name: str, args: dict[str, str]
+) -> None:
+    with pytest.raises(ValueError):
+        dispatch_tool(tool_name, args, db, "some question")
