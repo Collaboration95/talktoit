@@ -212,6 +212,7 @@ class ChatOrchestrator:
         self.model = model
         self.gateway = gateway
         self.diagnostics_repository = diagnostics_repository
+        self.executed_plan: dict[str, Any] | None = None
 
     async def answer(
         self,
@@ -242,6 +243,7 @@ class ChatOrchestrator:
             on worker threads via ``asyncio.to_thread``; only the optional
             remote provider calls are awaited on the event loop.
         """
+        self.executed_plan = None
         if data_profile is None:
             data_profile = await asyncio.to_thread(get_data_profile, self.conn)
         today = (data_profile.latest_date or date.today()).isoformat()
@@ -254,6 +256,7 @@ class ChatOrchestrator:
             local_plan = _validated_plan(plan_local_question(question, data_profile))
         if local_plan is not None:
             tool_name, args = local_plan
+            self.executed_plan = {"tool_name": tool_name, "arguments": dict(args)}
             safe_record(
                 self.diagnostics_repository,
                 "planner",
@@ -323,6 +326,7 @@ class ChatOrchestrator:
         if resolved_plan is None:
             return _make_fallback_response(question)
         tool_name, args = resolved_plan
+        self.executed_plan = {"tool_name": tool_name, "arguments": dict(args)}
 
         # ── Execute the tool ─────────────────────────────────────────────────
         try:

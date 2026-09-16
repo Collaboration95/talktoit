@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from app.api.deps import get_app_state_repository, get_diagnostics_repository
 from app.db.connection import connect, lease_connection
 from app.db.data_profile import DataProfile, get_data_profile
-from app.llm.cache_keys import build_cache_key
+from app.llm.cache_keys import build_cache_key, generation_identity
 from app.llm.cache_policy import cacheable_envelope, cacheable_response
 from app.llm.followups import FollowupContext, followup_disambiguation, resolve_followup
 from app.llm.local_planner import plan_local_question
@@ -182,6 +182,8 @@ def _prepare_chat(
     pending_turn_id: str | None = None
     data_profile: DataProfile | None = None
     with repository.session() as store:
+        provider_config = repository.get_provider_config(conn=store)
+        cache_identity = generation_identity(provider_config)
         if request.conversation_id:
             pending_turn_id = repository.create_pending_turn(
                 request.conversation_id, request.question, request.cache_mode, conn=store
@@ -189,7 +191,7 @@ def _prepare_chat(
             if handle is not None:
                 handle.turn_id = pending_turn_id
         active = repository.get_active(conn=store)
-        cache_key = build_cache_key("exact", request.question)
+        cache_key = build_cache_key("exact", request.question, generation_identity=cache_identity)
         use_exact_cache = request.parent_turn_id is None
         cached: str | None = None
         canonical_plan: dict[str, Any] | None = None
@@ -245,7 +247,11 @@ def _prepare_chat(
                             request.question, contexts, active.id
                         )
             canonical_plan = local_plan or followup_plan
-            canonical_key = build_cache_key("canonical", canonical_plan) if canonical_plan else None
+            canonical_key = (
+                build_cache_key("canonical", canonical_plan, generation_identity=cache_identity)
+                if canonical_plan
+                else None
+            )
             if active is not None and canonical_key and request.cache_mode != "fresh":
                 hit = repository.get_cached_entry(canonical_key, active.id, conn=store)
                 if hit is not None:
@@ -253,7 +259,11 @@ def _prepare_chat(
                     if cacheable_envelope(candidate):
                         cached, canonical_plan = candidate, cached_plan
         else:
-            canonical_key = build_cache_key("canonical", canonical_plan) if canonical_plan else None
+            canonical_key = (
+                build_cache_key("canonical", canonical_plan, generation_identity=cache_identity)
+                if canonical_plan
+                else None
+            )
         response: ChatResponse | None = None
         if cached is not None:
             response = ChatResponse.model_validate_json(cached)
@@ -448,6 +458,16 @@ async def chat(
                     data_profile=prepared.data_profile,
                     local_plan_checked=True,
                 )
+                # The model may have resolved a plan only after the prephase.
+                # Persist/cache the exact validated plan it actually executed,
+                # rather than the prephase's absent guess.
+                if orchestrator.executed_plan is not None:
+                    prepared.canonical_plan = orchestrator.executed_plan
+                    prepared.canonical_key = build_cache_key(
+                        "canonical",
+                        prepared.canonical_plan,
+                        generation_identity=generation_identity(repository.get_provider_config()),
+                    )
             await asyncio.to_thread(
                 _finalize_chat, prepared, request, response, started_at, diagnostics
             )

@@ -12,7 +12,7 @@ from pathlib import Path
 from app.db.connection import connect
 from app.db.data_profile import get_data_profile
 from app.db.migrate import migrate
-from app.llm.cache_keys import build_cache_key
+from app.llm.cache_keys import build_cache_key, generation_identity
 from app.llm.cache_policy import cacheable_envelope, cacheable_response
 from app.llm.followups import FollowupContext, resolve_followup
 from app.llm.local_planner import plan_local_question
@@ -138,6 +138,7 @@ async def _ask_question(
     repository = AppStateRepository()
     repository.migrate()
     config = repository.get_provider_config()
+    cache_identity = generation_identity(config)
     _ensure_local_server(config)
     gateway = get_gateway_for_config(config)
     turn_id: str | None = None
@@ -151,7 +152,7 @@ async def _ask_question(
                     conversation_id, question, cache_mode, conn=store
                 )
             active = repository.get_active(conn=store)
-            exact_key = build_cache_key("exact", question)
+            exact_key = build_cache_key("exact", question, generation_identity=cache_identity)
             use_exact_cache = parent_turn_id is None
             cached: str | None = None
             canonical_plan: dict[str, object] | None = None
@@ -196,7 +197,9 @@ async def _ask_question(
                             followup_plan = None
                 canonical_plan = local_plan or followup_plan
                 canonical_key = (
-                    build_cache_key("canonical", canonical_plan) if canonical_plan else None
+                    build_cache_key("canonical", canonical_plan, generation_identity=cache_identity)
+                    if canonical_plan
+                    else None
                 )
                 if active is not None and canonical_key and cache_mode != "fresh":
                     hit = repository.get_cached_entry(canonical_key, active.id, conn=store)
@@ -206,7 +209,9 @@ async def _ask_question(
                             cached, canonical_plan = candidate, candidate_plan
             else:
                 canonical_key = (
-                    build_cache_key("canonical", canonical_plan) if canonical_plan else None
+                    build_cache_key("canonical", canonical_plan, generation_identity=cache_identity)
+                    if canonical_plan
+                    else None
                 )
             if cached is not None:
                 response = ChatResponse.model_validate_json(cached)
@@ -216,6 +221,11 @@ async def _ask_question(
                     client=gateway.client, conn=conn, model=gateway.model, gateway=gateway
                 )
                 response = await orchestrator.answer(question, plan_override=followup_plan)
+                if orchestrator.executed_plan is not None:
+                    canonical_plan = orchestrator.executed_plan
+                    canonical_key = build_cache_key(
+                        "canonical", canonical_plan, generation_identity=cache_identity
+                    )
             if active is not None:
                 response.metadata.dataset_version_id = active.id
                 response.metadata.coverage_start = active.coverage_start
