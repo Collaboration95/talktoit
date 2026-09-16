@@ -254,6 +254,7 @@ async def _ask_question(
                             conn=store,
                         )
             if turn_id:
+                response.metadata.turn_id = turn_id
                 repository.finish_turn(
                     turn_id,
                     response_json=response.model_dump_json(),

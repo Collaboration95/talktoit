@@ -333,6 +333,11 @@ def _finalize_chat(
         started_at: Monotonic start time for the diagnostics event.
         diagnostics: Request-scoped diagnostics collector, if available.
     """
+    # A completed conversation turn is the only safe parent reference for a
+    # future bounded follow-up. It is assigned before serialization so the
+    # live browser and restored history agree on the same server identifier.
+    if prepared.pending_turn_id is not None:
+        response.metadata.turn_id = prepared.pending_turn_id
     active = prepared.active
     if active is not None:
         response.metadata.dataset_version_id = active.id

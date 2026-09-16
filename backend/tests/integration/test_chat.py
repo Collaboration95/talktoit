@@ -400,6 +400,7 @@ async def test_chat_endpoint_persists_executed_remote_plan(
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
+    assert response.json()["metadata"]["turn_id"]
     turns = repository.get_turns(conversation_id)
     assert json.loads(turns[-1]["canonical_plan_json"]) == {
         "tool_name": "get_last_workout",
