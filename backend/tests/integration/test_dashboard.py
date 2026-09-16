@@ -16,7 +16,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.db.aggregations import DEFAULT_TZ, utc_bounds
-from app.ingest.parser import ingest
+from app.ingest.coordinator import ingest_v2 as ingest
 from app.main import app
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "sample.xml"

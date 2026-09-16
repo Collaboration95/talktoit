@@ -19,7 +19,7 @@ from app.db.queries import (
     get_top_workouts,
     get_trend,
 )
-from app.ingest.parser import ingest
+from app.ingest.coordinator import ingest_v2 as ingest
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "sample.xml"
 
