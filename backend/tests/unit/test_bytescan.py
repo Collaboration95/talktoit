@@ -5,7 +5,15 @@ from pathlib import Path
 
 import pyarrow.parquet as pq
 
-from app.ingest.bytescan import parse_byte_range
+from app.ingest.bytescan import _parse_hrv_time, _parse_int, parse_byte_range
+
+
+def test_hrv_clock_time_and_malformed_integer_are_tolerant() -> None:
+    """Real Apple clock values parse and malformed numeric attributes do not abort."""
+    assert _parse_hrv_time("4:53:04.58 PM") == 16 * 3600 + 53 * 60 + 4.58
+    assert _parse_hrv_time("3.05") == 3.05
+    assert _parse_hrv_time("not-a-time") is None
+    assert _parse_int("not-an-int") is None
 
 
 def test_bytescan_sample_fixture() -> None:

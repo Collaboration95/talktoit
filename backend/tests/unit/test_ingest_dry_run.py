@@ -21,7 +21,7 @@ def test_dry_run_report_is_json_and_does_not_open_database(monkeypatch, tmp_path
     assert report["activation"] == "not_started"
     assert report["source_size_bytes"] == export.stat().st_size
     assert report["resolved_workers"] == 1
-    assert report["quality_checks"] == [
+    assert [check["name"] for check in report["quality_checks"]] == [
         "schema",
         "reconciliation",
         "canonical-counts",
@@ -30,6 +30,7 @@ def test_dry_run_report_is_json_and_does_not_open_database(monkeypatch, tmp_path
         "staged-activation",
         "manifest",
     ]
+    assert all(check["status"] == "pending" for check in report["quality_checks"])
 
 
 def test_completed_report_is_non_sensitive_structured_json(monkeypatch, tmp_path, capsys) -> None:
