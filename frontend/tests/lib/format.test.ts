@@ -20,6 +20,7 @@ describe('format helpers', () => {
   it('formats dates in Singapore time', () => {
     expect(formatDateOnly('2026-06-08')).toContain('2026')
     expect(formatDateTime('2026-06-08T20:08:48+08:00')).toContain('2026')
+    expect(formatDateOnly('2026-08-23T23:30:00+00:00')).toContain('24 Aug 2026')
   })
 })
 
