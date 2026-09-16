@@ -221,8 +221,9 @@ async def _ask_question(
                     client=gateway.client, conn=conn, model=gateway.model, gateway=gateway
                 )
                 response = await orchestrator.answer(question, plan_override=followup_plan)
-                if orchestrator.executed_plan is not None:
-                    canonical_plan = orchestrator.executed_plan
+                executed_plan = getattr(orchestrator, "executed_plan", None)
+                if isinstance(executed_plan, dict):
+                    canonical_plan = executed_plan
                     canonical_key = build_cache_key(
                         "canonical", canonical_plan, generation_identity=cache_identity
                     )
