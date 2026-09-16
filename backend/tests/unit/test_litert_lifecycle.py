@@ -340,6 +340,9 @@ def test_start_is_noop_when_already_running(monkeypatch: pytest.MonkeyPatch, tmp
     """A live pidfile means start() never builds a command."""
     monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
     monkeypatch.setattr(litert, "status", lambda: {"running": True, "pid": 4242})
+    monkeypatch.setattr(
+        litert, "health", lambda **_kwargs: {"ok": True, "endpoint_reachable": True}
+    )
     result = litert.start()
     assert result["already_running"] is True
     assert result["started"] is False
