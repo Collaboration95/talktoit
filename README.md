@@ -9,6 +9,16 @@ A self-hostable web app for Apple Health users. Drop in your export, ask questio
 - **Import manager** — upload or re-import an Apple Health `export.xml` from Settings with staged activation and safe failure retention
 - **Workout route explorer** — inspect an ordered local route with derived distance/bounds facts and download its GeoJSON geometry
 
+## Local-model chat in practice
+
+These local-model UI examples use the repository's synthetic Apple Health fixture, not personal
+health data. They show the default local LiteRT model producing a ranked workout answer and the
+chat's explicit, persisted-answer follow-up flow.
+
+![A local-model ranked Running workout answer](docs/images/local-llm-ranked-workouts.svg)
+
+![A selected resting-heart-rate answer followed by a daily trend request](docs/images/local-llm-follow-up.svg)
+
 ## Requirements
 
 - [uv](https://docs.astral.sh/uv/) (Python package manager)

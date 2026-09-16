@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">tti local-model ranked workout answer</title>
+  <desc id="desc">The tti chat interface displays a local-model answer ranking running workouts by distance using synthetic Apple Health fixture data.</desc>
+  <rect width="1200" height="675" fill="#f8fafc"/>
+  <rect width="1200" height="54" fill="#ffffff"/>
+  <path d="M0 54h1200" stroke="#e2e8f0"/>
+  <text x="272" y="33" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="16" fill="#2563eb">Chat</text>
+  <text x="320" y="33" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="16" fill="#64748b">Dashboard</text>
+  <text x="408" y="33" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="16" fill="#64748b">Diagnostics</text>
+  <text x="505" y="33" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="16" fill="#64748b">Settings</text>
+  <text x="600" y="115" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="30" font-weight="700" fill="#0f172a">tti</text>
+  <text x="600" y="143" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="16" fill="#64748b">talk to your health data</text>
+  <text x="255" y="193" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" fill="#64748b">1 conversation</text>
+  <rect x="255" y="211" width="690" height="41" rx="5" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="269" y="237" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" fill="#94a3b8">Search local conversations</text>
+  <text x="255" y="283" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" fill="#2563eb">Please rank my Running workouts using distance.</text>
+  <rect x="255" y="317" width="690" height="62" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="273" y="341" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="11" font-weight="700" fill="#94a3b8">QUERY</text>
+  <text x="273" y="364" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15" fill="#334155">Please rank my Running workouts using distance.</text>
+  <text x="255" y="408" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" fill="#2563eb">Hide answer details</text>
+  <rect x="255" y="431" width="690" height="165" rx="10" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="279" y="471" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="16" fill="#334155">Your top running workout by distance is the one from June 5, 2026, which was 8.5 km long.</text>
+  <text x="279" y="516" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" font-weight="700" fill="#0f172a">Top 5 Running by Distance</text>
+  <text x="279" y="543" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="13" fill="#94a3b8">#1</text>
+  <text x="279" y="566" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="16" font-weight="600" fill="#1e293b">Running — 2026-06-05</text>
+  <text x="279" y="585" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="13" fill="#64748b">46 min</text>
+  <text x="907" y="566" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="17" font-weight="700" fill="#0f172a">8.5 km</text>
+  <rect x="279" y="592" width="628" height="8" rx="4" fill="#4f7df3"/>
+  <rect x="255" y="616" width="602" height="45" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="270" y="644" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" fill="#94a3b8">Ask about your health data…</text>
+  <rect x="865" y="616" width="80" height="45" rx="8" fill="#3565dc"/>
+  <text x="905" y="644" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="700" fill="#ffffff">Ask</text>
+</svg>
