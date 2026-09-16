@@ -154,11 +154,11 @@ async def test_narrative_prompt_uses_compact_tool_result(
 
     narrative_messages = client.chat.completions.create.await_args_list[1].kwargs["messages"]
     prompt_content = narrative_messages[1]["content"]
-    assert '"duration_minutes":61' in prompt_content
-    assert '"avg_heart_rate":157' in prompt_content
-    assert '"max_heart_rate":171' in prompt_content
-    assert '"distance_meters":10020' in prompt_content
-    assert '"energy_burned_kj":886' in prompt_content
+    assert '"duration":{"value":61,"unit":"min"}' in prompt_content
+    assert '"average_heart_rate":{"value":157,"unit":"bpm"}' in prompt_content
+    assert '"max_heart_rate":{"value":171,"unit":"bpm"}' in prompt_content
+    assert '"distance":{"value":10.0,"unit":"km"}' in prompt_content
+    assert '"energy":{"value":886,"unit":"kJ"}' in prompt_content
     assert '"gps_route"' not in prompt_content
 
 
