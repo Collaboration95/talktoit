@@ -90,7 +90,8 @@ async def test_get_last_workout_returns_workout_card(
     assert "activity_type" in response.data
     assert response.data["activity_type"] == "Running"
     assert response.data["duration_minutes"] == pytest.approx(45.5)
-    assert response.narrative == "Here is your most recent workout."
+    assert "Running" in response.narrative
+    assert "8.5 km" in response.narrative
     assert response.metadata.provenance == "deterministic_local"
     client.chat.completions.create.assert_not_awaited()
 
@@ -212,7 +213,7 @@ async def test_deterministic_plan_does_not_depend_on_invalid_remote_output(
     response = await orchestrator.answer("Show my last run")
 
     assert response.template_id == "workout_card"
-    assert response.narrative == "Here is your most recent workout."
+    assert "Running" in response.narrative
     client.chat.completions.create.assert_not_awaited()
 
 

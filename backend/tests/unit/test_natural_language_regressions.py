@@ -71,15 +71,25 @@ def test_daily_resting_hr_request_is_not_silently_coarsened(profile: DataProfile
 
 
 def test_unsupported_pace_ranking_does_not_create_a_duration_plan(profile: DataProfile) -> None:
-    assert plan_local_question("Top runs by pace", profile) is None
+    assert plan_local_question("Top runs by pace", profile) == {
+        "tool_name": "get_fallback_answer",
+        "arguments": {
+            "text": "Ranking workouts by pace is not supported yet. "
+            "I can rank them by distance, duration, heart rate, or energy."
+        },
+    }
 
 
 def test_metric_comparison_does_not_create_a_workout_comparison_plan(
     profile: DataProfile,
 ) -> None:
-    assert (
-        plan_local_question("Compare resting heart rate this month vs last month", profile) is None
-    )
+    assert plan_local_question("Compare resting heart rate this month vs last month", profile) == {
+        "tool_name": "get_fallback_answer",
+        "arguments": {
+            "text": "Comparing health metrics between periods is not supported yet. "
+            "I can show a trend for that metric instead."
+        },
+    }
 
 
 @pytest.mark.parametrize(
@@ -122,7 +132,7 @@ def test_fresh_question_with_activity_is_not_mistaken_for_ambiguous_followup() -
 
 
 @pytest.mark.parametrize(
-    ("tool_name", "payload", "required_fact_keys", "collection_key"),
+    ("tool_name", "payload", "required_fact_keys", "collection_key", "max_items"),
     [
         (
             "get_top_workouts",
@@ -143,6 +153,7 @@ def test_fresh_question_with_activity_is_not_mistaken_for_ambiguous_followup() -
             },
             {"title", "rows"},
             "rows",
+            10,
         ),
         (
             "get_trend",
@@ -156,8 +167,9 @@ def test_fresh_question_with_activity_is_not_mistaken_for_ambiguous_followup() -
                 ],
                 "device_metadata": {"serial": "not-for-provider"},
             },
-            {"metric_label", "metric_unit", "granularity", "series"},
-            "series",
+            {"metric_label", "metric_unit", "granularity", "representative_points"},
+            "representative_points",
+            8,
         ),
         (
             "get_period_summary",
@@ -170,6 +182,7 @@ def test_fresh_question_with_activity_is_not_mistaken_for_ambiguous_followup() -
             },
             {"period_start", "period_end", "metrics"},
             "metrics",
+            8,
         ),
         (
             "get_comparison",
@@ -191,6 +204,7 @@ def test_fresh_question_with_activity_is_not_mistaken_for_ambiguous_followup() -
             },
             {"this_period_label", "last_period_label", "metrics"},
             "metrics",
+            8,
         ),
     ],
 )
@@ -199,6 +213,7 @@ def test_narration_projection_retains_facts_for_non_workout_templates(
     payload: dict[str, Any],
     required_fact_keys: set[str],
     collection_key: str,
+    max_items: int,
 ) -> None:
     facts = narration_projection("Synthetic regression question", tool_name, payload)["facts"]
 
@@ -208,10 +223,10 @@ def test_narration_projection_retains_facts_for_non_workout_templates(
     collection = facts[collection_key]
     assert isinstance(collection, list)
     assert collection
-    assert len(collection) <= 3
+    assert len(collection) <= max_items
     required_item_fields = {
         "rows": {"rank", "label", "value", "unit"},
-        "series": {"bucket", "value"},
+        "representative_points": {"bucket", "value"},
         "metrics": {"label", "value", "unit"},
     }
     if tool_name == "get_comparison":

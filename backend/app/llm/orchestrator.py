@@ -18,6 +18,7 @@ import openai
 
 from app.db.data_profile import DataProfile, get_data_profile
 from app.db.queries import get_fallback
+from app.llm.answer_facts import deterministic_narrative, narration_facts
 from app.llm.client import DEFAULT_MODEL
 from app.llm.local_planner import plan_local_question
 from app.llm.provider_gateway import ProviderGateway, ProviderUnavailableError
@@ -151,18 +152,32 @@ def _validated_plan(plan: dict[str, Any] | None) -> tuple[str, dict[str, Any]] |
 
 
 def _local_narrative(template_id: str, data: dict[str, Any]) -> str:
-    """Provide a useful answer if only the optional remote narrator failed."""
-    if template_id == "workout_card":
-        return "Here is your most recent workout."
-    if template_id == "ranked_list":
-        return "Here is the ranked list for your question."
-    if template_id == "trend_chart":
-        return "Here is the trend for your question."
-    if template_id == "period_summary":
-        return "Here is your training summary."
-    if template_id == "comparison":
-        return "Here is the comparison for your selected periods."
-    return "I found the matching data in your local health database."
+    """Build a grounded local narrative from the same approved facts as the model."""
+    return deterministic_narrative(template_id, narration_facts(template_id, data))
+
+
+def _terminal_response(template_id: str, data: dict[str, Any]) -> ChatResponse | None:
+    """Return terminal local results that must never be sent to narration.
+
+    A fallback contains already-vetted local guidance.  Empty approved facts are
+    also not useful narrator input, so supported templates retain a deterministic
+    sentence rather than making an ungrounded model call.
+    """
+    if template_id == "fallback":
+        return ChatResponse(
+            template_id=template_id,
+            data=data,
+            narrative="",
+            metadata=ResponseMetadata(provenance="fallback"),
+        )
+    if not narration_facts(template_id, data):
+        return ChatResponse(
+            template_id=template_id,
+            data=data,
+            narrative=_local_narrative(template_id, data),
+            metadata=ResponseMetadata(provenance="remote_planned"),
+        )
+    return None
 
 
 class ChatOrchestrator:
@@ -255,6 +270,9 @@ class ChatOrchestrator:
                     "llm.local_tool_dispatch_failed", extra={"payload": {"tool": tool_name}}
                 )
                 return _make_fallback_response(question)
+            terminal = _terminal_response(template_id, data_dict)
+            if terminal is not None:
+                return terminal
             return ChatResponse(
                 template_id=template_id,
                 data=data_dict,
@@ -315,10 +333,13 @@ class ChatOrchestrator:
             logger.exception("llm.tool_dispatch_failed", extra={"payload": {"tool": tool_name}})
             return _make_fallback_response(question)
 
+        terminal = _terminal_response(template_id, data_dict)
+        if terminal is not None:
+            return terminal
+
         narrative_prompt = _NARRATIVE_PROMPT.format(today=today)
-        compact_result = json.dumps(
-            narration_projection(question, tool_name, data_dict), default=str, separators=(",", ":")
-        )
+        projection = narration_projection(question, tool_name, data_dict, template_id=template_id)
+        compact_result = json.dumps(projection, default=str, separators=(",", ":"))
         narrative_messages: list[dict[str, Any]] = [
             {"role": "system", "content": narrative_prompt},
             {
@@ -331,6 +352,8 @@ class ChatOrchestrator:
         narrative_started = time.perf_counter()
         try:
             narrative = await self._complete_provider("narration", narrative_messages)
+            if not narrative.strip():
+                narrative = _local_narrative(template_id, data_dict)
             safe_record(
                 self.diagnostics_repository,
                 "narrator",
