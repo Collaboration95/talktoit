@@ -246,7 +246,14 @@ def _prepare_chat(
                         disambiguation = followup_disambiguation(
                             request.question, contexts, active.id
                         )
-            canonical_plan = local_plan or followup_plan
+            # An explicitly selected parent answer is stronger context than a
+            # generic local parse.  For example, "daily instead" has no
+            # metric of its own; letting the local planner win can silently
+            # substitute its default metric instead of editing the selected
+            # trend.  Only use this precedence when the follow-up resolver
+            # recognized the scoped request; otherwise preserve normal local
+            # planning for a new question.
+            canonical_plan = followup_plan or local_plan
             canonical_key = (
                 build_cache_key("canonical", canonical_plan, generation_identity=cache_identity)
                 if canonical_plan
