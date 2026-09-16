@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.analytics.registry import validate_query_catalogue
 from app.api.chat import router as chat_router
 from app.api.conversations import router as conversations_router
 from app.api.dashboard import router as dashboard_router
@@ -138,6 +139,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.app_state_repository.migrate()
     app.state.diagnostics_repository = DiagnosticsRepository()
     app.state.diagnostics_repository.migrate()
+    validate_query_catalogue()
     import duckdb
 
     safe_record(

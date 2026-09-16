@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Literal, cast
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.analytics.metric_catalog import METRIC_CATALOG
 from app.models.templates import (
@@ -112,6 +112,14 @@ class MetricTrendInput(BaseModel):
     end: date
     granularity: Literal["day", "week", "month"]
     aggregation: Literal["sum", "avg"] | None = None
+
+    @field_validator("metric_id")
+    @classmethod
+    def supported_metric(cls, value: str) -> str:
+        """Reject metrics the registry does not declare as trend-queryable."""
+        if value not in _TREND_METRIC_IDS:
+            raise ValueError(f"Unsupported metric: {value}")
+        return value
 
 
 class ActivitySummaryInput(BaseModel):
@@ -281,6 +289,17 @@ QUERY_REGISTRY: dict[str, QueryDefinition] = {
 }
 
 
+# A metric trend is a single-record-type series, so only the catalog metrics the
+# registry declares for metric_trend (and their Apple record types) are
+# queryable. A multi-type catalog key such as "distance" would report one record
+# type under a broader label, so it is rejected instead of mislabelled.
+_TREND_METRIC_IDS: frozenset[str] = frozenset(QUERY_REGISTRY["metric_trend"].metric_ids).union(
+    apple_type
+    for metric_id in QUERY_REGISTRY["metric_trend"].metric_ids
+    for apple_type in METRIC_CATALOG[metric_id].apple_types
+)
+
+
 def get_query_definition(name: str) -> QueryDefinition:
     """Return a declared registry entry or reject unsupported analytical names."""
     try:
@@ -308,9 +327,17 @@ def execute_metric_trend(conn: object, values: dict[str, object]) -> TrendChartD
     from app.db import queries
 
     args = MetricTrendInput.model_validate(values)
+    metric_id = args.metric_id
+    if metric_id in METRIC_CATALOG:
+        definition = METRIC_CATALOG[metric_id]
+        if len(definition.apple_types) != 1:
+            # A trend series is one record type; a multi-type catalog key would
+            # silently report only the first under a broader label.
+            raise ValueError(f"Metric {metric_id} is not a single-record-type trend")
+        metric_id = definition.apple_types[0]
     return queries.get_trend(
         conn,  # type: ignore[arg-type]
-        args.metric_id,
+        metric_id,
         args.granularity,
         args.start,
         args.end,
