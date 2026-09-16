@@ -100,10 +100,13 @@ def _ensure_local_server(config: dict[str, str]) -> None:
     except Exception:
         return
     try:
-        if litert.status().get("running"):
+        endpoint = config.get("litert_base_url")
+        model = config.get("litert_model")
+        readiness = litert.health(base_url=endpoint, model=model)
+        if readiness.get("ok"):
             return
-        result = litert.ensure_running()
-        if result.get("running"):
+        result = litert.ensure_running(base_url=endpoint, model=model)
+        if result.get("running") or result.get("already_available"):
             return
         if not result.get("binary_available", True):
             reason = "litert-lm is not installed (pip install litert-lm, then import gemma4-e2b)"

@@ -21,6 +21,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 
@@ -47,15 +48,15 @@ _LIFECYCLE_LOCK = threading.Lock()
 _OWNED_CHILDREN: dict[int, subprocess.Popen[bytes]] = {}
 
 
-def _litert_base_url() -> str:
+def _litert_base_url(base_url: str | None = None) -> str:
     """Return the LiteRT base URL (OpenAI-compatible ``/v1``)."""
-    raw = os.environ.get("LITERT_BASE_URL", DEFAULT_LITERT_BASE_URL).strip()
+    raw = (base_url or os.environ.get("LITERT_BASE_URL", DEFAULT_LITERT_BASE_URL)).strip()
     return raw or DEFAULT_LITERT_BASE_URL
 
 
-def _litert_model() -> str:
+def _litert_model(model: str | None = None) -> str:
     """Return the LiteRT model name."""
-    raw = os.environ.get("LITERT_MODEL", DEFAULT_LITERT_MODEL).strip()
+    raw = (model or os.environ.get("LITERT_MODEL", DEFAULT_LITERT_MODEL)).strip()
     return raw or DEFAULT_LITERT_MODEL
 
 
@@ -187,20 +188,21 @@ def _is_running(pid: int) -> bool:
     return True
 
 
-def status() -> dict[str, object]:
+def status(base_url: str | None = None, model: str | None = None) -> dict[str, object]:
     """Return the current LiteRT server status."""
     owned = _read_owned_process()
     running = owned is not None and _owns_process(owned)
-    base_url = _litert_base_url()
-    model = _litert_model()
+    resolved_base_url = _litert_base_url(base_url)
+    resolved_model = _litert_model(model)
     binary = resolve_litert_binary()
     pidfile = pidfile_path()
     log = log_path()
     return {
         "running": running,
+        "ownership": "owned" if running else "none",
         "pid": owned.pid if owned is not None and running else None,
-        "base_url": base_url,
-        "model": model,
+        "base_url": resolved_base_url,
+        "model": resolved_model,
         "binary": binary,
         "pidfile": str(pidfile),
         "log_path": str(log),
@@ -208,13 +210,19 @@ def status() -> dict[str, object]:
     }
 
 
-def health(timeout_seconds: float = 2.0) -> dict[str, object]:
+def health(
+    timeout_seconds: float = 2.0,
+    *,
+    base_url: str | None = None,
+    model: str | None = None,
+) -> dict[str, object]:
     """Check the LiteRT server health via ``GET /models``.
 
     Returns a dict with ``ok``, ``latency_ms``, and optional ``error``.
     Never raises; failures are encoded in the returned dict.
     """
-    base_url = _litert_base_url().rstrip("/")
+    base_url = _litert_base_url(base_url).rstrip("/")
+    selected_model = _litert_model(model)
     # The OpenAI-compatible base already ends with /v1; /models lives at /v1/models.
     url = f"{base_url}/models"
     started = time.perf_counter()
@@ -223,16 +231,45 @@ def health(timeout_seconds: float = 2.0) -> dict[str, object]:
             response = client.get(url)
             latency_ms = round((time.perf_counter() - started) * 1000, 3)
             if response.status_code < 400:
-                return {"ok": True, "latency_ms": latency_ms, "status_code": response.status_code}
+                try:
+                    payload = response.json()
+                    models = (
+                        payload.get("data", payload.get("models", []))
+                        if isinstance(payload, dict)
+                        else []
+                    )
+                    model_ids = {
+                        str(item.get("id"))
+                        for item in models
+                        if isinstance(item, dict) and isinstance(item.get("id"), str)
+                    }
+                except ValueError:
+                    model_ids = set()
+                model_available = selected_model in model_ids
+                return {
+                    "ok": model_available,
+                    "endpoint_reachable": True,
+                    "model_available": model_available,
+                    "model": selected_model,
+                    "latency_ms": latency_ms,
+                    "status_code": response.status_code,
+                    **({} if model_available else {"error": "selected model is unavailable"}),
+                }
             return {
                 "ok": False,
+                "endpoint_reachable": False,
                 "latency_ms": latency_ms,
                 "status_code": response.status_code,
                 "error": f"HTTP {response.status_code}",
             }
     except Exception as exc:  # pragma: no cover - network edge
         latency_ms = round((time.perf_counter() - started) * 1000, 3)
-        return {"ok": False, "latency_ms": latency_ms, "error": str(exc)}
+        return {
+            "ok": False,
+            "endpoint_reachable": False,
+            "latency_ms": latency_ms,
+            "error": str(exc),
+        }
 
 
 def _build_serve_command(model: str | None = None) -> list[str]:
@@ -267,6 +304,7 @@ def _build_serve_command(model: str | None = None) -> list[str]:
 
 def start(
     model: str | None = None,
+    base_url: str | None = None,
     wait_seconds: float = 8.0,
     poll_interval: float = 0.5,
 ) -> dict[str, object]:
@@ -279,23 +317,77 @@ def start(
     Returns a status dict with ``started`` and optional ``error``.
     """
     with _LIFECYCLE_LOCK:
-        return _start_locked(model=model, wait_seconds=wait_seconds, poll_interval=poll_interval)
+        return _start_locked(
+            model=model, base_url=base_url, wait_seconds=wait_seconds, poll_interval=poll_interval
+        )
 
 
 def _start_locked(
-    model: str | None = None, wait_seconds: float = 8.0, poll_interval: float = 0.5
+    model: str | None = None,
+    base_url: str | None = None,
+    wait_seconds: float = 8.0,
+    poll_interval: float = 0.5,
 ) -> dict[str, object]:
     """Start LiteRT while the lifecycle lock is held."""
-    current = status()
+    status_kwargs = {"base_url": base_url, "model": model} if base_url or model else {}
+    current = status(**status_kwargs)
+    # Process ownership does not prove that this process serves the selected
+    # endpoint or model. Always probe the effective configuration first.
+    current_health = health(base_url=base_url, model=model)
     if current.get("running"):
-        return {"started": False, "already_running": True, **current}
+        if current_health.get("ok"):
+            return {
+                "started": False,
+                "already_running": True,
+                "available": True,
+                **current,
+                "health": current_health,
+            }
+        return {
+            "started": False,
+            "available": False,
+            "reason": (
+                "owned process does not serve the selected endpoint"
+                if not current_health.get("endpoint_reachable")
+                else "owned process does not provide the selected model"
+            ),
+            **current,
+            "health": current_health,
+        }
+
+    # A process that we did not spawn can still be the configured inference
+    # endpoint. Never adopt or replace it merely because our pidfile is stale.
+    if current_health.get("endpoint_reachable"):
+        return {
+            "started": False,
+            "already_available": bool(current_health.get("ok")),
+            "reason": (
+                "external endpoint is ready"
+                if current_health.get("ok")
+                else "configured endpoint is reachable but selected model is unavailable"
+            ),
+            **current,
+            "health": current_health,
+        }
+
+    # The built-in command is deliberately pinned to the default loopback
+    # port. A custom endpoint may be externally managed, but it must never be
+    # mistaken for a process this lifecycle manager can launch or later stop.
+    parsed = urlparse(_litert_base_url(base_url))
+    if parsed.port != LITERT_DEFAULT_PORT:
+        return {
+            "started": False,
+            "reason": "configured endpoint is unavailable and is not lifecycle-managed",
+            **current,
+            "health": current_health,
+        }
 
     cmd = _build_serve_command(model=model)
     if not cmd:
         return {
             "started": False,
             "error": "litert-lm not found: set LITERT_SERVE_CMD or install litert-lm",
-            **status(),
+            **status(**status_kwargs),
         }
 
     state_dir = _state_dir()
@@ -314,7 +406,11 @@ def _start_locked(
     try:
         log_file = log.open("ab")
     except OSError as exc:
-        return {"started": False, "error": f"Cannot open log {log}: {exc}", **status()}
+        return {
+            "started": False,
+            "error": f"Cannot open log {log}: {exc}",
+            **status(**status_kwargs),
+        }
 
     try:
         proc = subprocess.Popen(  # noqa: S603 - intentional: local binary per config
@@ -326,10 +422,14 @@ def _start_locked(
         )
     except FileNotFoundError as exc:
         log_file.close()
-        return {"started": False, "error": f"litert-lm not found: {exc}", **status()}
+        return {
+            "started": False,
+            "error": f"litert-lm not found: {exc}",
+            **status(**status_kwargs),
+        }
     except OSError as exc:
         log_file.close()
-        return {"started": False, "error": str(exc), **status()}
+        return {"started": False, "error": str(exc), **status(**status_kwargs)}
     finally:
         # Close in parent; child keeps its own fd via dup.
         try:
@@ -350,16 +450,16 @@ def _start_locked(
             "started": False,
             "error": f"Cannot write pidfile: {exc}",
             "pid": proc.pid,
-            **status(),
+            **status(**status_kwargs),
         }
 
     # Poll health until the server is ready or we time out.
     deadline = time.monotonic() + wait_seconds
     last_health: dict[str, object] = {"ok": False}
     while time.monotonic() < deadline:
-        last_health = health(timeout_seconds=1.0)
+        last_health = health(timeout_seconds=1.0, base_url=base_url, model=model)
         if last_health.get("ok"):
-            return {"started": True, **status(), "health": last_health}
+            return {"started": True, **status(**status_kwargs), "health": last_health}
         # If the process died early, surface it and drop the pidfile we just
         # wrote so the next caller is not misled by a stale pid.
         if proc.poll() is not None:
@@ -369,7 +469,7 @@ def _start_locked(
                 "started": False,
                 "error": f"litert-lm exited with code {proc.returncode}",
                 "health": last_health,
-                **status(),
+                **status(**status_kwargs),
             }
         time.sleep(poll_interval)
 
@@ -378,7 +478,7 @@ def _start_locked(
         "started": True,
         "health": last_health,
         "warning": "Server started but health check timed out",
-        **status(),
+        **status(**status_kwargs),
     }
 
 
@@ -535,7 +635,12 @@ def autostart_timeout_seconds() -> float:
     return min(value, AUTOSTART_TIMEOUT_MAX_SECONDS)
 
 
-def ensure_running(wait_seconds: float | None = None) -> dict[str, object]:
+def ensure_running(
+    wait_seconds: float | None = None,
+    *,
+    base_url: str | None = None,
+    model: str | None = None,
+) -> dict[str, object]:
     """Start the owned server unless it is already running or disabled.
 
     Never raises: a missing binary, a disabled flag, or a spawn failure is
@@ -543,13 +648,16 @@ def ensure_running(wait_seconds: float | None = None) -> dict[str, object]:
     on with degraded (deterministic-only) answers.
     """
     try:
-        current = status()
+        status_kwargs = {"base_url": base_url, "model": model} if base_url or model else {}
+        current = status(**status_kwargs)
         if current.get("running"):
-            return {"started": False, "already_running": True, **status()}
+            return start(base_url=base_url, model=model)
         if not autostart_enabled():
-            return {"started": False, "reason": "autostart disabled", **status()}
+            return {"started": False, "reason": "autostart disabled", **current}
         return start(
-            wait_seconds=wait_seconds if wait_seconds is not None else autostart_timeout_seconds()
+            wait_seconds=wait_seconds if wait_seconds is not None else autostart_timeout_seconds(),
+            base_url=base_url,
+            model=model,
         )
     except Exception as exc:
         return {"started": False, "error": str(exc), **status()}

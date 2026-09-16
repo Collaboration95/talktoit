@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.api import settings as settings_api
 from app.llm import litert
 from app.llm.provider_gateway import get_gateway_for_config, provider_from_env
 from app.main import create_app
@@ -52,6 +53,51 @@ def test_provider_defaults_first_run_is_local(monkeypatch: pytest.MonkeyPatch) -
     assert defaults["provider"] == "local"
     assert defaults["model"] == defaults["litert_model"] == "gemma4-e2b"
     assert defaults["base_url"] == defaults["litert_base_url"] == "http://127.0.0.1:9379/v1"
+
+
+def test_settings_reports_healthy_unowned_endpoint_as_available(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """Settings distinguish external inference readiness from owned-process state."""
+    repo = AppStateRepository(tmp_path / "state.sqlite")
+    repo.migrate()
+    repo.set_provider_config(
+        {
+            "provider": "local",
+            "litert_base_url": "http://127.0.0.1:9999/v1",
+            "litert_model": "configured",
+        }
+    )
+    diagnostics = DiagnosticsRepository(tmp_path / "diagnostics.sqlite")
+    monkeypatch.setattr(
+        litert,
+        "status",
+        lambda **kwargs: {
+            "running": False,
+            "ownership": "none",
+            "base_url": kwargs["base_url"],
+            "model": kwargs["model"],
+            "binary_available": True,
+        },
+    )
+    monkeypatch.setattr(
+        litert,
+        "health",
+        lambda **kwargs: {
+            "ok": True,
+            "endpoint_reachable": True,
+            "model_available": True,
+            "model": kwargs["model"],
+        },
+    )
+
+    provider = settings_api._build_settings_payload(repo, diagnostics)["provider"]
+
+    assert isinstance(provider, dict)
+    status = provider["litert_status"]
+    assert isinstance(status, dict)
+    assert status["available"] is True
+    assert status["ownership"] == "external"
 
 
 def test_provider_defaults_explicit_groq_still_wins(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -136,16 +182,40 @@ def test_autostart_timeout_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_ensure_running_is_noop_when_already_running(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A live server means no spawn attempt at all."""
+    """An owned process is only considered ready after its endpoint probe succeeds."""
 
-    def fake_start(**_kwargs):
-        raise AssertionError("must not spawn when already running")
+    def fake_start(**kwargs):
+        assert kwargs == {"base_url": None, "model": None}
+        return {"started": False, "already_running": True, "available": True}
 
     monkeypatch.setattr(litert, "status", lambda: {"running": True, "binary_available": True})
     monkeypatch.setattr(litert, "start", fake_start)
     result = litert.ensure_running()
     assert result["already_running"] is True
     assert result["started"] is False
+
+
+def test_start_does_not_treat_owned_pid_as_ready_for_another_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A default owned pid cannot mask an unreachable persisted custom endpoint."""
+    monkeypatch.setattr(
+        litert,
+        "status",
+        lambda **_kwargs: {"running": True, "ownership": "owned", "pid": 4242},
+    )
+    monkeypatch.setattr(
+        litert,
+        "health",
+        lambda **_kwargs: {"ok": False, "endpoint_reachable": False},
+    )
+
+    result = litert.start(base_url="http://127.0.0.1:9999/v1", model="configured")
+
+    assert result["started"] is False
+    assert result.get("already_running") is None
+    assert result["available"] is False
+    assert result["reason"] == "owned process does not serve the selected endpoint"
 
 
 def test_ensure_running_respects_disabled_flag(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -270,6 +340,9 @@ def test_start_is_noop_when_already_running(monkeypatch: pytest.MonkeyPatch, tmp
     """A live pidfile means start() never builds a command."""
     monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
     monkeypatch.setattr(litert, "status", lambda: {"running": True, "pid": 4242})
+    monkeypatch.setattr(
+        litert, "health", lambda **_kwargs: {"ok": True, "endpoint_reachable": True}
+    )
     result = litert.start()
     assert result["already_running"] is True
     assert result["started"] is False
@@ -281,9 +354,81 @@ def test_start_reports_missing_binary_without_spawning(
     """No binary is a clean error dict, never an exception."""
     monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
     monkeypatch.setattr(litert, "resolve_litert_binary", lambda: None)
+    monkeypatch.setattr(litert, "health", lambda **_kwargs: {"ok": False})
     result = litert.start()
     assert result["started"] is False
     assert "not found" in str(result["error"])
+
+
+def test_ensure_running_reuses_healthy_unowned_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A responsive configured endpoint is not started or adopted without a pidfile."""
+    monkeypatch.setattr(litert, "status", lambda **_kwargs: {"running": False})
+    monkeypatch.setattr(
+        litert,
+        "health",
+        lambda **_kwargs: {"ok": True, "endpoint_reachable": True, "model_available": True},
+    )
+    monkeypatch.setattr(
+        litert,
+        "_build_serve_command",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not spawn")),
+    )
+
+    result = litert.start(base_url="http://127.0.0.1:9999/v1", model="configured")
+
+    assert result["started"] is False
+    assert result["already_available"] is True
+    assert result["running"] is False
+
+
+def test_start_does_not_replace_reachable_endpoint_with_wrong_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An occupied endpoint with a different model gets an actionable non-spawn result."""
+    monkeypatch.setattr(litert, "status", lambda **_kwargs: {"running": False})
+    monkeypatch.setattr(
+        litert,
+        "health",
+        lambda **_kwargs: {
+            "ok": False,
+            "endpoint_reachable": True,
+            "model_available": False,
+        },
+    )
+    monkeypatch.setattr(
+        litert,
+        "_build_serve_command",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not spawn")),
+    )
+
+    result = litert.start(model="missing")
+
+    assert result["started"] is False
+    assert "selected model" in str(result["reason"])
+
+
+def test_start_does_not_manage_custom_endpoint_with_implicit_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An endpoint without an explicit LiteRT port cannot be served by the built-in command."""
+    monkeypatch.setattr(litert, "status", lambda **_kwargs: {"running": False})
+    monkeypatch.setattr(
+        litert,
+        "health",
+        lambda **_kwargs: {"ok": False, "endpoint_reachable": False},
+    )
+    monkeypatch.setattr(
+        litert,
+        "_build_serve_command",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not spawn")),
+    )
+
+    result = litert.start(base_url="http://127.0.0.1/v1", model="configured")
+
+    assert result["started"] is False
+    assert result["reason"] == "configured endpoint is unavailable and is not lifecycle-managed"
 
 
 def test_stop_without_pidfile_is_clean(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:

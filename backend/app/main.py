@@ -66,13 +66,13 @@ async def _maybe_autostart_litert(app: FastAPI) -> None:
         from app.llm import litert
 
         repo = getattr(app.state, "app_state_repository", None)
-        provider: object = None
+        config: dict[str, str] | None = None
         if repo is not None:
             try:
-                provider = repo.get_provider_config().get("provider")
+                config = repo.get_provider_config()
             except Exception:
                 _logger.debug("lifespan: provider config read failed", exc_info=True)
-        if provider != "local":
+        if config is None or config.get("provider") != "local":
             return
         if not litert.autostart_enabled():
             _logger.info("lifespan: LiteRT autostart disabled via TTI_LOCAL_AUTOSTART")
@@ -84,12 +84,21 @@ async def _maybe_autostart_litert(app: FastAPI) -> None:
                 meta={"started": "false", "running": "false", "error_class": "autostart_disabled"},
             )
             return
-        result = await asyncio.to_thread(litert.ensure_running)
-        running = bool(result.get("running"))
+        result = await asyncio.to_thread(
+            litert.ensure_running,
+            base_url=config.get("litert_base_url"),
+            model=config.get("litert_model"),
+        )
+        running = bool(result.get("running") or result.get("already_available"))
         healthy = "false"
         if running:
             try:
-                health = await asyncio.to_thread(litert.health, 1.0)
+                health = await asyncio.to_thread(
+                    litert.health,
+                    1.0,
+                    base_url=config.get("litert_base_url"),
+                    model=config.get("litert_model"),
+                )
                 healthy = _bool_text(health.get("ok"))
             except Exception:
                 _logger.debug("lifespan: litert health probe failed", exc_info=True)
