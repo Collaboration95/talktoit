@@ -69,6 +69,30 @@ The versioned chat/template payload contract lives in [`docs/SPEC.md`](docs/SPEC
 `make verify-headless` for the browserless API, orchestration, privacy, cache, and frontend
 contract checks.
 
+## Toolchain
+
+Python is managed by **uv**; the frontend by **npm**. Lint, format, and type-check are
+separate tools on each side, and CI runs exactly the same commands you can run locally.
+
+| What | Backend | Frontend |
+|---|---|---|
+| Dependencies | uv (`backend/uv.lock`) | npm (`frontend/package-lock.json`) |
+| Lint | Ruff | oxlint |
+| Format | Ruff | Prettier |
+| Type check | Pyright (strict) | TypeScript `tsc --noEmit` (strict) |
+| Tests | pytest | Vitest |
+
+| Gate | Command |
+|---|---|
+| Lint, type check, format check, version sync | `make check` |
+| The above plus tests and coverage gates | `make check-full` |
+
+`backend/pyproject.toml` is the single Python config file (no `requirements.txt`), and
+`frontend/package.json` scripts are the canonical frontend commands. `uv.lock` and
+`package-lock.json` are the source of truth for the versions actually installed — the
+manifests declare ranges only. See [`docs/ENGINEERING.md`](docs/ENGINEERING.md) for the full
+tooling rationale, coverage gates, and pre-commit setup.
+
 ## Configuration (`.env`)
 
 | Variable | Required | Default | Description |

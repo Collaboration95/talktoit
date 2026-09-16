@@ -17,4 +17,11 @@ describe('dashboard URL query', () => {
   it('falls back safely for invalid scope values', () => {
     expect(decodeDashboardQuery('?tab=unknown&start=nope&end=2024-01-01&workout=-1')).toEqual({ tab: 'overview' })
   })
+
+  it('rejects control characters in shared text filters', () => {
+    expect(decodeDashboardQuery('?activity_type=Running%0AInjected&source=Watch')).toEqual({
+      tab: 'overview',
+      source: 'Watch',
+    })
+  })
 })

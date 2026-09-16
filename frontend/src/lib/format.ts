@@ -4,7 +4,7 @@ const HEALTH_LOCALE = 'en-SG'
 /** Return a cached value, building and caching it on first request. */
 function cached<K, T>(cache: Map<K, T>, key: K, make: () => T): T {
   const hit = cache.get(key)
-  if (hit) return hit
+  if (hit !== undefined) return hit
   const value = make()
   cache.set(key, value)
   return value
