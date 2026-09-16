@@ -8,12 +8,17 @@ previously changed a user's requested metric, range, count, or granularity.
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
+from unittest.mock import MagicMock
 
+import duckdb
 import pytest
 
 from app.db.data_profile import DataProfile
+from app.db.schema import SQL_CREATE_TABLES
 from app.llm.followups import FollowupContext, followup_disambiguation
 from app.llm.local_planner import plan_local_question
+from app.llm.orchestrator import ChatOrchestrator
 from app.llm.provider_projection import narration_projection
 
 
@@ -65,16 +70,45 @@ def test_daily_resting_hr_request_is_not_silently_coarsened(profile: DataProfile
     }
 
 
-def test_unsupported_pace_ranking_is_not_substituted_with_duration(profile: DataProfile) -> None:
+def test_unsupported_pace_ranking_does_not_create_a_duration_plan(profile: DataProfile) -> None:
     assert plan_local_question("Top runs by pace", profile) is None
 
 
-def test_metric_comparison_is_not_substituted_with_workout_comparison(
+def test_metric_comparison_does_not_create_a_workout_comparison_plan(
     profile: DataProfile,
 ) -> None:
     assert (
         plan_local_question("Compare resting heart rate this month vs last month", profile) is None
     )
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["Top runs by pace", "Compare resting heart rate this month vs last month"],
+)
+async def test_unsupported_intent_returns_an_honest_terminal_response(
+    profile: DataProfile, question: str
+) -> None:
+    """Unsupported requests must not execute a different supported analysis.
+
+    This is deliberately an orchestrator contract rather than only a planner
+    assertion: returning ``None`` from a local recognizer is not enough if a
+    later stage quietly dispatches a duration ranking or workout comparison.
+    """
+    conn = duckdb.connect(":memory:")
+    try:
+        conn.execute(SQL_CREATE_TABLES)
+        client = MagicMock()
+        orchestrator = ChatOrchestrator(client=client, conn=conn)  # type: ignore[arg-type]
+
+        response = await orchestrator.answer(question, data_profile=profile)
+
+        assert response.template_id == "fallback"
+        assert response.metadata.provenance == "fallback"
+        assert "not supported" in (response.data["text"] or "").casefold()
+        assert response.narrative == ""
+    finally:
+        conn.close()
 
 
 def test_fresh_question_with_activity_is_not_mistaken_for_ambiguous_followup() -> None:
@@ -88,7 +122,7 @@ def test_fresh_question_with_activity_is_not_mistaken_for_ambiguous_followup() -
 
 
 @pytest.mark.parametrize(
-    ("tool_name", "payload", "required_fact_keys"),
+    ("tool_name", "payload", "required_fact_keys", "collection_key"),
     [
         (
             "get_top_workouts",
@@ -103,9 +137,12 @@ def test_fresh_question_with_activity_is_not_mistaken_for_ambiguous_followup() -
                         "secondary_value": 45.5,
                         "secondary_unit": "min",
                     }
-                ],
+                ]
+                * 4,
+                "raw_rows": [{"source_path": "/private/health/export.xml"}],
             },
             {"title", "rows"},
+            "rows",
         ),
         (
             "get_trend",
@@ -114,9 +151,13 @@ def test_fresh_question_with_activity_is_not_mistaken_for_ambiguous_followup() -
                 "metric_label": "Steps",
                 "metric_unit": "count",
                 "granularity": "day",
-                "series": [{"bucket": "2026-06-01", "value": 8123}],
+                "series": [
+                    {"bucket": f"2026-06-{day:02d}", "value": 8_000 + day} for day in range(1, 9)
+                ],
+                "device_metadata": {"serial": "not-for-provider"},
             },
             {"metric_label", "metric_unit", "granularity", "series"},
+            "series",
         ),
         (
             "get_period_summary",
@@ -125,8 +166,10 @@ def test_fresh_question_with_activity_is_not_mistaken_for_ambiguous_followup() -
                 "period_start": "2026-06-01",
                 "period_end": "2026-06-30",
                 "metrics": [{"label": "Workouts", "value": 4, "unit": "count"}],
+                "gps_route": {"coordinates": [[103.8, 1.3]]},
             },
             {"period_start", "period_end", "metrics"},
+            "metrics",
         ),
         (
             "get_comparison",
@@ -144,17 +187,55 @@ def test_fresh_question_with_activity_is_not_mistaken_for_ambiguous_followup() -
                         "direction": "up",
                     }
                 ],
+                "internal_note": "do not send",
             },
             {"this_period_label", "last_period_label", "metrics"},
+            "metrics",
         ),
     ],
 )
 def test_narration_projection_retains_facts_for_non_workout_templates(
     tool_name: str,
-    payload: dict[str, object],
+    payload: dict[str, Any],
     required_fact_keys: set[str],
+    collection_key: str,
 ) -> None:
     facts = narration_projection("Synthetic regression question", tool_name, payload)["facts"]
 
     assert isinstance(facts, dict)
     assert required_fact_keys <= facts.keys()
+    assert facts["title"] == payload["title"]
+    collection = facts[collection_key]
+    assert isinstance(collection, list)
+    assert collection
+    assert len(collection) <= 3
+    required_item_fields = {
+        "rows": {"rank", "label", "value", "unit"},
+        "series": {"bucket", "value"},
+        "metrics": {"label", "value", "unit"},
+    }
+    if tool_name == "get_comparison":
+        required_item_fields["metrics"] = {
+            "label",
+            "this_value",
+            "last_value",
+            "delta",
+            "unit",
+            "direction",
+        }
+    for item in collection:
+        assert isinstance(item, dict)
+        assert required_item_fields[collection_key] <= item.keys()
+    assert not _contains_sensitive_key(facts)
+
+
+def _contains_sensitive_key(value: object) -> bool:
+    """Keep raw rows, health-file paths, routes, and device details off-provider."""
+    sensitive_keys = {"device_metadata", "gps_route", "internal_note", "raw_rows", "source_path"}
+    if isinstance(value, dict):
+        return any(
+            key in sensitive_keys or _contains_sensitive_key(item) for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_sensitive_key(item) for item in value)
+    return False
