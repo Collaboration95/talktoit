@@ -229,6 +229,7 @@ export function ChatView() {
       }
       if (generation !== selectionGeneration.current) return
       conversationRef.current = id
+      setParentTurn(null)
       setConversationId(id)
       setTurns(
         stored.map((turn, index) => {

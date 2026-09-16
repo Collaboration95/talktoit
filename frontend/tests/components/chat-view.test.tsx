@@ -285,6 +285,45 @@ describe('ChatView', () => {
     expect(screen.getByText(/ask a question/i)).toBeInTheDocument()
   })
 
+  it('clears a selected parent answer when switching conversations', async () => {
+    const answerWithTurn = {
+      ...WORKOUT_ENVELOPE,
+      metadata: { ...WORKOUT_ENVELOPE.metadata, turn_id: 'tr_parent' },
+    }
+    let laterRequest: Record<string, unknown> | undefined
+    server.use(
+      http.get('/api/conversations', () =>
+        HttpResponse.json([
+          { id: 'cv_a', title: 'Current', created_at: 'now', updated_at: 'now' },
+          { id: 'cv_b', title: 'Other', created_at: 'now', updated_at: 'now' },
+        ]),
+      ),
+      http.get('/api/conversations/cv_b/turns', () => HttpResponse.json([])),
+      http.post('/api/conversations', () => HttpResponse.json({ id: 'cv_a' })),
+      http.post('/api/chat', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>
+        if (body.question === 'new question') laterRequest = body
+        return HttpResponse.json(answerWithTurn)
+      }),
+    )
+    const user = userEvent.setup()
+    render(<ChatView />)
+    await user.type(screen.getByRole('textbox'), 'last run')
+    await user.click(screen.getByRole('button', { name: /^ask$/i }))
+    await screen.findByText('Your last run was on June 5.')
+    await user.click(screen.getByRole('button', { name: 'Ask about this answer' }))
+    expect(screen.getByText(/Following up on:/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Other' }))
+    await waitFor(() => expect(screen.queryByText(/Following up on:/)).not.toBeInTheDocument())
+
+    await user.type(screen.getByRole('textbox'), 'new question')
+    await user.click(screen.getByRole('button', { name: /^ask$/i }))
+    await waitFor(() => expect(laterRequest).toBeDefined())
+    expect(laterRequest).toMatchObject({ question: 'new question', conversation_id: 'cv_b' })
+    expect(laterRequest).not.toHaveProperty('parent_turn_id')
+  })
+
   it('shows a dismissible degraded-answer notice for fallback responses', async () => {
     const FALLBACK_ENVELOPE = {
       template_id: 'fallback',
