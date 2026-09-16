@@ -17,6 +17,8 @@ two caches can never diverge.
 from __future__ import annotations
 
 import threading
+from collections import OrderedDict
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -35,7 +37,7 @@ class DashboardContext:
     active: DatasetVersion | None
 
 
-@dataclass
+@dataclass(frozen=True)
 class CapabilitiesGlobal:
     """Process-cached global capability facts for one dataset+schema variant."""
 
@@ -44,9 +46,31 @@ class CapabilitiesGlobal:
 
 
 _CACHE_MAX_ENTRIES = 4
-_cache: dict[str, DataProfile] = {}
-_cap_cache: dict[tuple[str, bool], CapabilitiesGlobal] = {}
+_cache: OrderedDict[str, DataProfile] = OrderedDict()
+_cap_cache: OrderedDict[tuple[str, bool], CapabilitiesGlobal] = OrderedDict()
+# One lock per dataset so concurrent cold panels collapse to a single profile
+# scan instead of each paying for the same expensive query.
+_scan_locks: dict[str, threading.Lock] = {}
+_SCAN_LOCK_MAX_ENTRIES = 16
 _cache_lock = threading.Lock()
+
+
+def _scan_lock(dataset_id: str) -> threading.Lock:
+    """Return the single-flight scan lock for one dataset (bounded, never held)."""
+    with _cache_lock:
+        lock = _scan_locks.get(dataset_id)
+        if lock is None:
+            lock = threading.Lock()
+            _scan_locks[dataset_id] = lock
+            while len(_scan_locks) > _SCAN_LOCK_MAX_ENTRIES:
+                for candidate_id, candidate in list(_scan_locks.items()):
+                    if candidate_id == dataset_id or candidate.locked():
+                        continue
+                    _scan_locks.pop(candidate_id, None)
+                    break
+                else:
+                    break
+        return lock
 
 
 def resolve_dashboard_context(
@@ -65,13 +89,25 @@ def resolve_dashboard_context(
         return DashboardContext(profile=get_data_profile(conn), active=None)
     with _cache_lock:
         hit = _cache.get(active.id)
-    if hit is None:
-        fresh = get_data_profile(conn)
+        if hit is not None:
+            _cache.move_to_end(active.id)
+    if hit is not None:
+        return DashboardContext(profile=hit, active=active)
+
+    # Cold miss: only the first thread scans; the others wait and reuse it.
+    with _scan_lock(active.id):
         with _cache_lock:
-            _cache[active.id] = fresh
-            while len(_cache) > _CACHE_MAX_ENTRIES:
-                _cache.pop(next(iter(_cache)))
-        hit = fresh
+            hit = _cache.get(active.id)
+            if hit is not None:
+                _cache.move_to_end(active.id)
+        if hit is None:
+            fresh = get_data_profile(conn)
+            with _cache_lock:
+                _cache[active.id] = fresh
+                _cache.move_to_end(active.id)
+                while len(_cache) > _CACHE_MAX_ENTRIES:
+                    _cache.popitem(last=False)
+            hit = fresh
     return DashboardContext(profile=hit, active=active)
 
 
@@ -80,6 +116,7 @@ def clear_dashboard_cache() -> None:
     with _cache_lock:
         _cache.clear()
         _cap_cache.clear()
+        _scan_locks.clear()
 
 
 def get_cached_capabilities_global(
@@ -89,7 +126,14 @@ def get_cached_capabilities_global(
     if dataset_id is None:
         return None
     with _cache_lock:
-        return _cap_cache.get((dataset_id, text_values_available))
+        key = (dataset_id, text_values_available)
+        value = _cap_cache.get(key)
+        if value is not None:
+            _cap_cache.move_to_end(key)
+            return CapabilitiesGlobal(
+                record_health=deepcopy(value.record_health), counts=dict(value.counts)
+            )
+        return None
 
 
 def put_cached_capabilities_global(
@@ -99,6 +143,9 @@ def put_cached_capabilities_global(
     if dataset_id is None:
         return
     with _cache_lock:
-        _cap_cache[(dataset_id, text_values_available)] = value
+        _cap_cache[(dataset_id, text_values_available)] = CapabilitiesGlobal(
+            record_health=deepcopy(value.record_health), counts=dict(value.counts)
+        )
+        _cap_cache.move_to_end((dataset_id, text_values_available))
         while len(_cap_cache) > _CACHE_MAX_ENTRIES * 2:
-            _cap_cache.pop(next(iter(_cap_cache)))
+            _cap_cache.popitem(last=False)

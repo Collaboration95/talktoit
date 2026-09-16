@@ -77,6 +77,17 @@ def test_redact_value_leaves_safe_types_untouched() -> None:
     assert _redact_value("record_id 5") == REDACTED
 
 
+def test_redact_value_preserves_benign_identifiers_and_drops_sensitive_keys() -> None:
+    """Structured telemetry keeps useful labels while protecting key-shaped leaks."""
+    assert _redact_value({"table": "workout_routes", "metric": "heart_rate"}) == {
+        "table": "workout_routes",
+        "metric": "heart_rate",
+    }
+    assert _redact_value({"question": "show my runs"}) == {}
+    assert _redact_value({"authorization": "Bearer secret-token"}) == {}
+    assert REDACTED in str(_redact_value("Bearer secret-token"))
+
+
 def test_exception_text_is_redacted_like_event_text() -> None:
     logger, stream = _capture()
     try:

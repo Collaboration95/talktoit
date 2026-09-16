@@ -30,7 +30,7 @@ from app.db.aggregations import (
     to_local_dt,
     utc_bounds,
 )
-from app.db.connection import connect, resolve_db_path
+from app.db.connection import connect, lease_connection, resolve_db_path
 from app.db.dashboard_cache import (
     CapabilitiesGlobal,
     DashboardContext,
@@ -227,7 +227,10 @@ def _get_conn() -> Generator[duckdb.DuckDBPyConnection, None, None]:
     """FastAPI dependency — open a DB connection for the request lifetime."""
     conn = connect(read_only=True)
     try:
-        yield conn
+        # Leased for the request so a concurrent import/deletion never closes
+        # the connection while this handler is still reading from it.
+        with lease_connection(conn):
+            yield conn
     finally:
         conn.close()
 
