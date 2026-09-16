@@ -137,7 +137,9 @@ def _build_settings_payload(
     try:
         from app.llm.litert import status as litert_status_fn
 
-        litert_status = litert_status_fn()
+        litert_status = litert_status_fn(
+            base_url=config.get("litert_base_url"), model=config.get("litert_model")
+        )
     except Exception:
         logger.debug("litert status unavailable", exc_info=True)
         litert_status = {"running": False, "error": "status unavailable"}
@@ -146,7 +148,11 @@ def _build_settings_payload(
         try:
             from app.llm.litert import health as litert_health_fn
 
-            litert_health = litert_health_fn(timeout_seconds=1.0)
+            litert_health = litert_health_fn(
+                timeout_seconds=1.0,
+                base_url=config.get("litert_base_url"),
+                model=config.get("litert_model"),
+            )
         except Exception:
             logger.debug("litert health unavailable", exc_info=True)
             litert_health = {"ok": False, "error": "health unavailable"}
@@ -269,8 +275,12 @@ async def llm_health(
                 "provider": "local",
                 "model": config.get("litert_model"),
                 "base_url": config.get("litert_base_url"),
-                "status": litert_status_fn(),
-                "health": litert_health_fn(),
+                "status": litert_status_fn(
+                    base_url=config.get("litert_base_url"), model=config.get("litert_model")
+                ),
+                "health": litert_health_fn(
+                    base_url=config.get("litert_base_url"), model=config.get("litert_model")
+                ),
             }
         except Exception as exc:
             return {"provider": "local", "ok": False, "error": str(exc)}
@@ -285,13 +295,20 @@ async def llm_health(
 
 
 @router.post("/settings/llm/start")
-async def llm_start() -> dict[str, object]:
+async def llm_start(
+    repo: AppStateRepository = Depends(get_app_state_repository),
+) -> dict[str, object]:
     """Start the local LiteRT server (pid-owned, detached)."""
     try:
         from app.llm.litert import start as litert_start
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"LiteRT not available: {exc}") from exc
-    result = await asyncio.to_thread(litert_start)
+    config = repo.get_provider_config()
+    result = await asyncio.to_thread(
+        litert_start,
+        base_url=config.get("litert_base_url"),
+        model=config.get("litert_model"),
+    )
     if result.get("error") and not result.get("running"):
         raise HTTPException(status_code=500, detail=str(result.get("error")))
     return result

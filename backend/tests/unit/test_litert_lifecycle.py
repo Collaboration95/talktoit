@@ -281,9 +281,59 @@ def test_start_reports_missing_binary_without_spawning(
     """No binary is a clean error dict, never an exception."""
     monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
     monkeypatch.setattr(litert, "resolve_litert_binary", lambda: None)
+    monkeypatch.setattr(litert, "health", lambda **_kwargs: {"ok": False})
     result = litert.start()
     assert result["started"] is False
     assert "not found" in str(result["error"])
+
+
+def test_ensure_running_reuses_healthy_unowned_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A responsive configured endpoint is not started or adopted without a pidfile."""
+    monkeypatch.setattr(litert, "status", lambda **_kwargs: {"running": False})
+    monkeypatch.setattr(
+        litert,
+        "health",
+        lambda **_kwargs: {"ok": True, "endpoint_reachable": True, "model_available": True},
+    )
+    monkeypatch.setattr(
+        litert,
+        "_build_serve_command",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not spawn")),
+    )
+
+    result = litert.start(base_url="http://127.0.0.1:9999/v1", model="configured")
+
+    assert result["started"] is False
+    assert result["already_available"] is True
+    assert result["running"] is False
+
+
+def test_start_does_not_replace_reachable_endpoint_with_wrong_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An occupied endpoint with a different model gets an actionable non-spawn result."""
+    monkeypatch.setattr(litert, "status", lambda **_kwargs: {"running": False})
+    monkeypatch.setattr(
+        litert,
+        "health",
+        lambda **_kwargs: {
+            "ok": False,
+            "endpoint_reachable": True,
+            "model_available": False,
+        },
+    )
+    monkeypatch.setattr(
+        litert,
+        "_build_serve_command",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not spawn")),
+    )
+
+    result = litert.start(model="missing")
+
+    assert result["started"] is False
+    assert "selected model" in str(result["reason"])
 
 
 def test_stop_without_pidfile_is_clean(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
