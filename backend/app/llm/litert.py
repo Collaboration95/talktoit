@@ -374,7 +374,7 @@ def _start_locked(
     # port. A custom endpoint may be externally managed, but it must never be
     # mistaken for a process this lifecycle manager can launch or later stop.
     parsed = urlparse(_litert_base_url(base_url))
-    if parsed.port not in {None, LITERT_DEFAULT_PORT}:
+    if parsed.port != LITERT_DEFAULT_PORT:
         return {
             "started": False,
             "reason": "configured endpoint is unavailable and is not lifecycle-managed",

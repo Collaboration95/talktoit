@@ -406,6 +406,28 @@ def test_start_does_not_replace_reachable_endpoint_with_wrong_model(
     assert "selected model" in str(result["reason"])
 
 
+def test_start_does_not_manage_custom_endpoint_with_implicit_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An endpoint without an explicit LiteRT port cannot be served by the built-in command."""
+    monkeypatch.setattr(litert, "status", lambda **_kwargs: {"running": False})
+    monkeypatch.setattr(
+        litert,
+        "health",
+        lambda **_kwargs: {"ok": False, "endpoint_reachable": False},
+    )
+    monkeypatch.setattr(
+        litert,
+        "_build_serve_command",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not spawn")),
+    )
+
+    result = litert.start(base_url="http://127.0.0.1/v1", model="configured")
+
+    assert result["started"] is False
+    assert result["reason"] == "configured endpoint is unavailable and is not lifecycle-managed"
+
+
 def test_stop_without_pidfile_is_clean(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """Stopping with no pidfile is a no-op with a clear reason."""
     monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
