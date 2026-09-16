@@ -48,4 +48,16 @@ describe('askQuestion', () => {
       requestId: 'req-test',
     })
   })
+
+  it('rejects a malformed successful response instead of trusting it as an envelope', async () => {
+    server.use(http.post('/api/chat', () => HttpResponse.json({ template_id: 'fallback' })))
+
+    const failure = await askQuestion('test').catch((error: unknown) => error)
+
+    expect(failure).toMatchObject({
+      status: 200,
+      code: 'invalid_envelope',
+      message: 'The server returned an answer in an unsupported format. Please try again.',
+    })
+  })
 })

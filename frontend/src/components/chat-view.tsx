@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { askQuestion, ChatApiError } from '@/api/chat'
+import { decodeChatEnvelope, recoveryChatEnvelope } from '@/api/decode-chat-envelope'
 import {
   createConversation,
   archiveConversation,
@@ -228,11 +229,21 @@ export function ChatView() {
         stored.map((turn, index) => {
           const turnId = turn.id
           if (turn.state === 'completed' && turn.response_json) {
+            const envelope = decodeChatEnvelope(parseJson(turn.response_json))
             return {
               id: turnId,
               status: 'success' as const,
               question: turn.question,
-              envelope: JSON.parse(turn.response_json) as ChatEnvelope,
+              envelope: envelope ?? recoveryChatEnvelope(turn.question),
+              expanded: index === stored.length - 1,
+            }
+          }
+          if (turn.state === 'completed') {
+            return {
+              id: turnId,
+              status: 'success' as const,
+              question: turn.question,
+              envelope: recoveryChatEnvelope(turn.question),
               expanded: index === stored.length - 1,
             }
           }
@@ -497,4 +508,12 @@ export function ChatView() {
       ) : null}
     </div>
   )
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown
+  } catch {
+    return null
+  }
 }

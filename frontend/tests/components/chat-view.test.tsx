@@ -171,6 +171,48 @@ describe('ChatView', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
   })
 
+  it('recovers a malformed saved response without losing its question', async () => {
+    server.use(
+      http.get('/api/conversations', () =>
+        HttpResponse.json([
+          { id: 'cv_malformed', title: 'Malformed history', created_at: 'now', updated_at: 'now' },
+        ]),
+      ),
+      http.get('/api/conversations/cv_malformed/turns', () =>
+        HttpResponse.json([
+          {
+            id: 'tr_malformed',
+            question: 'How many steps did I take?',
+            state: 'completed',
+            response_json: '{not valid json',
+            error_message: null,
+          },
+        ]),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<ChatView />)
+
+    await user.click(await screen.findByRole('button', { name: 'Malformed history' }))
+
+    expect(await screen.findByText('How many steps did I take?')).toBeInTheDocument()
+    expect(screen.getByText(/saved answer could not be restored/i)).toBeInTheDocument()
+  })
+
+  it('shows the safe unknown-template fallback for a live answer', async () => {
+    server.use(
+      http.post('/api/chat', () =>
+        HttpResponse.json({ template_id: 'future_template', data: {}, narrative: 'Future answer.' }),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<ChatView />)
+    await user.type(screen.getByRole('textbox'), 'show something new')
+    await user.click(screen.getByRole('button', { name: /ask/i }))
+
+    expect(await screen.findByText(/unknown template: future_template/i)).toBeInTheDocument()
+  })
+
   it('renames a selected local conversation without touching health data', async () => {
     let renamed = false
     server.use(

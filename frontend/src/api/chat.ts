@@ -1,4 +1,5 @@
 import type { ChatEnvelope } from '@/types/templates'
+import { decodeChatEnvelope } from '@/api/decode-chat-envelope'
 
 export interface ChatRequest {
   question: string
@@ -56,5 +57,14 @@ export async function askQuestion(
       typeof detail === 'string' ? detail : `Chat request failed: ${response.status}`,
     )
   }
-  return response.json() as Promise<ChatEnvelope>
+  const payload = await response.json().catch(() => null)
+  const envelope = decodeChatEnvelope(payload)
+  if (!envelope) {
+    throw new ChatApiError(
+      response.status,
+      'The server returned an answer in an unsupported format. Please try again.',
+      'invalid_envelope',
+    )
+  }
+  return envelope
 }
