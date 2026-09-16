@@ -47,6 +47,7 @@ def resolve_followup(
         duration = end - start
         previous_end = start - timedelta(days=1)
         previous_start = previous_end - duration
+        activity_type = context.arguments.get("activity_type")
         return {
             "tool_name": "get_comparison",
             "arguments": {
@@ -56,8 +57,13 @@ def resolve_followup(
                 "last_end": previous_end.isoformat(),
                 "this_label": f"{start.isoformat()} to {end.isoformat()}",
                 "last_label": f"{previous_start.isoformat()} to {previous_end.isoformat()}",
+                **({"activity_type": activity_type} if isinstance(activity_type, str) else {}),
             },
         }
+    if context.tool_name == "get_trend" and "daily instead" in lower:
+        arguments = dict(context.arguments)
+        arguments["granularity"] = "day"
+        return {"tool_name": "get_trend", "arguments": arguments}
     if context.tool_name == "get_trend" and ("group" in lower or "by week" in lower):
         arguments = dict(context.arguments)
         arguments["granularity"] = "month" if "month" in lower else "week"

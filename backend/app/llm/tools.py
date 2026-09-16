@@ -40,7 +40,7 @@ def _validate_date_range(start_date: date | None, end_date: date | None) -> None
 
 class _LastWorkoutToolInput(_StrictToolInput):
     activity_type: str | None = Field(default=None, min_length=1, max_length=160)
-    min_duration_minutes: float | None = Field(default=None, ge=0)
+    min_duration_minutes: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     start_date: date | None = None
     end_date: date | None = None
 

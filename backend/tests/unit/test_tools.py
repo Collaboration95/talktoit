@@ -137,3 +137,16 @@ def test_dispatch_tool_rejects_invalid_or_extra_arguments_before_query(
 ) -> None:
     with pytest.raises(ValueError):
         dispatch_tool(tool_name, args, db, "some question")
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_dispatch_tool_rejects_non_finite_duration_thresholds(
+    db: duckdb.DuckDBPyConnection, value: float
+) -> None:
+    with pytest.raises(ValueError):
+        dispatch_tool(
+            "get_last_workout",
+            {"activity_type": "Running", "min_duration_minutes": value},
+            db,
+            "Show my last long run",
+        )
