@@ -153,6 +153,12 @@ def _build_settings_payload(
                 base_url=config.get("litert_base_url"),
                 model=config.get("litert_model"),
             )
+            endpoint_reachable = bool(litert_health.get("endpoint_reachable"))
+            litert_status["endpoint_reachable"] = endpoint_reachable
+            litert_status["model_available"] = bool(litert_health.get("model_available"))
+            litert_status["available"] = bool(litert_health.get("ok"))
+            if endpoint_reachable and not litert_status.get("running"):
+                litert_status["ownership"] = "external"
         except Exception:
             logger.debug("litert health unavailable", exc_info=True)
             litert_health = {"ok": False, "error": "health unavailable"}

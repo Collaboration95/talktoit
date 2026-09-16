@@ -199,6 +199,7 @@ def status(base_url: str | None = None, model: str | None = None) -> dict[str, o
     log = log_path()
     return {
         "running": running,
+        "ownership": "owned" if running else "none",
         "pid": owned.pid if owned is not None and running else None,
         "base_url": resolved_base_url,
         "model": resolved_model,
@@ -330,12 +331,32 @@ def _start_locked(
     """Start LiteRT while the lifecycle lock is held."""
     status_kwargs = {"base_url": base_url, "model": model} if base_url or model else {}
     current = status(**status_kwargs)
+    # Process ownership does not prove that this process serves the selected
+    # endpoint or model. Always probe the effective configuration first.
+    current_health = health(base_url=base_url, model=model)
     if current.get("running"):
-        return {"started": False, "already_running": True, **current}
+        if current_health.get("ok"):
+            return {
+                "started": False,
+                "already_running": True,
+                "available": True,
+                **current,
+                "health": current_health,
+            }
+        return {
+            "started": False,
+            "available": False,
+            "reason": (
+                "owned process does not serve the selected endpoint"
+                if not current_health.get("endpoint_reachable")
+                else "owned process does not provide the selected model"
+            ),
+            **current,
+            "health": current_health,
+        }
 
     # A process that we did not spawn can still be the configured inference
     # endpoint. Never adopt or replace it merely because our pidfile is stale.
-    current_health = health(base_url=base_url, model=model)
     if current_health.get("endpoint_reachable"):
         return {
             "started": False,
@@ -630,7 +651,7 @@ def ensure_running(
         status_kwargs = {"base_url": base_url, "model": model} if base_url or model else {}
         current = status(**status_kwargs)
         if current.get("running"):
-            return {"started": False, "already_running": True, **current}
+            return start(base_url=base_url, model=model)
         if not autostart_enabled():
             return {"started": False, "reason": "autostart disabled", **current}
         return start(
