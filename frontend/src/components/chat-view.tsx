@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { askQuestion, ChatApiError } from '@/api/chat'
+import { decodeChatEnvelope, recoveryChatEnvelope } from '@/api/decode-chat-envelope'
 import {
   createConversation,
   archiveConversation,
@@ -59,6 +60,8 @@ export function ChatView() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [conversationSearch, setConversationSearch] = useState('')
   const [conversationError, setConversationError] = useState<string | null>(null)
+  const [parentTurn, setParentTurn] = useState<{ id: string; question: string } | null>(null)
+  const parentTurnId = parentTurn?.id
   const backendDown = useBackendHealth()
   const inFlight = useRef(new Map<string, AbortController>())
   const conversationRef = useRef<string | undefined>(undefined)
@@ -92,6 +95,7 @@ export function ChatView() {
     for (const controller of inFlight.current.values()) controller.abort()
     inFlight.current.clear()
     setConversationId(undefined)
+    setParentTurn(null)
     setTurns([])
   }, [invalidatePendingLoads])
 
@@ -160,8 +164,10 @@ export function ChatView() {
         }
         const envelope = await askQuestion(question, {
           conversationId: activeConversation,
+          ...(parentTurnId ? { parentTurnId } : {}),
           signal: controller.signal,
         })
+        if (parentTurnId) setParentTurn(null)
         setTurns((current) =>
           current.map((turn) =>
             turn.id === turnId
@@ -184,7 +190,7 @@ export function ChatView() {
         inFlight.current.delete(turnId)
       }
     },
-    [conversationId, refreshConversationList],
+    [conversationId, parentTurnId, refreshConversationList],
   )
 
   const cancelActiveRequest = useCallback(() => {
@@ -223,16 +229,27 @@ export function ChatView() {
       }
       if (generation !== selectionGeneration.current) return
       conversationRef.current = id
+      setParentTurn(null)
       setConversationId(id)
       setTurns(
         stored.map((turn, index) => {
           const turnId = turn.id
           if (turn.state === 'completed' && turn.response_json) {
+            const envelope = decodeChatEnvelope(parseJson(turn.response_json))
             return {
               id: turnId,
               status: 'success' as const,
               question: turn.question,
-              envelope: JSON.parse(turn.response_json) as ChatEnvelope,
+              envelope: envelope ?? recoveryChatEnvelope(turn.question),
+              expanded: index === stored.length - 1,
+            }
+          }
+          if (turn.state === 'completed') {
+            return {
+              id: turnId,
+              status: 'success' as const,
+              question: turn.question,
+              envelope: recoveryChatEnvelope(turn.question),
               expanded: index === stored.length - 1,
             }
           }
@@ -464,6 +481,18 @@ export function ChatView() {
                 >
                   Copy answer
                 </button>
+                {turn.envelope.metadata?.turn_id ? (
+                  <button
+                    type="button"
+                    className="text-blue-600"
+                    onClick={() => {
+                      const parentId = turn.envelope.metadata?.turn_id
+                      if (parentId) setParentTurn({ id: parentId, question: turn.question })
+                    }}
+                  >
+                    Ask about this answer
+                  </button>
+                ) : null}
               </div>
             ) : null}
             {turn.status === 'error' ? (
@@ -488,6 +517,14 @@ export function ChatView() {
           data-testid="composer-bar"
           className="sticky bottom-0 -mx-4 mt-8 border-t border-gray-200 bg-gray-50/95 px-4 pb-4 pt-3 backdrop-blur"
         >
+          {parentTurn ? (
+            <div className="mb-2 flex items-center gap-2 text-xs text-gray-600">
+              <span>Following up on: {parentTurn.question}</span>
+              <button type="button" className="text-blue-600" onClick={() => setParentTurn(null)}>
+                Clear
+              </button>
+            </div>
+          ) : null}
           <ChatInput
             onSubmit={handleQuestion}
             onCancel={cancelActiveRequest}
@@ -497,4 +534,12 @@ export function ChatView() {
       ) : null}
     </div>
   )
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown
+  } catch {
+    return null
+  }
 }

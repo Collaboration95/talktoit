@@ -23,6 +23,17 @@ describe('askQuestion', () => {
     expect(result.narrative).toBe('Test.')
   })
 
+  it('sends an explicit selected parent turn identifier', async () => {
+    server.use(
+      http.post('/api/chat', async ({ request }) => {
+        expect(await request.json()).toMatchObject({ parent_turn_id: 'tr_parent' })
+        return HttpResponse.json({ template_id: 'fallback', data: {}, narrative: 'Test.' })
+      }),
+    )
+
+    await askQuestion('daily instead', { conversationId: 'cv_test', parentTurnId: 'tr_parent' })
+  })
+
   it('throws ChatApiError on non-200 response', async () => {
     server.use(
       http.post('/api/chat', () =>
@@ -46,6 +57,18 @@ describe('askQuestion', () => {
       message: 'Local health data is unavailable.',
       code: 'data_unavailable',
       requestId: 'req-test',
+    })
+  })
+
+  it('rejects a malformed successful response instead of trusting it as an envelope', async () => {
+    server.use(http.post('/api/chat', () => HttpResponse.json({ template_id: 'fallback' })))
+
+    const failure = await askQuestion('test').catch((error: unknown) => error)
+
+    expect(failure).toMatchObject({
+      status: 200,
+      code: 'invalid_envelope',
+      message: 'The server returned an answer in an unsupported format. Please try again.',
     })
   })
 })
