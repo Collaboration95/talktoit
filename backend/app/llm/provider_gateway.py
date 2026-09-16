@@ -10,6 +10,7 @@ import time
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 import openai
 
@@ -25,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 class ProviderUnavailableError(RuntimeError):
     """A remote provider is disabled or unavailable; details stay private."""
+
+
+class ProviderConfigurationError(ProviderUnavailableError):
+    """A provider configuration would violate the local-only boundary."""
 
 
 def provider_from_env() -> Provider:
@@ -79,6 +84,7 @@ class ProviderGateway:
         circuit_reset_seconds: float = 30.0,
         sleep: Sleep | None = None,
         clock: Clock | None = None,
+        configuration_error: str | None = None,
     ) -> None:
         """Configure a bounded gateway around an injected async client.
 
@@ -90,6 +96,7 @@ class ProviderGateway:
         self.mode = mode or provider_mode_from_env()
         self.provider: Provider = provider or provider_from_env()
         self.model = model
+        self._configuration_error = configuration_error
         self.timeout_seconds = timeout_seconds
         self._semaphore = asyncio.Semaphore(max_concurrency)
         self.max_retries = max_retries
@@ -113,6 +120,8 @@ class ProviderGateway:
         without external egress. The Groq provider respects the explicit
         ``TTI_PROVIDER_MODE`` gating as before.
         """
+        if self._configuration_error:
+            return False
         if self.provider == "local":
             return True
         return self.mode == "remote_planning_and_narration" or (
@@ -124,6 +133,8 @@ class ProviderGateway:
     ) -> str:
         """Run one provider call with deadlines, bounded retry, and cancellation safety."""
         if not self.permits(stage):
+            if self._configuration_error:
+                raise ProviderConfigurationError(self._configuration_error)
             raise ProviderUnavailableError("Remote provider is disabled")
         if self._circuit_is_open():
             raise ProviderUnavailableError("Remote provider circuit is open")
@@ -237,6 +248,16 @@ def _make_client_for_provider(provider: Provider, base_url: str | None) -> opena
     return make_client()
 
 
+def _is_loopback_url(base_url: str) -> bool:
+    """Return whether a local-provider URL stays on the device."""
+    parsed = urlparse(base_url)
+    return parsed.scheme in {"http", "https"} and parsed.hostname in {
+        "127.0.0.1",
+        "::1",
+        "localhost",
+    }
+
+
 def _gateway_cache_key(config: Mapping[str, object]) -> tuple[str, str, str, str]:
     """Return a cache key that busts when the provider identity changes."""
     return (
@@ -273,6 +294,12 @@ def get_gateway_for_config(
         mode = "local_only"
     model = str(config.get("model", DEFAULT_MODEL))
     base_url = str(config.get("base_url", ""))
+    configuration_error: str | None = None
+    if provider == "local" and not _is_loopback_url(base_url):
+        # Do not let a malformed local config fall through to make_client(),
+        # whose defaults point at the hosted provider.
+        configuration_error = "Local provider requires a loopback LiteRT endpoint"
+        base_url = "http://127.0.0.1:9/v1"
     client = _make_client_for_provider(provider, base_url or None)  # type: ignore[arg-type]
     gateway = ProviderGateway(
         client,
@@ -290,6 +317,7 @@ def get_gateway_for_config(
         circuit_reset_seconds=_positive_float_from_env("TTI_PROVIDER_CIRCUIT_RESET_SECONDS", 30.0),
         sleep=sleep,
         clock=clock,
+        configuration_error=configuration_error,
     )
     with _gateway_cache_lock:
         existing = _gateway_cache.get(key)
@@ -381,8 +409,8 @@ def resolve_provider_config(
         return {
             "provider": provider_from_env(),
             "mode": provider_mode_from_env(),
-            "model": DEFAULT_MODEL,
-            "base_url": "https://api.groq.com/openai/v1",
+            "model": "gemma4-e2b",
+            "base_url": "http://127.0.0.1:9379/v1",
             "groq_model": DEFAULT_MODEL,
             "groq_base_url": "https://api.groq.com/openai/v1",
             "litert_model": "gemma4-e2b",
@@ -409,18 +437,4 @@ def make_provider_gateway() -> ProviderGateway:
         config = None
     if config is not None:
         return get_gateway_for_config(config)
-    return ProviderGateway(
-        make_client(),
-        provider=provider_from_env(),
-        mode=provider_mode_from_env(),
-        model=os.environ.get("LLM_MODEL", DEFAULT_MODEL),
-        timeout_seconds=_positive_float_from_env("TTI_PROVIDER_TIMEOUT_SECONDS", 15.0),
-        max_concurrency=_positive_int_from_env("TTI_PROVIDER_MAX_CONCURRENCY", 4) or 1,
-        max_retries=_positive_int_from_env("TTI_PROVIDER_MAX_RETRIES", 2),
-        retry_backoff_seconds=_positive_float_from_env("TTI_PROVIDER_RETRY_BACKOFF_SECONDS", 0.25),
-        circuit_failure_threshold=_positive_int_from_env(
-            "TTI_PROVIDER_CIRCUIT_FAILURE_THRESHOLD", 3
-        )
-        or 1,
-        circuit_reset_seconds=_positive_float_from_env("TTI_PROVIDER_CIRCUIT_RESET_SECONDS", 30.0),
-    )
+    return get_gateway_for_config(resolve_provider_config())

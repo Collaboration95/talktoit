@@ -7,8 +7,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.llm.provider_gateway import (
+    ProviderConfigurationError,
     ProviderGateway,
     ProviderUnavailableError,
+    clear_gateway_cache,
+    get_gateway_for_config,
     provider_mode_from_env,
 )
 
@@ -118,3 +121,21 @@ async def test_local_provider_permits_both_stages_by_default(
 def test_invalid_provider_mode_falls_back_to_local_only(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TTI_PROVIDER_MODE", "unexpected")
     assert provider_mode_from_env() == "local_only"
+
+
+async def test_local_provider_rejects_hosted_base_url_without_using_it() -> None:
+    """A local flag cannot silently fall through to a hosted transport."""
+    clear_gateway_cache()
+    gateway = get_gateway_for_config(
+        {
+            "provider": "local",
+            "mode": "local_only",
+            "model": "gemma4-e2b",
+            "base_url": "https://api.groq.com/openai/v1",
+        }
+    )
+
+    with pytest.raises(ProviderConfigurationError):
+        await gateway.complete("planning", [{"role": "user", "content": "test"}])
+
+    assert str(gateway.client.base_url).startswith("http://127.0.0.1:9/")

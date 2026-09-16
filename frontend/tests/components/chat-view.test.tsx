@@ -171,6 +171,48 @@ describe('ChatView', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
   })
 
+  it('recovers a malformed saved response without losing its question', async () => {
+    server.use(
+      http.get('/api/conversations', () =>
+        HttpResponse.json([
+          { id: 'cv_malformed', title: 'Malformed history', created_at: 'now', updated_at: 'now' },
+        ]),
+      ),
+      http.get('/api/conversations/cv_malformed/turns', () =>
+        HttpResponse.json([
+          {
+            id: 'tr_malformed',
+            question: 'How many steps did I take?',
+            state: 'completed',
+            response_json: '{not valid json',
+            error_message: null,
+          },
+        ]),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<ChatView />)
+
+    await user.click(await screen.findByRole('button', { name: 'Malformed history' }))
+
+    expect(await screen.findByText('How many steps did I take?')).toBeInTheDocument()
+    expect(screen.getByText(/saved answer could not be restored/i)).toBeInTheDocument()
+  })
+
+  it('shows the safe unknown-template fallback for a live answer', async () => {
+    server.use(
+      http.post('/api/chat', () =>
+        HttpResponse.json({ template_id: 'future_template', data: {}, narrative: 'Future answer.' }),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<ChatView />)
+    await user.type(screen.getByRole('textbox'), 'show something new')
+    await user.click(screen.getByRole('button', { name: /ask/i }))
+
+    expect(await screen.findByText(/unknown template: future_template/i)).toBeInTheDocument()
+  })
+
   it('renames a selected local conversation without touching health data', async () => {
     let renamed = false
     server.use(
@@ -241,6 +283,45 @@ describe('ChatView', () => {
     await user.click(screen.getByRole('button', { name: 'New conversation' }))
     expect(screen.queryByTestId('composer-bar')).not.toBeInTheDocument()
     expect(screen.getByText(/ask a question/i)).toBeInTheDocument()
+  })
+
+  it('clears a selected parent answer when switching conversations', async () => {
+    const answerWithTurn = {
+      ...WORKOUT_ENVELOPE,
+      metadata: { ...WORKOUT_ENVELOPE.metadata, turn_id: 'tr_parent' },
+    }
+    let laterRequest: Record<string, unknown> | undefined
+    server.use(
+      http.get('/api/conversations', () =>
+        HttpResponse.json([
+          { id: 'cv_a', title: 'Current', created_at: 'now', updated_at: 'now' },
+          { id: 'cv_b', title: 'Other', created_at: 'now', updated_at: 'now' },
+        ]),
+      ),
+      http.get('/api/conversations/cv_b/turns', () => HttpResponse.json([])),
+      http.post('/api/conversations', () => HttpResponse.json({ id: 'cv_a' })),
+      http.post('/api/chat', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>
+        if (body.question === 'new question') laterRequest = body
+        return HttpResponse.json(answerWithTurn)
+      }),
+    )
+    const user = userEvent.setup()
+    render(<ChatView />)
+    await user.type(screen.getByRole('textbox'), 'last run')
+    await user.click(screen.getByRole('button', { name: /^ask$/i }))
+    await screen.findByText('Your last run was on June 5.')
+    await user.click(screen.getByRole('button', { name: 'Ask about this answer' }))
+    expect(screen.getByText(/Following up on:/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Other' }))
+    await waitFor(() => expect(screen.queryByText(/Following up on:/)).not.toBeInTheDocument())
+
+    await user.type(screen.getByRole('textbox'), 'new question')
+    await user.click(screen.getByRole('button', { name: /^ask$/i }))
+    await waitFor(() => expect(laterRequest).toBeDefined())
+    expect(laterRequest).toMatchObject({ question: 'new question', conversation_id: 'cv_b' })
+    expect(laterRequest).not.toHaveProperty('parent_turn_id')
   })
 
   it('shows a dismissible degraded-answer notice for fallback responses', async () => {

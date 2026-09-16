@@ -8,6 +8,10 @@ export type ProviderType = 'local' | 'groq'
 
 export interface LitertStatus {
   running: boolean
+  available?: boolean
+  endpoint_reachable?: boolean
+  model_available?: boolean
+  ownership?: 'owned' | 'external' | 'none'
   pid: number | null
   base_url: string
   model: string
@@ -19,6 +23,8 @@ export interface LitertStatus {
 
 export interface LitertHealth {
   ok: boolean
+  endpoint_reachable?: boolean
+  model_available?: boolean
   latency_ms?: number
   status_code?: number
   error?: string

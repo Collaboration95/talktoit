@@ -207,6 +207,7 @@ export function SettingsView() {
 
   const litertStatus = settings.provider.litert_status
   const litertHealth = settings.provider.litert_health
+  const externalEndpointReady = Boolean(litertStatus?.available && !litertStatus.running)
   const activeProvider = (settings.provider.provider as ProviderType) ?? 'local'
 
   return (
@@ -398,14 +399,19 @@ export function SettingsView() {
           {litertStatus && (
             <div className="rounded-md bg-gray-50 p-3 text-xs text-gray-600">
               <p className="font-medium text-gray-700">Local server</p>
-              {!litertStatus.running && (
+              {!litertStatus.running && !externalEndpointReady && (
                 <p className="mb-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-amber-800">
                   Stopped — chat uses on-device answers with basic summaries until you start it.
                 </p>
               )}
               <p>
                 Status:{' '}
-                {litertStatus.running ? `running (pid ${litertStatus.pid ?? '—'})` : 'stopped'} ·{' '}
+                {litertStatus.running
+                  ? `running (pid ${litertStatus.pid ?? '—'})`
+                  : externalEndpointReady
+                    ? 'external endpoint ready'
+                    : 'stopped'}{' '}
+                ·{' '}
                 {litertStatus.binary_available
                   ? `binary ${litertStatus.binary}`
                   : 'binary not found'}{' '}

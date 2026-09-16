@@ -197,14 +197,14 @@ def test_ensure_local_server_ignores_non_local_provider(monkeypatch, capsys) -> 
     assert capsys.readouterr().err == ""
 
 
-def test_ensure_local_server_noop_when_running(monkeypatch, capsys) -> None:
-    """A running server means silence — no spawn, no hint."""
+def test_ensure_local_server_noop_when_selected_endpoint_is_ready(monkeypatch, capsys) -> None:
+    """A ready selected endpoint means silence — no spawn, no hint."""
     from app.llm import litert
 
     def forbidden(**_kwargs):
         raise AssertionError("must not spawn when already running")
 
-    monkeypatch.setattr(litert, "status", lambda: {"running": True})
+    monkeypatch.setattr(litert, "health", lambda **_kwargs: {"ok": True})
     monkeypatch.setattr(litert, "ensure_running", forbidden)
     chat_cli._ensure_local_server({"provider": "local"})
     assert capsys.readouterr().err == ""
@@ -214,7 +214,7 @@ def test_ensure_local_server_hints_when_binary_missing(monkeypatch, capsys) -> N
     """No binary is a stderr hint, never an exception."""
     from app.llm import litert
 
-    monkeypatch.setattr(litert, "status", lambda: {"running": False})
+    monkeypatch.setattr(litert, "health", lambda **_kwargs: {"ok": False})
     monkeypatch.setattr(
         litert,
         "ensure_running",
