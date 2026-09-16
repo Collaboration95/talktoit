@@ -12,7 +12,7 @@ import duckdb
 import pytest
 
 from app.ingest.parser import ingest
-from app.llm.tools import dispatch_tool, render_tool_catalog
+from app.llm.tools import dispatch_tool, normalize_metric_id, render_tool_catalog
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "sample.xml"
 
@@ -84,3 +84,31 @@ def test_tool_catalog_includes_required_argument_contracts() -> None:
     assert '"name": "get_comparison"' in catalog
     assert '"required"' in catalog
     assert '"this_start"' in catalog
+
+
+@pytest.mark.parametrize(
+    ("alias", "expected"),
+    [
+        ("Steps", "steps"),
+        ("steps", "steps"),
+        ("HKQuantityTypeIdentifierStepCount", "HKQuantityTypeIdentifierStepCount"),
+    ],
+)
+def test_normalize_metric_id_accepts_declared_steps_aliases(alias: str, expected: str) -> None:
+    assert normalize_metric_id(alias) == expected
+
+
+def test_dispatch_tool_normalizes_steps_alias(db: duckdb.DuckDBPyConnection) -> None:
+    template_id, data = dispatch_tool(
+        "get_trend",
+        {
+            "metric_id": "Steps",
+            "granularity": "day",
+            "start_date": "2026-06-01",
+            "end_date": "2026-06-30",
+        },
+        db,
+        "Plot steps by day for June 2026",
+    )
+    assert template_id == "trend_chart"
+    assert data["metric_label"] == "Steps"

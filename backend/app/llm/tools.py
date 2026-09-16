@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.analytics.metric_catalog import METRIC_CATALOG
 from app.analytics.registry import (
     execute_comparison,
     execute_latest_workout,
@@ -43,7 +44,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_last_workout",
-            "description": "Get the most recent workout of a given activity type",
+            "description": "Get the most recent workout, optionally scoped by activity and date",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -57,8 +58,9 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                         "type": "number",
                         "description": "Optional minimum duration for a qualifying workout",
                     },
+                    "start_date": {"type": "string", "description": "ISO date YYYY-MM-DD"},
+                    "end_date": {"type": "string", "description": "ISO date YYYY-MM-DD"},
                 },
-                "required": ["activity_type"],
             },
         },
     },
@@ -141,6 +143,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                         "type": "string",
                         "description": "Optional override title for the summary",
                     },
+                    "activity_type": {"type": "string"},
                 },
                 "required": ["start_date", "end_date"],
             },
@@ -246,17 +249,24 @@ def _tool_get_last_workout(
     Returns:
         Tuple of (template_id, data_dict).
     """
-    activity_type: str = resolve_activity_type(conn, args["activity_type"])
+    requested_type = args.get("activity_type")
+    activity_type = resolve_activity_type(conn, requested_type) if requested_type else None
     raw_min_duration = args.get("min_duration_minutes")
     min_duration = float(raw_min_duration) if raw_min_duration is not None else None
     result = execute_latest_workout(
-        conn, {"activity_type": activity_type, "min_duration_minutes": min_duration}
+        conn,
+        {
+            "activity_type": activity_type,
+            "min_duration_minutes": min_duration,
+            "start": date.fromisoformat(args["start_date"]) if args.get("start_date") else None,
+            "end": date.fromisoformat(args["end_date"]) if args.get("end_date") else None,
+        },
     )
     if result is None:
         fallback = FallbackData(
             question=question,
             table=None,
-            text=f"No {activity_type} workouts found.",
+            text=f"No {activity_type or 'workouts'} found.",
         )
         return ("fallback", fallback.model_dump(mode="json"))
     return ("workout_card", result.model_dump(mode="json"))
@@ -299,7 +309,7 @@ def _tool_get_trend(
     Returns:
         Tuple of (template_id, data_dict).
     """
-    metric_id: str = args["metric_id"]
+    metric_id = normalize_metric_id(args["metric_id"])
     granularity: Literal["day", "week", "month"] = args["granularity"]
     start = date.fromisoformat(args["start_date"])
     end = date.fromisoformat(args["end_date"])
@@ -326,7 +336,11 @@ def _tool_get_period_summary(
     start = date.fromisoformat(args["start_date"])
     end = date.fromisoformat(args["end_date"])
     title: str | None = args.get("title")
-    result = execute_period_summary(conn, {"start": start, "end": end, "title": title})
+    requested_type = args.get("activity_type")
+    activity_type = resolve_activity_type(conn, requested_type) if requested_type else None
+    result = execute_period_summary(
+        conn, {"start": start, "end": end, "title": title, "activity_type": activity_type}
+    )
     return ("period_summary", result.model_dump(mode="json"))
 
 
@@ -394,6 +408,18 @@ def normalize_tool_name(tool_name: str) -> str:
     from breaking dispatch.
     """
     return tool_name.strip()
+
+
+def normalize_metric_id(metric_id: str) -> str:
+    """Normalize only declared catalog aliases, preserving unknown values for rejection."""
+    candidate = metric_id.strip()
+    folded = candidate.casefold()
+    for key, definition in METRIC_CATALOG.items():
+        if folded in {key.casefold(), definition.label.casefold()}:
+            return key
+        if len(definition.apple_types) == 1 and folded == definition.apple_types[0].casefold():
+            return definition.apple_types[0]
+    return candidate
 
 
 def render_tool_catalog() -> str:

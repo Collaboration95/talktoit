@@ -162,8 +162,10 @@ LEFT JOIN (
 LEFT JOIN workout_metadata elev
     ON elev.workout_id = w.id
     AND elev.key = 'HKElevationAscended'
-WHERE w.activity_type = ?
+WHERE (? IS NULL OR w.activity_type = ?)
   AND (? IS NULL OR {_DURATION_EXPR_W} >= ?)
+  AND (? IS NULL OR w.start_date >= ?)
+  AND (? IS NULL OR w.start_date < ?)
 ORDER BY w.start_date DESC
 LIMIT 1
 """
@@ -383,24 +385,40 @@ _to_local_dt = to_local_dt
 
 def get_last_workout(
     conn: duckdb.DuckDBPyConnection,
-    activity_type: str,
+    activity_type: str | None = None,
     min_duration_minutes: float | None = None,
+    start: date | None = None,
+    end: date | None = None,
     tz: str = DEFAULT_TZ,
 ) -> WorkoutCardData | None:
-    """Fetch the most recent workout of the given type.
+    """Fetch the most recent workout in an optional activity/date scope.
 
     Args:
         conn: Open DuckDB connection.
-        activity_type: Activity type string as stored in the DB (e.g. ``"Running"``).
+        activity_type: Optional activity type string as stored in the DB.
         min_duration_minutes: Optional lower duration threshold for a qualifying workout.
+        start: Optional first local day of the inclusive date window.
+        end: Optional last local day of the inclusive date window.
         tz: IANA timezone for converting the UTC start_date to local time.
 
     Returns:
         A :class:`WorkoutCardData` for the most recent matching workout, or
-        ``None`` if no workout of that type exists.
+        ``None`` if no qualifying workout exists.
     """
+    utc_start = _utc_day_start(start, tz) if start is not None else None
+    utc_end = _utc_day_end(end, tz) if end is not None else None
     row = conn.execute(
-        _SQL_LAST_WORKOUT, [activity_type, min_duration_minutes, min_duration_minutes]
+        _SQL_LAST_WORKOUT,
+        [
+            activity_type,
+            activity_type,
+            min_duration_minutes,
+            min_duration_minutes,
+            utc_start,
+            utc_start,
+            utc_end,
+            utc_end,
+        ],
     ).fetchone()
     if row is None:
         return None
@@ -731,6 +749,7 @@ def get_period_summary(
     period_start: date,
     period_end: date,
     title: str | None = None,
+    activity_type: str | None = None,
     tz: str = DEFAULT_TZ,
 ) -> PeriodSummaryData:
     """Build a summary of training metrics for a date range.
@@ -740,6 +759,7 @@ def get_period_summary(
         period_start: First local day of the period (inclusive).
         period_end: Last local day of the period (inclusive).
         title: Override the auto-generated summary title.
+        activity_type: Optional activity type filter.
         tz: IANA timezone for UTC bounds conversion.
 
     Returns:
@@ -748,15 +768,11 @@ def get_period_summary(
     """
     utc_start, utc_end = _utc_bounds(period_start, period_end, tz)
 
-    stats_row = conn.execute(_SQL_WORKOUTS_STATS, [utc_start, utc_end]).fetchone()
-    session_count: float | None = stats_row[0] if stats_row else None
-    total_duration_raw: float | None = stats_row[1] if stats_row else None
-
-    dist_row = conn.execute(_SQL_DISTANCE, [utc_start, utc_end]).fetchone()
-    total_distance_m: float | None = dist_row[0] if dist_row else None
-
-    energy_row = conn.execute(_SQL_ENERGY, [utc_start, utc_end]).fetchone()
-    total_energy_kj: float | None = energy_row[0] if energy_row else None
+    stats = _period_stats(conn, utc_start, utc_end, activity_type)
+    session_count = stats["sessions"]
+    total_duration_raw = stats["duration_min"]
+    total_distance_m = stats["distance_m"]
+    total_energy_kj = stats["energy_kj"]
 
     # When no workouts, set derived metrics to None
     no_workouts = session_count is None or session_count == 0
