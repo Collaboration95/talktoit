@@ -197,12 +197,17 @@ def _extract_device(raw: str | None) -> str | None:
 # - tail: children content (only for parent-with-children form, None for self-closing)
 _TOP_RE = re.compile(
     rb"""
-    <(?P<tag>Record|Workout|ActivitySummary)\b\s+(?P<body>.*?)
-    (?:
-        />
-        |
-        >(?P<tail>.*?)</(?P=tag)\s*>
-    )
+    <!--.*?-->
+    |<!\[CDATA\[.*?\]\]>
+    |<\?.*?\?>
+    |
+    <(?P<tag>Record|Workout|ActivitySummary)\b\s+
+      (?P<body>(?:[^>"']|"[^"]*"|'[^']*')*?)
+      (?:
+          />
+          |
+          >(?P<tail>.*?)</(?P=tag)\s*>
+      )
     """,
     re.DOTALL | re.VERBOSE,
 )
@@ -638,6 +643,8 @@ def parse_byte_range(
 
             # Scan for all top-level elements using the unified regex
             for match in _TOP_RE.finditer(chunk):
+                if match.group("tag") is None:
+                    continue
                 # Extract tag name and attributes
                 tag = match.group("tag").decode("utf-8")
                 attrs_bytes = match.group("body")

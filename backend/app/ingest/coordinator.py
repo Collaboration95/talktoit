@@ -3,7 +3,7 @@
 The coordinator is responsible for:
 1. Opening the XML file with mmap
 2. Splitting the file into byte ranges, snapping boundaries to top-level element start tags
-3. Dispatching workers to process each range
+3. Dispatching workers through a process pool with a serial fallback
 4. Collecting results and orchestrating the DuckDB reconciliation phase
 
 This module implements the "coordinator" part of the parallel architecture,
@@ -21,6 +21,7 @@ import tempfile
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from importlib import import_module
+from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -62,8 +63,22 @@ def resolve_worker_count(
     return max(1, min(8, max(1, available - 1)))
 
 
-# Regex to find top-level element start tags for boundary snapping
-_TOP_LEVEL_START_RE = re.compile(rb"<(Record|Workout|ActivitySummary)\b")
+# The scanner only needs enough XML syntax to distinguish top-level elements
+# from tags in comments, CDATA, processing instructions, and child elements.
+# Quoted attribute values are consumed as a unit so a ``>`` in an attribute
+# cannot terminate a start tag early.
+_XML_TOKEN_RE = re.compile(
+    rb"""
+    <!--.*?-->
+    |<!\[CDATA\[.*?\]\]>
+    |<\?.*?\?>
+    |<(?P<closing>/?)\s*
+      (?P<name>[A-Za-z_][A-Za-z0-9_.:-]*)
+      (?P<body>(?:[^>\"']|\"[^\"]*\"|'[^']*')*)>
+    """,
+    re.DOTALL | re.VERBOSE,
+)
+_TOP_LEVEL_ELEMENT_NAMES = frozenset({b"Record", b"Workout", b"ActivitySummary"})
 
 
 def split_boundaries(buf: bytes | mmap.mmap, n_workers: int) -> list[tuple[int, int]]:
@@ -90,31 +105,61 @@ def split_boundaries(buf: bytes | mmap.mmap, n_workers: int) -> list[tuple[int, 
     N = len(buf)
     if n_workers <= 1:
         return [(0, N)]
+    if N == 0:
+        return [(0, 0)]
 
     ideal = (N + n_workers - 1) // n_workers
-    ranges: list[tuple[int, int]] = []
+    bases = [min(i * ideal, N) for i in range(1, n_workers)]
+    starts = [0, *_snap_to_top_level_starts(buf, bases)]
+    boundaries = [*starts, N]
 
-    for i in range(n_workers):
-        base = min(i * ideal, N)
-        if i == 0:
-            start = 0
-        else:
-            # Snap forward to next top-level start tag
-            m = _TOP_LEVEL_START_RE.search(buf, base)
-            if m is None:
-                start = N  # Tail worker is empty
-            else:
-                start = m.start()
+    # A snapped boundary can coincide with its neighbor when an export has
+    # fewer elements than the requested worker count. Drop those empty ranges
+    # while preserving contiguous coverage of the source bytes.
+    return [(start, end) for start, end in pairwise(boundaries) if end > start]
 
-        ranges.append((start, None))  # type: ignore[arg-type]
 
-    # Post-process: each worker's end == next worker's start
-    for i in range(len(ranges) - 1):
-        ranges[i] = (ranges[i][0], ranges[i + 1][0])
-    ranges[-1] = (ranges[-1][0], N)
+def _snap_to_top_level_starts(buf: bytes | mmap.mmap, bases: list[int]) -> list[int]:
+    """Find the next canonical element start for each requested byte offset.
 
-    # Drop empty tail workers
-    return [(s, e) for (s, e) in ranges if e > s]
+    This is a single forward lexical pass rather than an independent regex
+    search for each boundary. It keeps tags in comments and CDATA invisible,
+    tracks XML nesting, and only returns ``Record``, ``Workout``, and
+    ``ActivitySummary`` starts directly below ``HealthData``.
+    """
+    snapped = [len(buf)] * len(bases)
+    next_base = 0
+    depth = 0
+    top_level_depth: int | None = None
+
+    for match in _XML_TOKEN_RE.finditer(buf):
+        closing = match.group("closing")
+        if closing:
+            depth = max(0, depth - 1)
+            continue
+
+        name = match.group("name")
+        if name is None:
+            # Comment, CDATA, or processing-instruction token.
+            continue
+        body = match.group("body") or b""
+        if top_level_depth is None:
+            # Valid exports have HealthData as the document element, but
+            # keeping fragment inputs useful makes this helper predictable in
+            # isolation and in low-level tests.
+            top_level_depth = 0 if name in _TOP_LEVEL_ELEMENT_NAMES else 1
+        if depth == top_level_depth and name in _TOP_LEVEL_ELEMENT_NAMES:
+            position = match.start()
+            while next_base < len(bases) and position >= bases[next_base]:
+                snapped[next_base] = position
+                next_base += 1
+            if next_base == len(bases):
+                break
+
+        if not body.rstrip().endswith(b"/"):
+            depth += 1
+
+    return snapped
 
 
 def ingest(
@@ -128,11 +173,8 @@ def ingest(
     This function orchestrates the parallel byte-scan ingestion:
     1. Open the XML file with mmap
     2. Split into byte ranges with boundary snapping
-    3. Dispatch workers (currently single-threaded for Phase 0 spike)
+    3. Dispatch workers through a process pool with a serial fallback
     4. Collect results
-
-    For Phase 0, this runs single-threaded to validate correctness before
-    adding multiprocessing in Phase 2.
 
     Args:
         xml_path: Path to the XML file
@@ -189,64 +231,24 @@ def ingest(
             # restricted runtimes (including sandboxed CI) expose no named
             # semaphores; correctness is preserved with a visible serial
             # fallback rather than failing an otherwise valid import.
-            if n_workers == 1 or not _multiprocessing_available():
-                if n_workers > 1:
+            try:
+                if len(ranges) <= 1:
+                    logger.info("ingest.worker.single")
+                    results = _run_worker_ranges_serial(xml_path, ranges, shard_dir)
+                elif not _multiprocessing_available():
                     logger.warning("Multiprocessing is unavailable; processing the import serially")
-                # Single worker - execute synchronously
-                logger.info("ingest.worker.single")
-                results: list[WorkerResult] = []
-                for i, (start, end) in enumerate(ranges):
-                    result = parse_byte_range(
-                        xml_path=str(xml_path),
-                        start_byte=start,
-                        end_byte=end,
-                        worker_idx=i,
-                        shard_dir=str(shard_dir),
-                    )
-                    results.append(result)
+                    results = _run_worker_ranges_serial(xml_path, ranges, shard_dir)
+                else:
                     logger.info(
-                        "ingest.worker.complete",
-                        extra={"payload": {"worker": i, "records": result.records_count}},
+                        "ingest.worker.parallel", extra={"payload": {"workers": len(ranges)}}
                     )
-            else:
-                # Multiple workers - execute in parallel
-                logger.info("ingest.worker.parallel", extra={"payload": {"workers": len(ranges)}})
-                results: list[WorkerResult] = []
-                with ProcessPoolExecutor(max_workers=len(ranges)) as executor:
-                    # Submit all worker tasks
-                    future_to_worker = {}
-                    for i, (start, end) in enumerate(ranges):
-                        future = executor.submit(
-                            parse_byte_range,
-                            xml_path=str(xml_path),
-                            start_byte=start,
-                            end_byte=end,
-                            worker_idx=i,
-                            shard_dir=str(shard_dir),
-                        )
-                        future_to_worker[future] = i
-
-                    # Collect results as they complete
-                    for future in as_completed(future_to_worker):
-                        worker_idx = future_to_worker[future]
-                        try:
-                            result = future.result()
-                            results.append(result)
-                            logger.info(
-                                "ingest.worker.complete",
-                                extra={
-                                    "payload": {
-                                        "worker": worker_idx,
-                                        "records": result.records_count,
-                                    }
-                                },
-                            )
-                        except Exception as e:
-                            logger.error("ingest.worker.failed", exc_info=e)
-                            raise
-
-                # Sort results by worker_idx to maintain consistent ordering
-                results.sort(key=lambda r: r.worker_idx)
+                    results = _run_worker_ranges_parallel(xml_path, ranges, shard_dir)
+            except Exception:
+                # Never leave a partially-written shard set that a later caller
+                # could mistake for a complete import.
+                if cleanup:
+                    shutil.rmtree(shard_dir, ignore_errors=True)
+                raise
 
     # Aggregate results
     total_records = sum(r.records_count for r in results)
@@ -280,12 +282,114 @@ def ingest(
     }
 
 
+def _log_worker_complete(result: WorkerResult) -> None:
+    """Log one worker completion without including health-data contents."""
+    logger.info(
+        "ingest.worker.complete",
+        extra={"payload": {"worker": result.worker_idx, "records": result.records_count}},
+    )
+
+
+def _validate_worker_results(
+    results: list[WorkerResult], expected_worker_count: int
+) -> list[WorkerResult]:
+    """Validate that every range produced exactly one correctly indexed result."""
+    by_worker: dict[int, WorkerResult] = {}
+    for result in results:
+        if result.worker_idx in by_worker:
+            raise RuntimeError(f"Duplicate result for ingest worker {result.worker_idx}")
+        if not 0 <= result.worker_idx < expected_worker_count:
+            raise RuntimeError(f"Unexpected result for ingest worker {result.worker_idx}")
+        by_worker[result.worker_idx] = result
+
+    missing = sorted(set(range(expected_worker_count)) - by_worker.keys())
+    if missing:
+        raise RuntimeError(f"Missing ingest worker results: {missing}")
+    return [by_worker[index] for index in range(expected_worker_count)]
+
+
+def _run_worker_ranges_serial(
+    xml_path: Path, ranges: list[tuple[int, int]], shard_dir: Path
+) -> list[WorkerResult]:
+    """Run ranges in worker order for the one-process fallback path."""
+    results: list[WorkerResult] = []
+    for worker_idx, (start, end) in enumerate(ranges):
+        result = parse_byte_range(
+            xml_path=str(xml_path),
+            start_byte=start,
+            end_byte=end,
+            worker_idx=worker_idx,
+            shard_dir=str(shard_dir),
+        )
+        _log_worker_complete(result)
+        results.append(result)
+    return _validate_worker_results(results, len(ranges))
+
+
+def _run_worker_ranges_parallel(
+    xml_path: Path, ranges: list[tuple[int, int]], shard_dir: Path
+) -> list[WorkerResult]:
+    """Run ranges in a process pool and return results in worker order.
+
+    Pool construction can fail in restricted runtimes even when the import
+    module is available. Falling back at that point is safe because no task has
+    been submitted and therefore no shard has been written by a child process.
+    Once submission begins, failures are surfaced so a partial import cannot be
+    silently retried with a mixture of old and new shards.
+    """
+    try:
+        executor = ProcessPoolExecutor(max_workers=len(ranges))
+    except (OSError, RuntimeError) as exc:
+        logger.warning(
+            "Process pool unavailable; processing the import serially",
+            extra={"payload": {"error": type(exc).__name__}},
+        )
+        return _run_worker_ranges_serial(xml_path, ranges, shard_dir)
+
+    future_to_worker = {}
+    try:
+        for worker_idx, (start, end) in enumerate(ranges):
+            future = executor.submit(
+                parse_byte_range,
+                xml_path=str(xml_path),
+                start_byte=start,
+                end_byte=end,
+                worker_idx=worker_idx,
+                shard_dir=str(shard_dir),
+            )
+            future_to_worker[future] = worker_idx
+
+        results: list[WorkerResult] = []
+        for future in as_completed(future_to_worker):
+            worker_idx = future_to_worker[future]
+            try:
+                result = future.result()
+            except Exception:
+                logger.exception("ingest.worker.failed", extra={"payload": {"worker": worker_idx}})
+                raise
+            if result.worker_idx != worker_idx:
+                raise RuntimeError(
+                    f"Ingest worker {worker_idx} returned result for worker {result.worker_idx}"
+                )
+            _log_worker_complete(result)
+            results.append(result)
+    except BaseException:
+        for future in future_to_worker:
+            future.cancel()
+        executor.shutdown(wait=True, cancel_futures=True)
+        raise
+    else:
+        executor.shutdown(wait=True)
+
+    return _validate_worker_results(results, len(ranges))
+
+
 def _multiprocessing_available() -> bool:
     """Return whether this runtime can create the semaphores used by workers."""
     try:
         import_module("multiprocessing.synchronize")
         os.sysconf("SC_SEM_NSEMS_MAX")
-    except (ImportError, OSError, ValueError):
+    except (AttributeError, ImportError, OSError, ValueError):
         return False
     return True
 

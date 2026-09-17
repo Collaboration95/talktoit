@@ -84,6 +84,21 @@ def test_worker_count_invariance_6_workers(sample_xml, db):
     assert stats["activity_summaries"] == 5
 
 
+def test_worker_count_invariance_8_workers(sample_xml, db):
+    """Test the configured worker-count ceiling on the fixture."""
+    stats = ingest_v2(sample_xml, db, n_workers=8)
+
+    assert stats["records"] == 40
+    assert stats["record_metadata"] == 7
+    assert stats["hrv_beats"] == 7
+    assert stats["workouts"] == 3
+    assert stats["workout_events"] == 6
+    assert stats["workout_statistics"] == 8
+    assert stats["workout_routes"] == 2
+    assert stats["workout_metadata"] == 12
+    assert stats["activity_summaries"] == 5
+
+
 def test_data_consistency_across_worker_counts(sample_xml):
     """Test that data is consistent across different worker counts."""
     # Run with 1 worker
