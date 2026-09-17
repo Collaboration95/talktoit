@@ -28,6 +28,27 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_LOAD_TABLES = (
+    "records",
+    "record_metadata",
+    "hrv_beats",
+    "workouts",
+    "workout_events",
+    "workout_statistics",
+    "workout_routes",
+    "workout_metadata",
+    "activity_summaries",
+)
+
+_CHILD_PARENT_TABLES = {
+    "record_metadata": "records",
+    "hrv_beats": "records",
+    "workout_events": "workouts",
+    "workout_statistics": "workouts",
+    "workout_routes": "workouts",
+    "workout_metadata": "workouts",
+}
+
 
 def _find_tables_with_data(shard_dir: str) -> set[str]:
     """Scan shard directory and return set of table prefixes that have parquet data."""
@@ -38,6 +59,59 @@ def _find_tables_with_data(shard_dir: str) -> set[str]:
         prefix = basename.split("-")[0]
         tables.add(prefix)
     return tables
+
+
+def _validate_shard_relationships(tables_with_data: set[str]) -> None:
+    """Reject child shards that cannot be reconciled to a parent table."""
+    missing_parents = {
+        child: parent
+        for child, parent in _CHILD_PARENT_TABLES.items()
+        if child in tables_with_data and parent not in tables_with_data
+    }
+    if missing_parents:
+        details = ", ".join(
+            f"{child} requires {parent}" for child, parent in sorted(missing_parents.items())
+        )
+        raise ValueError(f"Cannot reconcile shards with missing parent data: {details}")
+
+
+# ruff: noqa: S608 - table names and paths are closed over validated constants
+def _get_expected_row_counts(
+    db: duckdb.DuckDBPyConnection,
+    shard_dir: str,
+    tables_with_data: set[str],
+) -> dict[str, int]:
+    """Read source counts and validate parent worker-local key uniqueness."""
+    shard_dir = shard_dir.replace("'", "''")
+    tables = [table for table in _LOAD_TABLES if table in tables_with_data]
+    if not tables:
+        return {}
+
+    count_queries: list[str] = []
+    for table in tables:
+        path = f"{shard_dir}/{table}-*.parquet"
+        if table in ("records", "workouts"):
+            count_queries.append(
+                f"SELECT '{table}', COUNT(*), "
+                f"COUNT(DISTINCT (worker_idx, local_id)) "
+                f"FROM read_parquet('{path}')"
+            )
+        else:
+            count_queries.append(
+                f"SELECT '{table}', COUNT(*), NULL::BIGINT FROM read_parquet('{path}')"
+            )
+
+    rows = db.execute(" UNION ALL ".join(count_queries)).fetchall()
+    expected: dict[str, int] = {}
+    for table_name, row_count, unique_parent_keys in rows:
+        count = int(row_count)
+        expected[table_name] = count
+        if unique_parent_keys is not None and int(unique_parent_keys) != count:
+            raise ValueError(
+                f"Duplicate worker-local keys in {table_name} shards; "
+                "(worker_idx, local_id) must identify exactly one parent row"
+            )
+    return expected
 
 
 # ruff: noqa: S608 - this function emits closed, escaped shard paths only
@@ -56,6 +130,7 @@ def _build_load_sql(shard_dir: str) -> list[tuple[str, str | None]]:
     """
     tables_with_data = _find_tables_with_data(shard_dir)
     logger.info("reconcile.tables", extra={"payload": {"count": len(tables_with_data)}})
+    _validate_shard_relationships(tables_with_data)
 
     # DuckDB accepts a glob path in read_parquet(); quote apostrophes in the
     # resolved directory so a perfectly valid user directory cannot break SQL.
@@ -284,13 +359,6 @@ def load_shards_into_duckdb(db: duckdb.DuckDBPyConnection, shard_dir: str | Path
     if not shard_dir.exists():
         raise FileNotFoundError(f"Shard directory not found: {shard_dir}")
 
-    logger.info("Creating schema (DROP + CREATE)")
-    # Index maintenance is deferred until every shard has been loaded. This
-    # keeps the large bulk inserts out of the index update path.
-    reset_schema(db, with_indexes=False)
-
-    logger.info("reconcile.load_shards")
-
     # Verify parquet files exist before loading
     parquet_files = glob.glob(str(shard_dir / "*.parquet"))
     if not parquet_files:
@@ -304,6 +372,9 @@ def load_shards_into_duckdb(db: duckdb.DuckDBPyConnection, shard_dir: str | Path
 
     # Convert path to string with forward slashes for DuckDB compatibility
     shard_dir_str = str(shard_dir).replace("\\", "/")
+    tables_with_data = _find_tables_with_data(shard_dir_str)
+    _validate_shard_relationships(tables_with_data)
+    expected_row_counts = _get_expected_row_counts(db, shard_dir_str, tables_with_data)
 
     # Build SQL statements dynamically based on which tables have data
     statements = _build_load_sql(shard_dir_str)
@@ -319,6 +390,13 @@ def load_shards_into_duckdb(db: duckdb.DuckDBPyConnection, shard_dir: str | Path
     db.execute("BEGIN")
 
     try:
+        logger.info("Creating schema (DROP + CREATE)")
+        # Index maintenance is deferred until every shard has been loaded.
+        # Keeping the reset in this transaction also preserves the prior
+        # staged database if validation or reconciliation fails.
+        reset_schema(db, with_indexes=False)
+        logger.info("reconcile.load_shards")
+
         for i, (statement, inserted_table) in enumerate(statements):
             if statement:
                 logger.info(
@@ -333,9 +411,22 @@ def load_shards_into_duckdb(db: duckdb.DuckDBPyConnection, shard_dir: str | Path
                             f"SELECT COUNT(*) FROM {inserted_table}"
                         ).fetchone()
                         count = count_result[0] if count_result else 0
+                        expected = expected_row_counts.get(inserted_table)
+                        if expected is not None and count != expected:
+                            raise ValueError(
+                                f"Reconciliation row-count mismatch for {inserted_table}: "
+                                f"expected {expected}, loaded {count}; "
+                                "a worker-local foreign key may be invalid"
+                            )
                         logger.info(
                             "reconcile.inserted",
-                            extra={"payload": {"table": inserted_table, "rows": count}},
+                            extra={
+                                "payload": {
+                                    "table": inserted_table,
+                                    "rows": count,
+                                    "expected_rows": expected,
+                                }
+                            },
                         )
                 except Exception as stmt_error:
                     logger.error(
