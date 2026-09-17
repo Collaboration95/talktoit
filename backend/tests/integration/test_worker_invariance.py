@@ -1,9 +1,12 @@
 """Tests for worker count invariance - verifies parallel execution correctness."""
 
+from itertools import pairwise
+from pathlib import Path
+
 import duckdb
 import pytest
 
-from app.ingest.coordinator import ingest_v2
+from app.ingest.coordinator import ingest_v2, split_boundaries
 
 
 @pytest.fixture
@@ -97,6 +100,19 @@ def test_worker_count_invariance_8_workers(sample_xml, db):
     assert stats["workout_routes"] == 2
     assert stats["workout_metadata"] == 12
     assert stats["activity_summaries"] == 5
+
+
+@pytest.mark.parametrize("n_workers", [1, 2, 4, 6, 8])
+def test_boundaries_are_contiguous_and_start_on_top_level_tags(sample_xml, n_workers):
+    """Worker ranges cover the file without splitting a top-level element."""
+    data = Path(sample_xml).read_bytes()
+    ranges = split_boundaries(data, n_workers)
+
+    assert ranges[0][0] == 0
+    assert ranges[-1][1] == len(data)
+    assert all(previous[1] == current[0] for previous, current in pairwise(ranges))
+    for start, _ in ranges[1:]:
+        assert data.startswith((b"<Record", b"<Workout", b"<ActivitySummary"), start)
 
 
 def test_data_consistency_across_worker_counts(sample_xml):

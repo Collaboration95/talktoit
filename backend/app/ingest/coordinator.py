@@ -19,6 +19,7 @@ import re
 import shutil
 import tempfile
 import time
+from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from importlib import import_module
 from itertools import pairwise
@@ -81,6 +82,33 @@ _XML_TOKEN_RE = re.compile(
 _TOP_LEVEL_ELEMENT_NAMES = frozenset({b"Record", b"Workout", b"ActivitySummary"})
 
 
+def _iter_top_level_elements(buf: bytes | mmap.mmap) -> Iterator[tuple[bytes, int]]:
+    """Yield supported elements directly below the document root.
+
+    The boundary and coverage checks must use the same lexical rules so tags
+    in comments, CDATA, processing instructions, and attribute values cannot
+    inflate the expected count.
+    """
+    depth = 0
+    top_level_depth: int | None = None
+    for match in _XML_TOKEN_RE.finditer(buf):
+        closing = match.group("closing")
+        if closing:
+            depth = max(0, depth - 1)
+            continue
+
+        name = match.group("name")
+        if name is None:
+            continue
+        body = match.group("body") or b""
+        if top_level_depth is None:
+            top_level_depth = 0 if name in _TOP_LEVEL_ELEMENT_NAMES else 1
+        if depth == top_level_depth and name in _TOP_LEVEL_ELEMENT_NAMES:
+            yield name, match.start()
+        if not body.rstrip().endswith(b"/"):
+            depth += 1
+
+
 def split_boundaries(buf: bytes | mmap.mmap, n_workers: int) -> list[tuple[int, int]]:
     """Split a buffer into byte ranges, snapping to top-level element boundaries.
 
@@ -103,10 +131,10 @@ def split_boundaries(buf: bytes | mmap.mmap, n_workers: int) -> list[tuple[int, 
         and cover the entire buffer.
     """
     N = len(buf)
+    if N == 0:
+        return []
     if n_workers <= 1:
         return [(0, N)]
-    if N == 0:
-        return [(0, 0)]
 
     ideal = (N + n_workers - 1) // n_workers
     bases = [min(i * ideal, N) for i in range(1, n_workers)]
@@ -162,6 +190,28 @@ def _snap_to_top_level_starts(buf: bytes | mmap.mmap, bases: list[int]) -> list[
     return snapped
 
 
+def _count_top_level_elements(buf: bytes | mmap.mmap) -> dict[str, int]:
+    """Count each supported top-level element in one lexical pass."""
+    counts = {"Record": 0, "Workout": 0, "ActivitySummary": 0}
+    for name, _ in _iter_top_level_elements(buf):
+        counts[name.decode("ascii")] += 1
+    return counts
+
+
+def _assert_top_level_counts(results: list[WorkerResult], expected: dict[str, int]) -> None:
+    """Fail loudly if worker output does not cover each source element once."""
+    actual = {
+        "Record": sum(result.records_count for result in results),
+        "Workout": sum(result.workouts_count for result in results),
+        "ActivitySummary": sum(result.activity_summaries_count for result in results),
+    }
+    if actual != expected:
+        raise RuntimeError(
+            "Phase 2 worker coverage mismatch: "
+            f"expected {expected}, got {actual}; ranges must cover each top-level element once"
+        )
+
+
 def ingest(
     xml_path: str | Path,
     n_workers: int | None = None,
@@ -173,12 +223,13 @@ def ingest(
     This function orchestrates the parallel byte-scan ingestion:
     1. Open the XML file with mmap
     2. Split into byte ranges with boundary snapping
-    3. Dispatch workers through a process pool with a serial fallback
+    3. Dispatch one worker task per non-empty range through a process pool or
+       serial fallback
     4. Collect results
 
     Args:
         xml_path: Path to the XML file
-        n_workers: Number of workers (default: from env or min(cpu_count-2, 8))
+        n_workers: Number of workers (default: from env or the local auto policy)
         shard_dir: Directory for Parquet shards (default: temporary directory)
         cleanup: Whether to clean up the shard directory after ingestion (default: True)
 
@@ -218,6 +269,7 @@ def ingest(
         with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
             # Split into byte ranges
             logger.info("ingest.split", extra={"payload": {"workers": n_workers}})
+            expected_top_level_counts = _count_top_level_elements(mm)
             ranges = split_boundaries(mm, n_workers)
             logger.info("ingest.ranges.created", extra={"payload": {"ranges": len(ranges)}})
 
@@ -232,7 +284,10 @@ def ingest(
             # semaphores; correctness is preserved with a visible serial
             # fallback rather than failing an otherwise valid import.
             try:
-                if len(ranges) <= 1:
+                if not ranges:
+                    logger.info("ingest.worker.empty")
+                    results: list[WorkerResult] = []
+                elif len(ranges) <= 1:
                     logger.info("ingest.worker.single")
                     results = _run_worker_ranges_serial(xml_path, ranges, shard_dir)
                 elif not _multiprocessing_available():
@@ -246,6 +301,13 @@ def ingest(
             except Exception:
                 # Never leave a partially-written shard set that a later caller
                 # could mistake for a complete import.
+                if cleanup:
+                    shutil.rmtree(shard_dir, ignore_errors=True)
+                raise
+
+            try:
+                _assert_top_level_counts(results, expected_top_level_counts)
+            except Exception:
                 if cleanup:
                     shutil.rmtree(shard_dir, ignore_errors=True)
                 raise
