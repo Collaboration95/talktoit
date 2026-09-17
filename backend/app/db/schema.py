@@ -112,14 +112,18 @@ CREATE TABLE IF NOT EXISTS activity_summaries (
     apple_stand_hours_goal   INTEGER
 );
 
--- Index for common filter paths.
+"""
+
+# Keep bulk-load DDL separate from table creation. DuckDB must otherwise
+# maintain every index while the Parquet shards are being reconciled.
+SQL_POST_LOAD = """
 CREATE INDEX IF NOT EXISTS idx_records_type_date ON records(type, start_date);
 CREATE INDEX IF NOT EXISTS idx_records_source ON records(source_name);
 CREATE INDEX IF NOT EXISTS idx_workouts_type_date ON workouts(activity_type, start_date);
 CREATE INDEX IF NOT EXISTS idx_workout_stats_workout_type ON workout_statistics(workout_id, type);
 """
 
-SQL_RESET_SCHEMA = """
+SQL_DROP_TABLES = """
 DROP TABLE IF EXISTS hrv_beats;
 DROP TABLE IF EXISTS record_metadata;
 DROP TABLE IF EXISTS records;
@@ -131,11 +135,28 @@ DROP TABLE IF EXISTS workouts;
 DROP TABLE IF EXISTS activity_summaries;
 """
 
+# Backwards-compatible name for callers that explicitly need a destructive
+# schema reset. New code should prefer ``SQL_DROP_TABLES`` for clarity.
+SQL_RESET_SCHEMA = SQL_DROP_TABLES
+
 if TYPE_CHECKING:
     import duckdb
 
 
-def reset_schema(conn: duckdb.DuckDBPyConnection) -> None:
-    """Destructively clear all health tables, then recreate them."""
-    conn.execute(SQL_RESET_SCHEMA)
+def rebuild_indexes(conn: duckdb.DuckDBPyConnection) -> None:
+    """Rebuild the indexes used by dashboard and query filter paths."""
+    conn.execute(SQL_POST_LOAD)
+
+
+def reset_schema(conn: duckdb.DuckDBPyConnection, *, with_indexes: bool = True) -> None:
+    """Destructively clear all health tables, then recreate them.
+
+    Args:
+        conn: Open DuckDB connection.
+        with_indexes: Create query indexes immediately. Bulk loaders can set
+            this to ``False`` and call :func:`rebuild_indexes` after loading.
+    """
+    conn.execute(SQL_DROP_TABLES)
     conn.execute(SQL_CREATE_TABLES)
+    if with_indexes:
+        rebuild_indexes(conn)

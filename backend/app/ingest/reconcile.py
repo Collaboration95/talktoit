@@ -21,7 +21,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from app.db.schema import reset_schema
+from app.db.schema import rebuild_indexes, reset_schema
 
 if TYPE_CHECKING:
     import duckdb
@@ -285,7 +285,9 @@ def load_shards_into_duckdb(db: duckdb.DuckDBPyConnection, shard_dir: str | Path
         raise FileNotFoundError(f"Shard directory not found: {shard_dir}")
 
     logger.info("Creating schema (DROP + CREATE)")
-    reset_schema(db)
+    # Index maintenance is deferred until every shard has been loaded. This
+    # keeps the large bulk inserts out of the index update path.
+    reset_schema(db, with_indexes=False)
 
     logger.info("reconcile.load_shards")
 
@@ -308,6 +310,7 @@ def load_shards_into_duckdb(db: duckdb.DuckDBPyConnection, shard_dir: str | Path
 
     if not statements:
         logger.warning("No tables to load - no parquet files found with recognized prefixes")
+        rebuild_indexes(db)
         return
 
     logger.info("reconcile.statements", extra={"payload": {"count": len(statements)}})
@@ -344,6 +347,12 @@ def load_shards_into_duckdb(db: duckdb.DuckDBPyConnection, shard_dir: str | Path
                         extra={"payload": {"kind": type(stmt_error).__name__}},
                     )
                     raise
+
+        # Build the query-path indexes only after all parent and child rows are
+        # present. Keeping this in the transaction makes a failed index build
+        # fail the staged import rather than leaving a partially indexed DB.
+        logger.info("reconcile.rebuild_indexes")
+        rebuild_indexes(db)
 
         db.execute("COMMIT")
         logger.info("reconcile.complete")
