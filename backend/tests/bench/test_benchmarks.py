@@ -36,6 +36,19 @@ THRESHOLDS = {
     "ingest_explicit_workers": 30_000.0,
 }
 
+INGEST_COUNT_FIELDS = (
+    "records",
+    "record_metadata",
+    "hrv_beats",
+    "workouts",
+    "workout_events",
+    "workout_statistics",
+    "workout_routes",
+    "workout_metadata",
+    "activity_summaries",
+)
+EXPECTED_INGEST_COUNTS = (40, 7, 7, 3, 6, 8, 2, 12, 5)
+
 
 @pytest.fixture
 def seeded_db() -> duckdb.DuckDBPyConnection:
@@ -205,21 +218,21 @@ def test_provider_timeout_chat_benchmark(seeded_db, isolated_state) -> None:
     ],
 )
 def test_ingest_worker_benchmarks(mode: str, workers: int | None, tmp_path) -> None:
-    """Ingest completes under threshold in one/auto/explicit worker modes."""
+    """Ingest is fast and preserves every canonical table count in each mode."""
 
     source_size = FIXTURE.stat().st_size
     resolved = resolve_worker_count(source_size, cpu_count=8) if workers is None else workers
 
-    def run() -> int:
+    def run() -> tuple[int, ...]:
         conn = duckdb.connect(":memory:")
         try:
             stats = ingest_v2(xml_path=FIXTURE, db=conn, n_workers=resolved)
         finally:
             conn.close()
-        return int(stats["records"])
+        return tuple(int(stats[field]) for field in INGEST_COUNT_FIELDS)
 
     result, duration_ms = run_benchmark(mode, THRESHOLDS[mode], run)
-    assert result > 0
+    assert result == EXPECTED_INGEST_COUNTS
     assert duration_ms <= THRESHOLDS[mode]
 
 
