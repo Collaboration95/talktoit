@@ -9,6 +9,11 @@ A self-hostable web app for Apple Health users. Drop in your export, ask questio
 - **Import manager** — upload or re-import an Apple Health `export.xml` from Settings with staged activation and safe failure retention
 - **Workout route explorer** — inspect an ordered local route with derived distance/bounds facts and download its GeoJSON geometry
 
+## Reliability
+
+- V2 imports use worker-safe XML boundaries, exact-once coverage checks, transactional parent/child reconciliation, and deferred index builds for bulk loads.
+- Chat responses use a validated envelope, persisted turn IDs, explicit follow-up parents, bounded tool inputs, and grounded compact narration. Degraded answers are not cached as successes.
+
 ## Local-model chat in practice
 
 These local-model UI examples use the repository's synthetic Apple Health fixture, not personal
@@ -118,6 +123,8 @@ tooling rationale, coverage gates, and pre-commit setup.
 | `LITERT_BASE_URL` | no | `http://127.0.0.1:9379/v1` | LiteRT-LM base URL (local) |
 | `LITERT_MODEL` | no | `gemma4-e2b` | LiteRT local model |
 | `LITERT_SERVE_CMD` | no | `litert-lm serve …` | Override LiteRT serve command (e.g. custom binary path). Fallback: `~/litert-lm/.venv/bin/litert-lm` |
+| `TTI_INGEST_WORKERS` | no | `auto` | V2 worker count; explicit values are clamped to 1–8. |
+| `TTI_INGEST_FALLBACK_LEGACY` | no | `0` | Set to `1` to retry with the legacy parser if V2 compatibility checks fail. |
 | `TTI_PROVIDER_MODE` | no | `local_only` | Groq egress gate: `local_only`, `remote_planning`, or `remote_planning_and_narration`. Ignored for `local` provider (zero egress). |
 | `TTI_PROVIDER_TIMEOUT_SECONDS` | no | `15` | Total provider request deadline |
 | `TTI_PROVIDER_MAX_RETRIES` | no | `2` | Bounded transient provider retries |
