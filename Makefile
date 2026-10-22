@@ -9,7 +9,7 @@
         typecheck typecheck-backend typecheck-frontend \
         lint lint-backend lint-frontend format format-backend format-frontend \
         coverage ingest clean build run run-cli check check-full groq-smoke verify-headless \
-        test-bench
+        test-bench bench bench-synthetic diagnostics
 
 # ── Bootstrap ────────────────────────────────────────────────────────────────
 install:
@@ -56,6 +56,14 @@ diagnostics:
 
 bench:
 	uv run --directory backend pytest tests/bench -m benchmark --no-cov -q
+
+# Slow generated-only baseline; run on a quiet machine, never in ordinary CI.
+# Sampling/limitations/protocol: docs/decisions/performance-baseline.md
+# Usage: make bench-synthetic BENCH_ARGS="--samples 20 --warmups 2"
+bench-synthetic:
+	@node -e 'if (process.versions.node.split(".")[0] !== "20") process.exit(1)'
+	@npm --prefix frontend run build -- --manifest >&2
+	@uv run --directory backend python -m app.bench.synthetic $(BENCH_ARGS)
 
 # ── Tests ────────────────────────────────────────────────────────────────────
 test: test-all   # alias
