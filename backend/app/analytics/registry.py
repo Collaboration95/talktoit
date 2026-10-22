@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Literal, cast
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.analytics.metric_catalog import METRIC_CATALOG
 from app.models.templates import (
@@ -105,6 +105,34 @@ class ComparisonInput(BaseModel):
     this_label: str = Field(min_length=1, max_length=160)
     last_label: str = Field(min_length=1, max_length=160)
     activity_type: str | None = Field(default=None, min_length=1, max_length=160)
+
+    metric_ids: list[Literal["steps", "resting_hr", "hrv"]] | None = Field(
+        default=None, min_length=1
+    )
+
+    @model_validator(mode="after")
+    def ordered_dates(self) -> ComparisonInput:
+        """Require two ordered periods and a consistent metric scope."""
+        if self.this_start > self.this_end or self.last_start > self.last_end:
+            raise ValueError("comparison period start must not be after its end")
+        if self.metric_ids is not None and self.activity_type is not None:
+            raise ValueError("metric comparisons do not accept workout filters")
+        return self
+
+
+class SleepTrendInput(BaseModel):
+    """Validated category-interval coverage, distinct from numeric trends."""
+
+    start: date
+    end: date
+    granularity: Literal["day", "week", "month"]
+
+    @model_validator(mode="after")
+    def ordered_dates(self) -> SleepTrendInput:
+        """Reject inverted inclusive local periods."""
+        if self.start > self.end:
+            raise ValueError("sleep period start must not be after its end")
+        return self
 
 
 class MetricTrendInput(BaseModel):
@@ -235,10 +263,10 @@ QUERY_REGISTRY: dict[str, QueryDefinition] = {
     ),
     "comparison": QueryDefinition(
         "comparison",
-        "v1",
+        "v2",
         "Asia/Singapore",
         "mixed",
-        ("workouts", "workout_statistics"),
+        ("workouts", "workout_statistics", "records"),
         "zero_comparison",
         "success",
         "unavailable",
@@ -250,12 +278,29 @@ QUERY_REGISTRY: dict[str, QueryDefinition] = {
             "this_label",
             "last_label",
             "activity_type",
+            "metric_ids",
         ),
-        ("workouts",),
-        "Both periods are calculated from the same selected local workout scope.",
-        "Each workout contributes once to each requested period.",
+        ("workouts", "steps", "resting_hr", "hrv"),
+        "Workout scope or all imported numeric metric sources in each explicit period.",
+        "Steps average observed daily sums; resting HR and HRV average observations.",
         "compact_facts",
         ComparisonInput,
+    ),
+    "sleep_trend": QueryDefinition(
+        "sleep_trend",
+        "v1",
+        "Asia/Singapore",
+        "hours",
+        ("records",),
+        "missing_buckets",
+        "success",
+        "unavailable",
+        ("start", "end", "granularity"),
+        ("sleep",),
+        "Exclude exact AutoSleep and NULL sources; include all category labels.",
+        "Union full intervals within each local start bucket, including overnight intervals.",
+        "none",
+        SleepTrendInput,
     ),
     "metric_trend": QueryDefinition(
         "metric_trend",
@@ -376,6 +421,7 @@ def execute_comparison(conn: object, values: dict[str, object]) -> ComparisonDat
         args.this_label,
         args.last_label,
         activity_type=args.activity_type,
+        metric_ids=args.metric_ids,
     )
 
 
@@ -448,3 +494,11 @@ def execute_workout_collection(
         args.limit + 1,
     )
     return cast(list[WorkoutCollectionRow], rows)
+
+
+def execute_sleep_trend(conn: object, values: dict[str, object]) -> TrendChartData:
+    """Validate and execute the local-only sleep interval coverage query."""
+    from app.db import queries
+
+    args = SleepTrendInput.model_validate(values)
+    return queries.get_sleep_trend(conn, args.start, args.end, args.granularity)  # type: ignore[arg-type]

@@ -115,7 +115,22 @@ not zero.
 ```
 
 `direction` is `up`, `down`, or `flat` and describes the displayed numeric comparison only.
-It is not a health interpretation.
+It is not a health interpretation. Metric comparisons add optional nullable row fields:
+`this_observed_days`, `this_requested_days`, `last_observed_days`,
+`last_requested_days`, `value_basis` (`observed_day_mean` or `observation_mean`),
+and `direction_tone` (`neutral`). Existing workout rows remain valid without them.
+Steps use `steps/day` and average daily source-row sums over observed days;
+resting HR (`bpm`) and HRV (`ms`) average observations. Missing sides and their
+deltas are null; true zero counts as observed. No percentage is emitted.
+
+Sleep reuses `trend_chart` with `metric_label: Sleep`, `metric_unit: hours` and a
+coverage title. Its series unions all selected category intervals, including
+awake/in-bed, per SGT start bucket. It does not measure time asleep. Whole
+intervals stay in their start bucket; missing buckets are null. Source selection
+excludes exact AutoSleep and NULL sources. Sleep questions and results are never
+provider input, including unsupported wording. See the accepted
+[measurement decision](decisions/sleep-chat.md) and
+[comparison decision](decisions/metric-comparisons.md).
 
 ### 2.6 `fallback`
 

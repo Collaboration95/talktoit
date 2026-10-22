@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
 
-CACHE_KEY_VERSION = "chat-cache-v5"
+CACHE_KEY_VERSION = "chat-cache-v6"
 """Bump when a local fact, formatter, privacy, or response contract changes."""
 SNAPSHOT_CONTRACT = "leased-generation-v1"
 
@@ -65,9 +65,9 @@ def build_cache_key(
         "kind": kind,
         "timezone": "Asia/Singapore",
         "response_contract": "chat-v1",
-        "formatter_contract": "health-format-v2",
-        "planner_contract": "typed-plan-v1",
-        "narration_projection": "template-facts-v2",
+        "formatter_contract": "health-format-v3",
+        "planner_contract": "typed-plan-v2",
+        "narration_projection": "template-facts-v3",
         "generation_identity": generation_identity,
     }
     if kind == "exact":

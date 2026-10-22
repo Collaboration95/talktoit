@@ -841,3 +841,30 @@ v1 template: `workout_card`, `ranked_list`, `trend_chart`, `period_summary`, `co
 *Last updated: 2026-08-08 (audit pass — synced with the running tree; Makefile targets,
 marker config, version gate, diagnostics store, SQL-ordered queries, and the shared health
 hook documented).*
+
+
+## 12. Local measured analytics
+
+`queries.get_sleep_trend` and `union_interval_hours` own the shared dashboard/chat
+sleep coverage calculation. `sleep_trend` is a separate validated registry entry;
+categorical sleep must not use the numeric `metric_trend` path. Dashboard stages
+retain asleep-only union and bounded stage partitions. Neither raw intervals nor
+sleep questions/results enter provider projections. Supported date scopes and
+unsupported sleep wording resolve locally, even with no provider or dataset.
+
+`comparison` accepts optional catalog-limited `metric_ids` for steps, resting HR
+and HRV. Steps average daily source sums over observed days; the other two average
+observations. Optional row coverage/basis/tone fields travel together through the
+Pydantic model, TypeScript type and renderer. A missing side has a null delta;
+neutral signed changes imply no health outcome. Omitted `metric_ids` retains the
+workout path. Only two complete explicit ISO ranges (`from YYYY-MM-DD to ... vs ...`)
+or the English forms in the accepted decision are recognized locally. Ambiguous,
+incomplete or unsupported metric comparisons ask for clarification.
+
+`app.presentation` supplies shared readable backend date labels. Frontend
+`lib/format` supplies coverage/date labels and converts hour-valued tooltip
+measurements to whole minutes. Chat cache v6 includes formatter v3, typed planner
+v2 and narration facts v3. Semantic intent includes sleep dates/granularity and
+comparison metric selection; leased generation identity and route boundaries remain
+unchanged. Synthetic acceptance lives in `tests/integration/test_sleep_metric_chat.py`;
+it exercises published generation HTTP/CLI parity with provider calls denied.

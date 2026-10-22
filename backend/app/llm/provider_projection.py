@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.llm.answer_facts import NARRATION_FACTS_VERSION, narration_facts
+from app.llm.local_planner import is_sleep_question
 
 PLANNING_PROJECTION_VERSION = "v1"
 NARRATION_PROJECTION_VERSION = NARRATION_FACTS_VERSION
@@ -26,6 +27,8 @@ _TOOL_TEMPLATE_IDS = {
 
 def planning_projection(question: str, data_context: str) -> dict[str, str]:
     """Return the only user and dataset fields allowed to remote planning."""
+    if is_sleep_question(question):
+        raise ValueError("Sleep questions must remain local")
     return {
         "projection_version": PLANNING_PROJECTION_VERSION,
         "question": question,
@@ -47,6 +50,12 @@ def narration_projection(
     successful tool can legitimately return the terminal fallback template.
     Without it, the stable tool-to-template mapping preserves legacy callers.
     """
+    if (
+        is_sleep_question(question)
+        or tool_name == "get_sleep_trend"
+        or payload.get("metric_label") == "Sleep"
+    ):
+        raise ValueError("Sleep questions and measurements must remain local")
     facts = narration_facts(template_id or _TOOL_TEMPLATE_IDS.get(tool_name, ""), payload)
     return {
         "projection_version": NARRATION_PROJECTION_VERSION,

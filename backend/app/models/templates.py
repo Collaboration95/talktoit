@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class GpsRoute(BaseModel):
@@ -97,6 +97,12 @@ class ComparisonMetric(BaseModel):
     delta: float | None
     unit: str
     direction: Literal["up", "down", "flat"]
+    this_observed_days: int | None = Field(default=None, ge=0)
+    this_requested_days: int | None = Field(default=None, ge=1)
+    last_observed_days: int | None = Field(default=None, ge=0)
+    last_requested_days: int | None = Field(default=None, ge=1)
+    value_basis: Literal["observed_day_mean", "observation_mean"] | None = None
+    direction_tone: Literal["neutral"] | None = None
 
 
 class ComparisonData(BaseModel):
