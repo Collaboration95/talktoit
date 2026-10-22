@@ -42,6 +42,38 @@ Panel = Literal[
     "status",
 ]
 Join = Literal["latest", "ranked", "paged"]
+PlanVariant = Literal[
+    "latest_broad",
+    "latest_selective",
+    "ranked_broad",
+    "ranked_selective",
+    "paged_broad_first",
+    "paged_broad_next",
+    "paged_date_first",
+    "paged_date_next",
+    "paged_type_first",
+    "paged_type_next",
+    "paged_source_first",
+    "paged_source_next",
+    "paged_selective_first",
+    "paged_selective_next",
+]
+PLAN_VARIANTS: tuple[PlanVariant, ...] = (
+    "latest_broad",
+    "latest_selective",
+    "ranked_broad",
+    "ranked_selective",
+    "paged_broad_first",
+    "paged_broad_next",
+    "paged_date_first",
+    "paged_date_next",
+    "paged_type_first",
+    "paged_type_next",
+    "paged_source_first",
+    "paged_source_next",
+    "paged_selective_first",
+    "paged_selective_next",
+)
 Table = Literal[
     "records",
     "record_metadata",
@@ -59,6 +91,14 @@ class ClosedModel(BaseModel):
     """Forbid arbitrary diagnostics from crossing the publication boundary."""
 
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+
+class PlanEvidence(ClosedModel):
+    """Safe helper-result row count; operator cardinalities are not collected."""
+
+    success: Literal[True]
+    result_rows: int = Field(ge=0)
+    operator_cardinality: None = None
 
 
 class Summary(ClosedModel):
@@ -143,6 +183,7 @@ class CaseReport(ClosedModel):
         "unavailable_requires_browser_run"
     )
     explain_analyze: dict[Join, bool]
+    plan_variants: dict[PlanVariant, PlanEvidence]
     memory_method: Literal["sampled_simultaneous_process_tree_rss"] = (
         "sampled_simultaneous_process_tree_rss"
     )
@@ -163,6 +204,8 @@ class CaseReport(ClosedModel):
             ):
                 raise ValueError("sampling_mismatch")
             seen.add(measurement.name)
+        if set(self.plan_variants) != set(PLAN_VARIANTS):
+            raise ValueError("plan_variants_missing")
         if not INGESTION_METRICS <= seen:
             raise ValueError("ingestion_samples_missing")
         return self

@@ -29,6 +29,8 @@ from app.bench.report import (
     Measurement,
     MetricName,
     Panel,
+    PlanEvidence,
+    PlanVariant,
     Report,
     Runtime,
     Sampling,
@@ -142,6 +144,7 @@ def run_case(
     values: dict[MetricName, list[float]] = {}
     requests: dict[Panel, int] = {}
     plans: dict[Join, bool] = {}
+    variants: dict[PlanVariant, PlanEvidence] = {}
     memory_samples = 0
     shared_env: dict[str, str] = {}
     generation_id = ""
@@ -205,6 +208,9 @@ def run_case(
                     or not measured.managed_generation_verified
                 ):
                     raise RuntimeError("synthetic_workload_isolation_failed")
+                if variants and variants != measured.plan_variants:
+                    raise RuntimeError("synthetic_plan_variants_changed")
+                variants = measured.plan_variants
                 if trial < warmups:
                     continue
                 values.setdefault("workload_process_wall", []).append(workload.elapsed_ms)
@@ -243,6 +249,7 @@ def run_case(
         managed_generation_verified=True,
         dashboard_requests=requests,
         explain_analyze=plans,
+        plan_variants=variants,
         memory_interval_ms=INTERVAL * 1000,
         memory_samples=memory_samples,
     )

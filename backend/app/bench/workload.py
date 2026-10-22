@@ -9,6 +9,7 @@ import socket
 import time
 from collections.abc import Callable
 from contextlib import ExitStack
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any, Literal, NoReturn, cast
@@ -17,14 +18,16 @@ from unittest.mock import Mock, patch
 import duckdb
 from httpx import ASGITransport, AsyncClient
 
-from app.bench.report import ClosedModel, Join, MetricName, Panel
+from app.bench.report import ClosedModel, Join, MetricName, Panel, PlanEvidence, PlanVariant
 from app.db import queries
+from app.db.aggregations import to_local_dt
 from app.db.connection import (
     DatasetSnapshot,
     close_open_connections,
     dataset_snapshot,
 )
 from app.llm.provider_gateway import ProviderGateway, ProviderUnavailableError
+from app.models.templates import RankedListData, WorkoutCardData
 
 
 class WorkloadResult(ClosedModel):
@@ -33,6 +36,7 @@ class WorkloadResult(ClosedModel):
     metrics: dict[MetricName, float]
     dashboard_requests: dict[Panel, int]
     explain_analyze: dict[Join, bool]
+    plan_variants: dict[PlanVariant, PlanEvidence]
     provider_network_calls: Literal[0]
     cold_cache_verified: Literal[True]
     managed_generation_verified: Literal[True]
@@ -59,21 +63,121 @@ def _join_queries(conn: duckdb.DuckDBPyConnection) -> dict[Join, Callable[[], ob
     }
 
 
-def explain_workout_joins(conn: duckdb.DuckDBPyConnection) -> dict[Join, str]:
-    """Analyze the SQL actually used by production helpers, never inferred text.
+PlanData = WorkoutCardData | RankedListData | list[tuple[Any, ...]] | None
 
-    Raw plans are private return values for a synthetic scratch investigation;
-    callers must not serialize them into the public report.
-    """
-    plans: dict[Join, str] = {}
+
+@dataclass(frozen=True)
+class WorkoutPlanRun:
+    """Private result and raw plan; only evidence may cross publication boundaries."""
+
+    result: PlanData
+    raw_plan: str
+    evidence: PlanEvidence
+
+
+def _capture_plan(
+    conn: duckdb.DuckDBPyConnection, query: Callable[[duckdb.DuckDBPyConnection], PlanData]
+) -> WorkoutPlanRun:
     trace = _Trace(conn)
-    for name, query in _join_queries(cast(duckdb.DuckDBPyConnection, trace)).items():
-        query()
-        row = conn.execute("EXPLAIN ANALYZE " + trace.sql, trace.params).fetchone()
-        if row is None:
-            raise RuntimeError("explain_missing")
-        plans[name] = str(row[1])
-    return plans
+    result = query(cast(duckdb.DuckDBPyConnection, trace))
+    row = conn.execute("EXPLAIN ANALYZE " + trace.sql, trace.params).fetchone()
+    if row is None or "EXPLAIN_ANALYZE" not in str(row[1]):
+        raise RuntimeError("explain_missing")
+    count = (
+        len(result.rows)
+        if isinstance(result, RankedListData)
+        else len(result)
+        if isinstance(result, list)
+        else int(result is not None)
+    )
+    return WorkoutPlanRun(result, str(row[1]), PlanEvidence(success=True, result_rows=count))
+
+
+def workout_plan_variants(conn: duckdb.DuckDBPyConnection) -> dict[PlanVariant, WorkoutPlanRun]:
+    """Run a fixed bounded matrix through actual helpers, with real result cursors.
+
+    Latest/ranked helpers have no source filter; pagination exercises source-only
+    and combined filters. No operator cardinality is inferred from plan text.
+    All scopes derive from an actual result within the fixed synthetic date span.
+    """
+    runs: dict[PlanVariant, WorkoutPlanRun] = {}
+    broad_start, broad_end = date(2000, 1, 1), date(2100, 12, 31)
+
+    def page(
+        start: date,
+        end: date,
+        activity: str | None,
+        source: str | None,
+        cursor: tuple[Any, ...] | None = None,
+    ) -> WorkoutPlanRun:
+        return _capture_plan(
+            conn,
+            lambda traced: queries.get_workout_collection(
+                traced,
+                start=start,
+                end=end,
+                activity_type=activity,
+                source=source,
+                cursor_date=cursor[2] if cursor else None,
+                cursor_id=cursor[0] if cursor else None,
+                limit=1,
+            ),
+        )
+
+    runs["paged_broad_first"] = page(broad_start, broad_end, None, None)
+    first = runs["paged_broad_first"].result
+    if not isinstance(first, list) or not first:
+        raise RuntimeError("synthetic_plan_scope_empty")
+    anchor = first[0]
+    day = to_local_dt(anchor[2]).date()
+    activity, source = str(anchor[1]), str(anchor[5])
+    scopes = (
+        ("broad", broad_start, broad_end, None, None),
+        ("date", day, day, None, None),
+        ("type", broad_start, broad_end, activity, None),
+        ("source", broad_start, broad_end, None, source),
+        ("selective", day, day, activity, source),
+    )
+    for scope, start, end, activity_filter, source_filter in scopes:
+        first_id = cast(PlanVariant, f"paged_{scope}_first")
+        next_id = cast(PlanVariant, f"paged_{scope}_next")
+        if first_id not in runs:
+            runs[first_id] = page(start, end, activity_filter, source_filter)
+        rows = runs[first_id].result
+        if not isinstance(rows, list) or not rows:
+            raise RuntimeError("synthetic_plan_scope_empty")
+        runs[next_id] = page(start, end, activity_filter, source_filter, rows[-1])
+    runs["latest_broad"] = _capture_plan(
+        conn,
+        lambda traced: queries.get_last_workout(traced, activity_type=None, start=None, end=None),
+    )
+    runs["latest_selective"] = _capture_plan(
+        conn,
+        lambda traced: queries.get_last_workout(traced, activity_type=activity, start=day, end=day),
+    )
+    runs["ranked_broad"] = _capture_plan(
+        conn,
+        lambda traced: queries.get_top_workouts(
+            traced, activity_type=activity, metric="distance", n=5, start=None, end=None
+        ),
+    )
+    runs["ranked_selective"] = _capture_plan(
+        conn,
+        lambda traced: queries.get_top_workouts(
+            traced, activity_type=activity, metric="distance", n=5, start=day, end=day
+        ),
+    )
+    return runs
+
+
+def explain_workout_joins(conn: duckdb.DuckDBPyConnection) -> dict[Join, str]:
+    """Return representative raw plans privately, preserving the original inspector."""
+    runs = workout_plan_variants(conn)
+    return {
+        "latest": runs["latest_broad"].raw_plan,
+        "ranked": runs["ranked_broad"].raw_plan,
+        "paged": runs["paged_broad_first"].raw_plan,
+    }
 
 
 def _timed(fn: Callable[[], object]) -> float:
@@ -82,7 +186,9 @@ def _timed(fn: Callable[[], object]) -> float:
     return (time.perf_counter() - started) * 1000
 
 
-def run_queries() -> tuple[dict[MetricName, float], dict[Join, bool]]:
+def run_queries() -> tuple[
+    dict[MetricName, float], dict[Join, bool], dict[PlanVariant, PlanEvidence]
+]:
     """Time new-connection and repeated local queries separately from HTTP."""
     metrics: dict[MetricName, float] = {}
     for name in ("latest", "ranked", "paged", "trend"):
@@ -104,8 +210,13 @@ def run_queries() -> tuple[dict[MetricName, float], dict[Join, bool]]:
             metrics[cast(MetricName, f"query_{name}_warm")] = _timed(query)
     with dataset_snapshot() as snapshot:
         _verify_generation(snapshot)
-        plans = explain_workout_joins(snapshot.connection)
-    return metrics, {name: bool(plan) for name, plan in plans.items()}
+        runs = workout_plan_variants(snapshot.connection)
+    summaries: dict[Join, bool] = {}
+    for name in ("latest", "ranked", "paged"):
+        summaries[name] = all(
+            run.evidence.success for variant, run in runs.items() if variant.startswith(name + "_")
+        )
+    return metrics, summaries, {variant: run.evidence for variant, run in runs.items()}
 
 
 def _verify_generation(snapshot: DatasetSnapshot) -> None:
@@ -244,12 +355,13 @@ def main() -> None:
         raise RuntimeError("synthetic_environment_required")
     # HTTP runs first so local query scans cannot prewarm app-level caches.
     http_metrics, requests, network_calls = asyncio.run(run_http())
-    query_metrics, plans = run_queries()
+    query_metrics, plans, variants = run_queries()
     print(
         WorkloadResult(
             metrics={**http_metrics, **query_metrics},
             dashboard_requests=requests,
             explain_analyze=plans,
+            plan_variants=variants,
             provider_network_calls=cast(Literal[0], network_calls),
             cold_cache_verified=True,
             managed_generation_verified=True,

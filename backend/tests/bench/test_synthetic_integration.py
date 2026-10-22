@@ -145,6 +145,19 @@ def test_official_cli_http_queries_and_publication_are_synthetic(tmp_path, monke
     )
     assert set(report.explain_analyze) == {"latest", "ranked", "paged"}
     assert all(report.explain_analyze.values())
+    from app.bench.report import PLAN_VARIANTS
+
+    assert set(report.plan_variants) == set(PLAN_VARIANTS)
+    assert all(item.success for item in report.plan_variants.values())
+    assert all(item.operator_cardinality is None for item in report.plan_variants.values())
+    unsafe = report.model_dump()
+    unsafe["plan_variants"]["PRIVATE /query"] = {"success": True, "result_rows": 1}
+    with pytest.raises(ValidationError):
+        CaseReport.model_validate(unsafe)
+    incomplete = report.model_dump()
+    del incomplete["plan_variants"]["paged_source_next"]
+    with pytest.raises(ValidationError):
+        CaseReport.model_validate(incomplete)
     published = report.model_dump_json()
     for secret in (
         str(tmp_path),
@@ -244,8 +257,10 @@ async def test_workload_leases_fresh_state_retention_ownership_and_no_active(tmp
 
         with monkeypatch.context() as scoped:
             scoped.setattr(workload, "dataset_snapshot", counted_snapshot, raising=False)
-            metrics, plans = workload.run_queries()
-            assert metrics and all(plans.values())
+            metrics, plans, variants = workload.run_queries()
+            assert (
+                metrics and all(plans.values()) and all(item.success for item in variants.values())
+            )
             assert len(leased) == 5  # Four new query connections, then EXPLAIN.
         for trial in range(2):
             fresh = tmp_path / f"fresh-{trial}"

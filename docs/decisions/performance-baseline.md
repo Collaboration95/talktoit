@@ -184,20 +184,53 @@ values, question text, SQL, plans, paths, hostnames, credentials or child logs. 
 fields/identifiers are rejected. Generated XML/DB/state/shards live in disposable temporary
 storage; never commit them, frontend dist or coverage. Failures produce only a fixed status.
 
-Latest/ranked/cursor-paged joins are exercised by production query helpers. The harness
-captures their actual parameterized statements without editing queries.py and executes
-real `EXPLAIN ANALYZE`; it does not assume DuckDB materializes complete aggregate subqueries.
-`app.bench.workload.explain_workout_joins(conn)` returns raw synthetic plans for **private
-scratch inspection only**; published JSON records only successful plan execution. For
-follow-up, invoke it on the same generated corpus/worker matrix using the official import
-entry point in disposable storage. Examine actual scan/aggregate cardinalities, filter
-pushdown and time for latest, ranked and first/subsequent cursor pages, both broad and
-selective dates/type/source filters. Add those parameter variants before a final join
-optimization decision. Keep raw plans private; publish allowlisted numeric summaries.
-Compare the unchanged query, a scratch filtered-aggregate variant and (only if still
-justified) a scratch summary-table variant with exact result/order/null/unit parity.
-Include any summary-build time/storage in full import costs. No production query or schema
-change is authorized by this preparation alone.
+Latest/ranked/cursor-paged joins are exercised by production query helpers. The bounded
+plan matrix now runs **14 fixed variants** once inside each existing query workload's
+leased EXPLAIN context, after the original cold/warm query metrics. It reuses the already
+parity-verified generation; no variants create another XML corpus or official import.
+
+- `latest_broad` / `latest_selective`: no activity/date filter versus the actual anchor
+  activity and its Singapore-local day, using `get_last_workout`.
+- `ranked_broad` / `ranked_selective`: all dates versus that day, using `get_top_workouts`
+  with distance ranking. The public ranked helper requires an activity type, so broad
+  here means broad dates for that activity; there is no invented all-type ranking API.
+- `paged_broad_first` / `paged_broad_next`, plus corresponding `date`, `type`, `source`
+  and `selective` first/next pairs: independent date-only/type-only/source-only predicates,
+  then combined predicates, using `get_workout_collection`. Broad paging spans the fixed
+  synthetic range 2000–2100. First pages contain one row; every next cursor is the actual
+  `(start_date, id)` of the returned first-page row. A legitimate empty next page is still
+  executed and analyzed, and its reported result count is zero.
+
+The initial broad page is itself one matrix case and supplies the real anchor's date,
+activity and source, keeping all selective first pages nonempty on the generated/fixture
+corpora. Latest/ranked helpers have no source-filter argument; source-only and combined
+source filtering are exercised through pagination, rather than changing production SQL
+or pretending unsupported helper parameters exist.
+
+Each helper's actual parameterized statement is captured and passed unchanged to real
+`EXPLAIN ANALYZE`, with the same bound arguments. No source-string assumption about DuckDB
+executing complete aggregate subqueries is used. Private `workout_plan_variants(conn)`
+results retain the real helper results and plan text for synthetic scratch inspection;
+`explain_workout_joins(conn)` preserves the older three-plan private inspector. Neither raw
+SQL, parameters, result rows nor plans are serialized into a published report.
+
+The additive closed `plan_variants` report maps only fixed IDs to `success`, `result_rows`
+and `operator_cardinality: null`. Result counts describe helper output rows (including
+ranked helper null-primary filtering), **not operator scans or estimated cardinalities**.
+Operator statistics are deliberately not collected; no version-specific JSON profiler is
+used and no unsupported-capability claim is made. The installed DuckDB's text ANALYZE
+support is exercised directly by the real-plan fixture tests. Scan/aggregate cardinalities
+must be inspected privately or collected in a separately verified profiling experiment
+before making any optimizer or summary-table decision. The original three family success
+flags remain, together with all existing query timing, profile, provider and isolation
+fields. Variant evidence must agree across warmup and retained workloads for the immutable
+generation; missing/unknown variant IDs and arbitrary fields are rejected before publication.
+
+The selective/subsequent-page **functional coverage gap is closed**. Actual representative
+plan investigation, timings, filtered-aggregate/summary-table comparisons and candidate
+selection remain pending the quiet measurement phase. Any later variant must preserve
+result/order/null/unit parity and include summary-build cost/storage in full import costs.
+This preparation authorizes no production query or schema change.
 
 All candidate rows below are **pending measurement**, including no-change dispositions.
 Use identical seeds/counts/workers/toolchain and interleaved baseline/variant runs with
@@ -334,3 +367,30 @@ remain historical; this fast compatibility pass ran the focused commands listed 
 Parent owns the post-analytics browser acceptance, independent integrated review, quiet
 pilot, matrix budget decision and measured candidate batch. No representative export,
 pilot, baseline, benefit claim, new browser run, issue closure, PR or CI watcher was added.
+
+## Selective and subsequent-page plan completion receipt
+
+The two new regression tests were written before implementation and first exited 1 with
+missing matrix/evidence types. The real-plan test imports the committed tiny synthetic
+fixture once through the official V2 entry point and checks its nine-table parity. It
+observes 2 latest, 2 ranked and 10 pagination calls to actual production helpers, then
+verifies real ANALYZE plans for all 14 cases. It checks the real next-page cursor, IDs
+3 then 2 in descending date order, a missing strength-workout distance remaining null,
+independent filter arguments and genuinely empty filtered subsequent pages. Privacy tests
+reject raw SQL/parameters/plans/rows/paths/question fields and invented operator numbers.
+The existing end-to-end sampling test still asserts exactly 3 import calls and 4 workload
+calls for its reduced-count fixture, proving plan variants do not multiply imports.
+
+| Command | Exit | Evidence |
+| --- | ---: | --- |
+| `uv run --directory backend pytest tests/bench/test_synthetic_harness.py tests/bench/test_synthetic_integration.py tests/bench/test_workout_plan_variants.py --no-cov -n 2 -q` | 0 | 21 passed; complete variant matrix, closed publication, stable query/profile/provider/isolation and import-count contracts |
+| `uv run --directory backend ruff check app/bench tests/bench/test_workout_plan_variants.py tests/bench/test_synthetic_integration.py` | 0 | Focused lint |
+| `uv run --directory backend pyright` | 0 | Backend type check |
+| `make check` with Node 20.20.2 on PATH | 0 | Repository static quality and version gates |
+
+No production queries/schema, ENGINEERING, root command, sampling defaults or coverage
+thresholds changed. The 600+ backend suite was not rerun for this bounded harness-only
+addition. No representative pilot, baseline, live provider/network, timing/benefit/no-go
+claim, PR, CI polling, subagent or wait for another writer was involved. The functional
+selective/subsequent-plan limitation in older receipts is now superseded by this section;
+quiet representative analysis and measured candidate dispositions remain with the parent.
