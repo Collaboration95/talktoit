@@ -10,6 +10,10 @@ in `make check` and CI).
 
 ### Added
 
+- Dataset-relevant chat starters and first-import instructions, with a direct Settings action.
+- Import-job reconnection, cancellation and honest state/count reporting in Settings.
+- Distinct chat fallback reasons and explanations for missing or unreadable workout routes.
+
 - Diagnostics event retention: `DiagnosticsStore` now caps stored events at
   `max_events` (default 5000) and evicts the oldest beyond that cap, bounding
   growth on long-lived installs.
@@ -25,6 +29,9 @@ in `make check` and CI).
 - Imports now commit immutable dataset generations through a durable atomic
   pointer. HTTP and managed CLI startup recover matching data, manifest and
   route roots after process interruption while preserving previous copies.
+- XML browser uploads now use native File bodies so Chrome does not reject request streams.
+- Settings and local model health share bounded, nonblocking loopback readiness probes.
+  Hosted egress disclosures include question text and compact rounded narration facts.
 - Chat cache entries are now re-associated with the producing dataset: after a
   re-import mints a new `ds_*` id, re-pushing the same key updates the row's
   `dataset_version_id`, so the refreshed dataset's answers become cacheable

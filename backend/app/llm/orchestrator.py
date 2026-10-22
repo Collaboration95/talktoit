@@ -25,7 +25,7 @@ from app.llm.provider_gateway import ProviderGateway, ProviderUnavailableError
 from app.llm.provider_projection import narration_projection, planning_projection
 from app.llm.tools import TOOL_NAMES, dispatch_tool, normalize_tool_name, render_tool_catalog
 from app.models.chat import ChatResponse, ResponseMetadata
-from app.models.templates import FallbackData
+from app.models.templates import FallbackData, FallbackReason
 from app.state.diagnostics import (
     DiagnosticsBuffer,
     DiagnosticsRepository,
@@ -78,17 +78,39 @@ Rules:
 """
 
 
-def _make_fallback_response(question: str, narrative: str = "") -> ChatResponse:
+def _make_fallback_response(
+    question: str, narrative: str = "", reason: FallbackReason = "unavailable"
+) -> ChatResponse:
     """Build a fallback ChatResponse for error cases.
 
     Args:
         question: The original user question.
         narrative: Optional narrative text for the response.
+        reason: Validated local outcome used for recovery guidance.
 
     Returns:
         A :class:`ChatResponse` with template_id ``"fallback"``.
     """
-    fallback: FallbackData = get_fallback(question)
+    # Guidance comes from the application, never untrusted provider fallback prose.
+    guidance = {
+        "provider_unavailable": (
+            "The question provider is unavailable or disabled. "
+            "Check the saved provider in Settings, "
+            "or try a supported trend or latest workout question."
+        ),
+        "clarification_needed": (
+            "Please name a workout type, metric and date range, "
+            "or select an answer with Ask about this answer."
+        ),
+        "unavailable": (
+            "This answer could not be completed. "
+            "Try a more specific metric, workout type or date range."
+        ),
+    }
+    fallback: FallbackData = get_fallback(
+        question, text=guidance.get(reason, guidance["unavailable"])
+    )
+    fallback.reason = reason
     return ChatResponse(
         template_id="fallback",
         data=fallback.model_dump(mode="json"),
@@ -156,13 +178,35 @@ def _local_narrative(template_id: str, data: dict[str, Any]) -> str:
     return deterministic_narrative(template_id, narration_facts(template_id, data))
 
 
-def _terminal_response(template_id: str, data: dict[str, Any]) -> ChatResponse | None:
+def _terminal_response(
+    template_id: str, data: dict[str, Any], question: str = ""
+) -> ChatResponse | None:
     """Return terminal local results that must never be sent to narration.
 
     A fallback contains already-vetted local guidance.  Empty approved facts are
     also not useful narrator input, so supported templates retain a deterministic
     sentence rather than making an ungrounded model call.
     """
+    series = data.get("series", [])
+    if (template_id == "ranked_list" and not data.get("rows")) or (
+        template_id == "trend_chart"
+        and not any(isinstance(point, dict) and point.get("value") is not None for point in series)
+    ):
+        fallback = FallbackData(
+            question=question,
+            table=None,
+            reason="no_matching_data",
+            text=(
+                "No matching measurements were found. Try a wider date range, "
+                "another metric or workout type, or check available data in Settings."
+            ),
+        )
+        return ChatResponse(
+            template_id="fallback",
+            data=fallback.model_dump(mode="json"),
+            narrative="",
+            metadata=ResponseMetadata(provenance="fallback"),
+        )
     if template_id == "fallback":
         return ChatResponse(
             template_id=template_id,
@@ -273,7 +317,7 @@ class ChatOrchestrator:
                     "llm.local_tool_dispatch_failed", extra={"payload": {"tool": tool_name}}
                 )
                 return _make_fallback_response(question)
-            terminal = _terminal_response(template_id, data_dict)
+            terminal = _terminal_response(template_id, data_dict, question)
             if terminal is not None:
                 return terminal
             return ChatResponse(
@@ -301,6 +345,7 @@ class ChatOrchestrator:
             },
         ]
         plan: dict[str, Any] | None = None
+        provider_unavailable = False
         plan_started = time.perf_counter()
         try:
             planner_content = await self._complete_provider("planning", planner_messages)
@@ -313,6 +358,7 @@ class ChatOrchestrator:
                 meta={"mode": "remote", "model": self.model, "error_class": ""},
             )
         except ProviderUnavailableError:
+            provider_unavailable = True
             logger.info("Remote planner unavailable or disabled")
             safe_record(
                 self.diagnostics_repository,
@@ -324,8 +370,13 @@ class ChatOrchestrator:
 
         resolved_plan = _validated_plan(plan)
         if resolved_plan is None:
-            return _make_fallback_response(question)
+            return _make_fallback_response(
+                question,
+                reason="provider_unavailable" if provider_unavailable else "clarification_needed",
+            )
         tool_name, args = resolved_plan
+        if tool_name == "get_fallback_answer":
+            return _make_fallback_response(question, reason="clarification_needed")
         self.executed_plan = {"tool_name": tool_name, "arguments": dict(args)}
 
         # ── Execute the tool ─────────────────────────────────────────────────
@@ -337,7 +388,7 @@ class ChatOrchestrator:
             logger.exception("llm.tool_dispatch_failed", extra={"payload": {"tool": tool_name}})
             return _make_fallback_response(question)
 
-        terminal = _terminal_response(template_id, data_dict)
+        terminal = _terminal_response(template_id, data_dict, question)
         if terminal is not None:
             return terminal
 

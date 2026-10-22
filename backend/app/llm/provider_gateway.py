@@ -248,7 +248,7 @@ def _make_client_for_provider(provider: Provider, base_url: str | None) -> opena
     return make_client()
 
 
-def _is_loopback_url(base_url: str) -> bool:
+def is_loopback_url(base_url: str) -> bool:
     """Return whether a local-provider URL stays on the device."""
     parsed = urlparse(base_url)
     return parsed.scheme in {"http", "https"} and parsed.hostname in {
@@ -295,7 +295,7 @@ def get_gateway_for_config(
     model = str(config.get("model", DEFAULT_MODEL))
     base_url = str(config.get("base_url", ""))
     configuration_error: str | None = None
-    if provider == "local" and not _is_loopback_url(base_url):
+    if provider == "local" and not is_loopback_url(base_url):
         # Do not let a malformed local config fall through to make_client(),
         # whose defaults point at the hosted provider.
         configuration_error = "Local provider requires a loopback LiteRT endpoint"

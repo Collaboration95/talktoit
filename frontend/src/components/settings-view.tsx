@@ -7,7 +7,7 @@ import {
   stopLocalLlm,
   updateProvider,
 } from '@/api/settings'
-import { fetchImport, startImport } from '@/api/imports'
+import { useImportJob } from '@/lib/use-import-job'
 import type { ImportJob } from '@/api/imports'
 import type {
   ClearScope,
@@ -79,9 +79,8 @@ export function SettingsView() {
   const [providerSaved, setProviderSaved] = useState(false)
   const [litertBusy, setLitertBusy] = useState<'start' | 'stop' | null>(null)
   const [importFile, setImportFile] = useState<File | null>(null)
-  const [importJob, setImportJob] = useState<ImportJob | null>(null)
-  const [importBusy, setImportBusy] = useState(false)
-  const [importError, setImportError] = useState<string | null>(null)
+  const imports = useImportJob()
+  const { job: importJob, busy: importBusy, error: importError } = imports
 
   async function load() {
     setState('loading')
@@ -173,29 +172,12 @@ export function SettingsView() {
     }
   }
 
-  async function handleImport() {
-    if (!importFile || importBusy) return
-    setImportBusy(true)
-    setImportError(null)
-    try {
-      let job = await startImport(importFile)
-      setImportJob(job)
-      while (job.state === 'queued' || job.state === 'running') {
-        await new Promise((resolve) => window.setTimeout(resolve, 750))
-        job = await fetchImport(job.id)
-        setImportJob(job)
-      }
-      if (job.state === 'failed') {
-        throw new Error(job.error ?? 'The import failed; your previous dataset was kept.')
-      }
+  useEffect(() => {
+    if (importJob?.state === 'succeeded') {
       setImportFile(null)
-      await load()
-    } catch (err) {
-      setImportError(err instanceof Error ? err.message : 'Could not import the export')
-    } finally {
-      setImportBusy(false)
+      void load()
     }
-  }
+  }, [importJob?.id, importJob?.state])
 
   if (state === 'loading') {
     return <p className="text-sm text-gray-400 py-4">Loading settings…</p>
@@ -208,6 +190,9 @@ export function SettingsView() {
   const litertStatus = settings.provider.litert_status
   const litertHealth = settings.provider.litert_health
   const externalEndpointReady = Boolean(litertStatus?.available && !litertStatus.running)
+  const externalEndpointReachable = Boolean(
+    litertStatus?.endpoint_reachable && !litertStatus.running,
+  )
   const activeProvider = (settings.provider.provider as ProviderType) ?? 'local'
 
   return (
@@ -224,6 +209,19 @@ export function SettingsView() {
 
       <Section title="Import Apple Health data">
         <div className="space-y-3 text-sm text-gray-700">
+          <p>
+            On iPhone, open Health → profile → Export All Health Data. Transfer the ZIP to this
+            computer and unpack it to find export.xml. Supported workout and metric questions run
+            locally without starting a model.
+          </p>
+          <p>
+            XML uploads do not include companion GPX files. Route maps require those files from the
+            original unpacked export. To include them, use the existing local command:
+            <code className="block rounded bg-gray-50 px-1">
+              make ingest EXPORT_PATH=/path/to/apple_health_export/export.xml
+            </code>
+            Keep the companion folders alongside that XML. This screen accepts XML only.
+          </p>
           <p className="text-xs text-gray-500">
             Choose an <code className="rounded bg-gray-50 px-1">export.xml</code> file. It is staged
             and validated locally before becoming the active dataset; a failed import keeps the
@@ -237,42 +235,52 @@ export function SettingsView() {
               disabled={importBusy}
               onChange={(event) => {
                 setImportFile(event.target.files?.[0] ?? null)
-                setImportError(null)
               }}
               className="block max-w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-700"
             />
             <button
               type="button"
-              onClick={() => void handleImport()}
+              onClick={() => {
+                if (importFile) void imports.upload(importFile)
+              }}
               disabled={!importFile || importBusy}
               className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
               {importBusy ? 'Importing…' : 'Import export'}
             </button>
           </div>
-          {importJob && (importBusy || importJob.state !== 'succeeded') ? (
+          {imports.discovering ? <p role="status">Checking active imports…</p> : null}
+          {importJob ? (
             <div className="rounded-md border border-gray-200 bg-gray-50 p-3" role="status">
-              <div className="flex items-center justify-between text-xs text-gray-600">
-                <span>{importJob.filename}</span>
-                <span className="capitalize">{importJob.state}</span>
-              </div>
-              <div className="mt-2 h-2 overflow-hidden rounded bg-gray-200">
-                <div
-                  className="h-full bg-blue-600 transition-all"
-                  style={{ width: `${importJob.progress}%` }}
-                />
-              </div>
-              {importJob.error && <p className="mt-2 text-xs text-red-600">{importJob.error}</p>}
+              <p>
+                {importJob.filename} ·{' '}
+                {importJob.state === 'failed' &&
+                (importJob.cancelled || importJob.error === 'The import was cancelled.')
+                  ? 'Cancelled'
+                  : importJob.state}
+              </p>
+              {importJob.error ? <p>{importJob.error}</p> : null}
+              {importBusy && !imports.discovering ? (
+                <button
+                  type="button"
+                  onClick={() => void imports.cancel()}
+                  disabled={imports.cancelling}
+                  className="mt-2 text-blue-600"
+                >
+                  {imports.cancelling ? 'Cancelling…' : 'Cancel import'}
+                </button>
+              ) : null}
+              {importJob.state === 'succeeded' ? <ImportSummary job={importJob} /> : null}
             </div>
           ) : null}
-          {importJob?.state === 'succeeded' && importJob.report ? (
-            <p className="text-xs text-green-700">
-              Imported {importJob.report.counts?.['records'] ?? 0} records · coverage{' '}
-              {importJob.report.coverage_start ?? 'unknown'} to{' '}
-              {importJob.report.coverage_end ?? 'unknown'}.
-            </p>
+          {importError ? (
+            <div>
+              <p className="text-xs text-red-600">{importError}</p>
+              <button type="button" className="text-blue-600" onClick={imports.retry}>
+                Check active imports
+              </button>
+            </div>
           ) : null}
-          {importError && <p className="text-xs text-red-600">{importError}</p>}
         </div>
       </Section>
 
@@ -290,7 +298,9 @@ export function SettingsView() {
             <span className="font-medium">{providerLabel(activeProvider)}</span>
           </Row>
           <Row label="Provider mode">
-            <span className="font-medium">{modeLabel(settings.provider.mode)}</span>
+            <span className="font-medium">
+              {modeLabel(activeProvider === 'local' ? 'local_only' : settings.provider.mode)}
+            </span>
           </Row>
           {settings.provider.model && <Row label="Model">{settings.provider.model}</Row>}
           {settings.provider.base_url && <Row label="Base URL">{settings.provider.base_url}</Row>}
@@ -300,6 +310,12 @@ export function SettingsView() {
               : 'None — everything stays on this device'}
           </Row>
         </dl>
+        <p className="mt-2 text-xs text-gray-500">
+          Hosted planning sends question text and dataset metadata. Hosted narration also sends
+          question text and compact rounded measurements. Raw health rows and GPS route geometry are
+          excluded. The saved provider mode above determines whether any hosted requests are
+          allowed.
+        </p>
       </Section>
 
       <Section title="LLM Provider">
@@ -396,10 +412,10 @@ export function SettingsView() {
             </div>
           </div>
 
-          {litertStatus && (
+          {litertStatus && typeof litertStatus.running === 'boolean' && (
             <div className="rounded-md bg-gray-50 p-3 text-xs text-gray-600">
               <p className="font-medium text-gray-700">Local server</p>
-              {!litertStatus.running && !externalEndpointReady && (
+              {!litertStatus.running && !externalEndpointReady && !externalEndpointReachable && (
                 <p className="mb-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-amber-800">
                   Stopped — chat uses on-device answers with basic summaries until you start it.
                 </p>
@@ -407,15 +423,16 @@ export function SettingsView() {
               <p>
                 Status:{' '}
                 {litertStatus.running
-                  ? `running (pid ${litertStatus.pid ?? '—'})`
+                  ? litertStatus.available
+                    ? 'running and ready'
+                    : 'running; readiness not confirmed'
                   : externalEndpointReady
                     ? 'external endpoint ready'
-                    : 'stopped'}{' '}
-                ·{' '}
-                {litertStatus.binary_available
-                  ? `binary ${litertStatus.binary}`
-                  : 'binary not found'}{' '}
-                · model {litertStatus.model} · {litertStatus.base_url}
+                    : externalEndpointReachable
+                      ? 'endpoint reachable; selected model unavailable'
+                      : 'stopped'}{' '}
+                · {litertStatus.binary_available ? `available locally` : 'binary not found'} · model{' '}
+                {litertStatus.model}
               </p>
               {litertHealth && (
                 <p>
@@ -443,7 +460,7 @@ export function SettingsView() {
                   {litertBusy === 'stop' ? 'Stopping…' : 'Stop local server'}
                 </button>
               </div>
-              {!litertStatus.binary_available && (
+              {!litertStatus.binary_available && !externalEndpointReady && (
                 <p className="mt-2 text-amber-600">
                   LiteRT binary not found. Install via{' '}
                   <code className="rounded bg-white px-1">pip install litert-lm</code> and import{' '}
@@ -457,7 +474,7 @@ export function SettingsView() {
           {providerError && <p className="text-xs text-red-600">{providerError}</p>}
           {providerSaved && (
             <p className="text-xs text-green-600">
-              Provider saved — next chat will use {providerLabel(provider)}.
+              Provider saved — next chat will use {providerLabel(activeProvider)}.
             </p>
           )}
           <button
@@ -569,7 +586,11 @@ function DatasetCard({ dataset }: { dataset: DatasetVersion }) {
         <span className="font-medium">{dataset.parser_version}</span>
       </Row>
       <Row label="Records">
-        <span className="font-medium">{formatNumber(dataset.counts['records'] ?? 0)} records</span>
+        <span className="font-medium">
+          {dataset.counts['records'] === undefined
+            ? 'Record count unavailable'
+            : `${formatNumber(dataset.counts['records'])} records`}
+        </span>
       </Row>
       {dataset.warnings.length > 0 && (
         <div>
@@ -595,5 +616,32 @@ function Metric({ states }: { states: Record<string, string> }) {
       <span className="font-medium text-gray-800">{formatNumber(Object.keys(states).length)}</span>{' '}
       tracked metrics
     </p>
+  )
+}
+
+const COUNT_LABELS: Record<string, string> = {
+  records: 'records',
+  workouts: 'workouts',
+  activity_summaries: 'activity summaries',
+  workout_routes: 'route references',
+}
+
+function ImportSummary({ job }: { job: ImportJob }) {
+  const counts = Object.entries(job.report?.counts ?? {}).filter(
+    ([label, count]) => label in COUNT_LABELS && Number.isFinite(count) && count >= 0,
+  )
+  return (
+    <div className="mt-2 text-xs text-green-700">
+      <p>
+        {counts.length
+          ? `Imported ${counts.map(([label, count]) => `${formatNumber(count)} ${COUNT_LABELS[label]}`).join(' · ')}.`
+          : 'Import succeeded. Counts are unavailable.'}
+      </p>
+      <p>
+        Coverage{' '}
+        {job.report?.coverage_start ? formatDateOnly(job.report.coverage_start) : 'unknown'} to{' '}
+        {job.report?.coverage_end ? formatDateOnly(job.report.coverage_end) : 'unknown'}.
+      </p>
+    </div>
   )
 }

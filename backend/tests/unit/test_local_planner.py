@@ -161,7 +161,8 @@ def test_returns_an_honest_fallback_for_unsupported_requested_metrics() -> None:
         "tool_name": "get_fallback_answer",
         "arguments": {
             "text": "Ranking workouts by pace is not supported yet. "
-            "I can rank them by distance, duration, heart rate, or energy."
+            "Try: Top 5 longest runs this year.",
+            "reason": "unsupported",
         },
     }
     comparison_question = "Compare resting heart rate this month vs last month"
@@ -170,7 +171,8 @@ def test_returns_an_honest_fallback_for_unsupported_requested_metrics() -> None:
         "tool_name": "get_fallback_answer",
         "arguments": {
             "text": "Comparing health metrics between periods is not supported yet. "
-            "I can show a trend for that metric instead."
+            "I can show a trend for that metric instead.",
+            "reason": "unsupported",
         },
     }
 
@@ -181,6 +183,7 @@ def test_does_not_treat_a_period_only_workout_request_as_latest() -> None:
         "tool_name": "get_fallback_answer",
         "arguments": {
             "text": "I can summarize Running workouts for that period, but I need to know "
-            "whether you want a count, distance, duration, or energy."
+            "whether you want a count, distance, duration, or energy.",
+            "reason": "clarification_needed",
         },
     }

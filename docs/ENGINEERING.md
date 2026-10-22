@@ -473,6 +473,15 @@ implementation, unit-tested).
 - The chart libraries themselves. Test only that wrappers pass the right props.
 - CSS/visual appearance.
 
+Daily-use guidance reads the existing Settings metric states and dataset counts. Starters
+are a deterministic supported subset; returning to Chat remounts and refreshes the guidance.
+`use-import-job.ts` reconnects through `GET /api/imports`, polls with an abort signal,
+reconciles cancellation races, and discards superseded responses. Jobs remain process-local;
+missing jobs are unknown/interrupted. The UI displays reported states and known counts,
+never estimates ingestion progress. Settings and model health share a one-second loopback
+probe, offloaded from the event loop. Hosted health is configuration-only. Egress categories
+include question text for both planning and narration; narration also uses rounded facts.
+
 ### 3.5 Styling — Tailwind v3 (load-bearing via Tremor)
 
 Tailwind v3 is a recorded decision (see `docs/planning/`): `@tremor/react` (locked for the
