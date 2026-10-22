@@ -13,6 +13,7 @@ import json
 import os
 import re
 import stat
+import unicodedata
 import uuid
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
@@ -23,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 _LIMIT = 1024 * 1024
 _ENTRY_LIMIT = 65536
+_FORMAT = b"tti-cleanup-claims-v2\n"
 _SHARD = re.compile(
     r"(?:records|record_metadata|hrv_beats|workouts|workout_events|workout_statistics|"
     r"workout_routes|workout_metadata|activity_summaries)-[0-9]{4,}-[0-9]{4,}\.parquet\Z"
@@ -41,7 +43,7 @@ def claim_boundary(name: str) -> None:
 
 class _Record(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    format_version: Literal[1] = 1
+    format_version: Literal[2] = 2
     authority: str
     source_parent: str
     parent_identity: Identity
@@ -139,6 +141,25 @@ def _read(fd: int) -> _Record:
         os.close(source)
 
 
+def _catalog_format(fd: int, *, created: bool) -> None:
+    flags = os.O_NOFOLLOW | os.O_NONBLOCK
+    flags |= os.O_WRONLY | os.O_CREAT | os.O_EXCL if created else os.O_RDONLY
+    marker = os.open("format", flags, 0o600, dir_fd=fd)
+    try:
+        if not stat.S_ISREG(os.fstat(marker).st_mode):
+            raise ClaimError("Invalid claim catalog format")
+        with os.fdopen(marker, "wb" if created else "rb", closefd=False) as handle:
+            if created:
+                handle.write(_FORMAT)
+                handle.flush()
+                os.fsync(marker)
+                os.fsync(fd)
+            elif handle.read(64) != _FORMAT:
+                raise ClaimError("Unsupported claim catalog format")
+    finally:
+        os.close(marker)
+
+
 def _names(fd: int, policy: Policy) -> list[str]:
     names: list[str] = []
     with os.scandir(fd) as entries:
@@ -230,9 +251,10 @@ def remove_entry(
     ):
         raise ClaimError("Generation claim requires original content proof")
     parent_identity = identity(source_fd)
-    key = authority_key(f"{authority}:{source_parent}:{parent_identity}:{name}")
+    normalized_name = unicodedata.normalize("NFC", name).casefold()
+    key = authority_key(f"{authority}:{parent_identity}:{normalized_name}")
     catalog_root = root / "cleanup-claims"
-    if expected is None and not (catalog_root / key).exists():
+    if expected is None and not catalog_root.exists():
         return None
     if (
         expected is not None
@@ -248,8 +270,21 @@ def remove_entry(
                 _names(candidate, policy)
             except ClaimError:
                 return False
-    catalog_root.mkdir(mode=0o700, exist_ok=True)
+    try:
+        catalog_root.mkdir(mode=0o700)
+        created = True
+    except FileExistsError:
+        created = False
     with directory(catalog_root) as catalogs:
+        try:
+            _catalog_format(catalogs, created=created)
+        except FileNotFoundError as exc:
+            raise ClaimError("Unproven claim catalog format") from exc
+        if created:
+            with directory(root) as root_fd:
+                os.fsync(root_fd)
+        if expected is None and not _exists(catalogs, key):
+            return None
         try:
             os.mkdir(key, mode=0o700, dir_fd=catalogs)
             fresh = True

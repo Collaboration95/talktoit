@@ -204,4 +204,6 @@ def test_all_tables_match_legacy_at_1_2_4_workers_with_owned_sentinels(
             ).fetchone() == (45.5,)
         assert sentinel.read_bytes() == b"caller-owned"
         assert sibling_sentinel.read_bytes() == b"unrelated-owned"
-        assert set(root.iterdir()) == {sentinel, sibling}
+        from tests.integration.test_ingest_shard_ownership import _assert_only_empty_claim_metadata
+
+        _assert_only_empty_claim_metadata(root, sibling)

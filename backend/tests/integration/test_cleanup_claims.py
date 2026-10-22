@@ -782,3 +782,39 @@ def test_replay_cannot_consume_file_claim_that_lost_original_digest(tmp_path):
                 policy="generation_file",
             )
     assert (Path(record["namespace"]) / "payload").read_bytes() == b"original"
+
+
+def test_parent_locator_change_cannot_create_fresh_authority_for_same_held_parent(tmp_path):
+    source = setup_claim(tmp_path, "file")
+    assert remove_claim(tmp_path) is True
+    source.write_bytes(b"original")  # Same bytes, different unowned entry.
+    # Parent FDs identify the same object even if its locator spelling changes
+    # (as independently reproduced with real case aliases on macOS/APFS).
+    locator = tmp_path / "different-canonical-locator"
+    with claims.directory(source.parent) as parent, claims.directory(tmp_path) as namespace:
+        with pytest.raises(claims.ClaimError):
+            claims.remove_entry(
+                tmp_path,
+                authority=claims.authority_key("original authority"),
+                source_parent=locator,
+                source_fd=parent,
+                name="owned",
+                namespace_parent=tmp_path,
+                namespace_fd=namespace,
+                policy="generation_file",
+            )
+    assert source.read_bytes() == b"original"
+
+
+def test_unmarked_prototype_catalog_cannot_be_adopted_as_fresh_claim_authority(tmp_path):
+    source = setup_claim(tmp_path, "file")
+    catalog = tmp_path / "cleanup-claims" / ("a" * 64)
+    catalog.mkdir(parents=True)
+    record = catalog / "record.json"
+    record.write_text('{"format_version":1}')
+    for _ in range(2):
+        with pytest.raises(claims.ClaimError):
+            remove_claim(tmp_path)
+        assert source.read_bytes() == b"original"
+        assert record.read_text() == '{"format_version":1}'
+    assert not list(tmp_path.glob(".tti_claim_*"))

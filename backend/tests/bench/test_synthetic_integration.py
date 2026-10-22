@@ -246,7 +246,29 @@ async def test_workload_leases_fresh_state_retention_ownership_and_no_active(tmp
     with patch.dict(os.environ, env, clear=True):
         before = inventory()
         assert before[2] == frozenset(ids)
-        assert len([name for name in before[0] if name.endswith("record.json")]) == 2
+        operation_records = [
+            name
+            for name in before[0]
+            if name.startswith("imports/") and name.endswith("record.json")
+        ]
+        claim_records = [
+            name
+            for name in before[0]
+            if name.startswith("cleanup-claims/") and name.endswith("record.json")
+        ]
+        assert len(operation_records) == 2
+        assert len(claim_records) == 4
+        assert set(operation_records + claim_records) == {
+            name for name in before[0] if name.endswith("record.json")
+        }
+        for name in claim_records:
+            claim = json.loads((lifecycle.root / name).read_bytes())
+            assert claim["state"] == "CLEANED"
+            payload = Path(claim["namespace"]) / "payload"
+            if claim["policy"] == "shards":
+                assert payload.is_dir() and not list(payload.iterdir())
+            else:
+                assert claim["policy"] == "upload" and not payload.exists()
         leased = []
 
         @contextmanager

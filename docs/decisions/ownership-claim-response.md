@@ -28,8 +28,10 @@ owner, and restart holds the operation's existing nonblocking exclusive lease.
 No lifecycle/operation lock ordering, dependency or coordinator source changes.
 
 The private catalog is `<managed-root>/cleanup-claims/<key>/record.json`. Keys bind
-original authority, source parent path/identity and entry name. Records are strict,
-versioned, duplicate-rejecting and bounded to 1 MiB. They record the original
+original authority, physical source parent identity and normalized entry name.
+Records are strict version 2, duplicate-rejecting and bounded to 1 MiB. The
+catalog's durable format marker rejects unsupported/unmarked earlier prototypes
+rather than treating an unrecognized pending claim as fresh. They record the original
 expected device/inode, policy, digest where needed, private namespace identity and
 state. Existing expectations never refresh from a retry-time inode or digest.
 Generation file expectations come from the held validated file descriptors and
@@ -145,7 +147,7 @@ are unset. No formal benchmark is run.
   The final implementation adds the completion guards without new authority.
 
 Final stable focused/full-gate receipts and exact app/test trees follow after the
-single combined quality gate. Parent owns updated browser/build/actual Ubuntu CI,
+combined quality gate. Parent owns updated browser/build/actual Ubuntu CI,
 fresh independent review with all prior briefs/reports/responses, and actual-main
 acceptance. The cancelled earlier Ubuntu browser job is not Linux proof; existing
 local 47-pass evidence keeps its original source identity. No PR update/comment,
@@ -176,3 +178,37 @@ claim/legacy/Settings/snapshot suite `final-focused.log`: **197 passed, exit 0**
 warnings. The type-check correction uses a bounded read loop on the held legacy
 FD; it does not reopen a source pathname for hashing. Coverage gates, assertions,
 existing timeouts, canonical counts and worker invariance were not weakened.
+
+### First full gate and observed corrections
+
+The first `make check-full` at `e1105a16d1ee2384028f6fe30acb79b240061a5a`
+exited **2**: **1,385 backend passed / three failed**, `combined-check-full.log`.
+Global coverage reached 88.02%; make correctly stopped before module/frontend
+test gates. Two canonical parity tests expected no new empty namespace directories;
+one workload fixture counted every `record.json` as an import-operation record.
+The corrected observers still require exact parent/sibling sentinels, all original
+row/value/FK/worker parity, exactly two operation records, exactly four cleaned
+upload/shard claim records, empty private payloads and unchanged read-only inventory.
+No performance harness/application source, assertion threshold or timeout changed.
+
+A fresh functional macOS/APFS probe also exposed a real locator-alias defect in
+the initial private index: same physical parent under a different case spelling
+could miss its completed claim. `case-alias-red.log` exits 0 **asserting the defect**:
+replay missed and the same-byte foreign entry was removed. The additional universal
+held-parent/changed-locator regression fails first (exit 1,
+`red-parent-locator.log`). Lookup now uses original authority plus physical parent
+identity and NFC/case-folded name, with exact persisted locator checks. A changed
+locator is refused; it never creates a second subject or refreshes file identity.
+Legacy-file authority likewise excludes the current target locator spelling.
+
+The catalog and records use format 2. Unmarked format-1 development prototypes
+are refused wholesale for manual recovery, avoiding unsafe reinitialization of
+pending proof when the index layout changes. No baseline dataset/retirement or
+operation format is rewritten. The real case-alias probe now preserves the foreign
+entry and the single completed tombstone: `case-alias-green.log`, exit 0.
+`locator-and-observer-focused.log`: **184 passed, exit 0**, including the three
+full-gate failures, claim/legacy crash matrix and no-adoption/locator regressions.
+Pyright: zero errors/warnings, exit 0, `types-index-v2.log`.
+
+A fresh combined full run is necessary because of the recorded full-gate failures
+and this source correction. Its result follows below; the failed run is retained.

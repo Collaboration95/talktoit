@@ -353,7 +353,12 @@ inode/type and original digest before private disposal. A directory FD alone
 only anchors the parent; the captured, validated object now supplies the missing
 child-entry boundary. The same primitive captures whole import allocations.
 
-Claim records are strict, bounded version-1 state under `cleanup-claims/<key>/`.
+Claim records are strict, bounded version-2 state under `cleanup-claims/<key>/`.
+The catalog has a durably written format marker; unmarked earlier prototypes or
+unsupported catalogs remain preserved for local recovery. Lookup binds original
+authority to physical parent device/inode and a normalized entry name, not a
+mutable pathname spelling. Original locator fields must still match exactly;
+aliases fail closed instead of creating fresh authority for a completed subject.
 `PREPARED` persists original expectations before capture; source/claim directory
 flushes precede `CAPTURED`; validation and its durable `VALIDATED` record precede
 private unlink; directory flushes precede `CLEANED`. Completed records remain to
