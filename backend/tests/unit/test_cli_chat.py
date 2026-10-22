@@ -159,20 +159,23 @@ def test_cli_passes_scoped_parent_turn_id(monkeypatch) -> None:
     )
 
 
-def test_cli_migrates_database_before_read_only_open(monkeypatch) -> None:
+def test_cli_migrates_database_before_read_only_open(monkeypatch, tmp_path) -> None:
     """Headless chat repairs a stale schema before opening its read-only DB."""
     import asyncio
 
     import pytest
 
     events: list[str] = []
+    database = tmp_path / "health.duckdb"
+    monkeypatch.setenv("TTI_DB_PATH", str(database))
 
     def _fake_migrate(db_path=None) -> bool:
-        assert db_path is None
+        assert db_path == database.resolve()
         events.append("migrate")
         return False
 
     def _fake_connect(db_path=None, *, read_only=False):
+        assert db_path == database.resolve()
         events.append(f"connect:{read_only}")
         raise RuntimeError("intentional stop after migration")
 

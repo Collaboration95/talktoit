@@ -9,10 +9,10 @@ import logging
 import sys
 from pathlib import Path
 
-from app.db.connection import connect
+from app.db.connection import connect, resolve_db_path
 from app.db.data_profile import get_data_profile
 from app.db.migrate import migrate
-from app.llm.cache_keys import build_cache_key, generation_identity
+from app.llm.cache_keys import build_cache_key, generation_identity, matches_managed_database
 from app.llm.cache_policy import cacheable_envelope, cacheable_response
 from app.llm.followups import FollowupContext, resolve_followup
 from app.llm.local_planner import plan_local_question
@@ -136,8 +136,10 @@ async def _ask_question(
     cache_mode: str = "default",
 ) -> ChatResponse:
     """Run one question through the same local cache and orchestration path as HTTP."""
-    migrate(db_path)
-    conn = connect(db_path, read_only=True)
+    managed_path = resolve_db_path().resolve()
+    effective_path = resolve_db_path(db_path).resolve()
+    migrate(effective_path)
+    conn = connect(effective_path, read_only=True)
     repository = AppStateRepository()
     repository.migrate()
     config = repository.get_provider_config()
@@ -145,16 +147,33 @@ async def _ask_question(
     _ensure_local_server(config)
     gateway = get_gateway_for_config(config)
     turn_id: str | None = None
+    context_hint: str | None = None
     try:
         # One session connection for the whole CLI call, mirroring the HTTP
         # prephase/finalize batching so a question opens a bounded number of
         # SQLite connections instead of one per accessor (GH-3).
         with repository.session() as store:
+            active = (
+                repository.get_active(conn=store)
+                if matches_managed_database(effective_path, managed_path)
+                else None
+            )
+            if active is None:
+                # An external database has no durable identity here. Do not
+                # read or write another dataset's cache or conversation state.
+                if conversation_id or parent_turn_id:
+                    context_hint = (
+                        "Conversation history and follow-ups are unavailable for this database. "
+                        "Ask a complete question or use the configured imported database "
+                        "to continue a conversation."
+                    )
+                    print(f"tti: {context_hint} Asking independently.", file=sys.stderr)
+                conversation_id = None
+                parent_turn_id = None
             if conversation_id:
                 turn_id = repository.create_pending_turn(
                     conversation_id, question, cache_mode, conn=store
                 )
-            active = repository.get_active(conn=store)
             exact_key = build_cache_key("exact", question, generation_identity=cache_identity)
             use_exact_cache = parent_turn_id is None
             cached: str | None = None
@@ -230,6 +249,9 @@ async def _ask_question(
                     canonical_key = build_cache_key(
                         "canonical", canonical_plan, generation_identity=cache_identity
                     )
+            if context_hint is not None and response.template_id == "fallback":
+                response.narrative = context_hint
+                response.data["text"] = context_hint
             if active is not None:
                 response.metadata.dataset_version_id = active.id
                 response.metadata.coverage_start = active.coverage_start
