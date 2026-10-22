@@ -501,8 +501,9 @@ implementation, unit-tested).
 Daily-use guidance reads the existing Settings metric states and dataset counts. Starters
 are a deterministic supported subset; returning to Chat remounts and refreshes the guidance.
 `use-import-job.ts` reconnects through `GET /api/imports`, polls with an abort signal,
-reconciles cancellation races, and discards superseded responses. Jobs remain process-local;
-missing jobs are unknown/interrupted. The UI displays reported states and known counts,
+reconciles cancellation races, and discards superseded responses. Workers are process-local;
+job records are durable, and startup reconciles them with committed generations and owned
+operations. Missing jobs remain unknown/interrupted. The UI displays reported states and known counts,
 never estimates ingestion progress. Settings and model health share a one-second loopback
 probe, offloaded from the event loop. Hosted health is configuration-only. Egress categories
 include question text for both planning and narration; narration also uses rounded facts.
@@ -510,9 +511,10 @@ include question text for both planning and narration; narration also uses round
 Dashboard training volume has a separate abortable effect and scope-generation guard;
 its granularity changes and local retry leave other panels and pagination intact.
 `charts/lazy-trend-line.tsx` and workout-route rendering use `DeferredChart` to defer
-ECharts until actual chart use. Resolved component types are shared by loader identity;
+ECharts until actual chart use. Import resources and resolved components are shared by loader identity;
 failed imports/renders retain surrounding answers and formatted data or route download.
-Retry recreates the lazy type; browsers may retain failed modules, so the data fallback
+Explicit loading state avoids React's Suspense commit delay. Retry starts a new import resource;
+browsers may retain failed modules, so the data fallback
 remains usable. The [frontend performance decision](decisions/performance-frontend.md)
 records production graph evidence, synthetic functional checks and pending quiet timings.
 
