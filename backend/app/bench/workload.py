@@ -186,9 +186,9 @@ def _timed(fn: Callable[[], object]) -> float:
     return (time.perf_counter() - started) * 1000
 
 
-def run_queries() -> tuple[
-    dict[MetricName, float], dict[Join, bool], dict[PlanVariant, PlanEvidence]
-]:
+def run_queries(
+    *, include_plans: bool = True
+) -> tuple[dict[MetricName, float], dict[Join, bool], dict[PlanVariant, PlanEvidence]]:
     """Time new-connection and repeated local queries separately from HTTP."""
     metrics: dict[MetricName, float] = {}
     for name in ("latest", "ranked", "paged", "trend"):
@@ -208,11 +208,15 @@ def run_queries() -> tuple[
             )
             metrics[cast(MetricName, f"query_{name}_cold")] = _timed(query)
             metrics[cast(MetricName, f"query_{name}_warm")] = _timed(query)
-    with dataset_snapshot() as snapshot:
-        _verify_generation(snapshot)
-        runs = workout_plan_variants(snapshot.connection)
+    runs: dict[PlanVariant, WorkoutPlanRun] = {}
+    if include_plans:
+        with dataset_snapshot() as snapshot:
+            _verify_generation(snapshot)
+            runs = workout_plan_variants(snapshot.connection)
     summaries: dict[Join, bool] = {}
     for name in ("latest", "ranked", "paged"):
+        if not runs:
+            break
         summaries[name] = all(
             run.evidence.success for variant, run in runs.items() if variant.startswith(name + "_")
         )
@@ -355,7 +359,9 @@ def main() -> None:
         raise RuntimeError("synthetic_environment_required")
     # HTTP runs first so local query scans cannot prewarm app-level caches.
     http_metrics, requests, network_calls = asyncio.run(run_http())
-    query_metrics, plans, variants = run_queries()
+    query_metrics, plans, variants = run_queries(
+        include_plans=os.environ.get("TTI_BENCH_PLAN_MATRIX", "1") == "1"
+    )
     print(
         WorkloadResult(
             metrics={**http_metrics, **query_metrics},

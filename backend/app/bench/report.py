@@ -190,6 +190,7 @@ class CaseReport(ClosedModel):
     )
     explain_analyze: dict[Join, bool]
     plan_variants: dict[PlanVariant, PlanEvidence]
+    plan_matrix_runs: int = Field(ge=1, le=1)
     memory_method: Literal["sampled_simultaneous_process_tree_rss"] = (
         "sampled_simultaneous_process_tree_rss"
     )

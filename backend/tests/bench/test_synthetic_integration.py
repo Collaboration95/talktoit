@@ -79,6 +79,8 @@ def test_official_cli_http_queries_and_publication_are_synthetic(tmp_path, monke
     )
     assert len(imports) == 3
     assert len(requests) == 4
+    assert [item["TTI_BENCH_PLAN_MATRIX"] for item in requests] == ["0", "1", "0", "0"]
+    assert report.plan_matrix_runs == 1
     assert len({item["TTI_APP_STATE_PATH"] for item in requests}) == 4
     assert len({item["TTI_DB_PATH"] for item in requests}) == 1
     assert {item["TTI_BENCH_GENERATION_ID"] for item in requests} == {

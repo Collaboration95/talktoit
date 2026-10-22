@@ -146,6 +146,7 @@ def run_case(
     plans: dict[Join, bool] = {}
     variants: dict[PlanVariant, PlanEvidence] = {}
     memory_samples = 0
+    plan_runs = 0
     shared_env: dict[str, str] = {}
     generation_id = ""
     with ExitStack() as owned:
@@ -190,6 +191,7 @@ def run_case(
                 # Keep the configured managed target; never dereference its legacy file.
                 env["TTI_DB_PATH"] = shared_env["TTI_DB_PATH"]
                 env["TTI_BENCH_GENERATION_ID"] = generation_id
+                env["TTI_BENCH_PLAN_MATRIX"] = "1" if trial == warmups else "0"
                 workload = measure_process(
                     [
                         sys.executable,
@@ -208,15 +210,17 @@ def run_case(
                     or not measured.managed_generation_verified
                 ):
                     raise RuntimeError("synthetic_workload_isolation_failed")
-                if variants and variants != measured.plan_variants:
-                    raise RuntimeError("synthetic_plan_variants_changed")
-                variants = measured.plan_variants
+                if measured.plan_variants:
+                    plan_runs += 1
+                    if variants:
+                        raise RuntimeError("synthetic_plan_matrix_repeated")
+                    variants, plans = measured.plan_variants, measured.explain_analyze
                 if trial < warmups:
                     continue
                 values.setdefault("workload_process_wall", []).append(workload.elapsed_ms)
                 for key, value in measured.metrics.items():
                     values.setdefault(key, []).append(value)
-                requests, plans = measured.dashboard_requests, measured.explain_analyze
+                requests = measured.dashboard_requests
     measurements = [
         Measurement(
             name=name,
@@ -250,6 +254,7 @@ def run_case(
         dashboard_requests=requests,
         explain_analyze=plans,
         plan_variants=variants,
+        plan_matrix_runs=plan_runs,
         memory_interval_ms=INTERVAL * 1000,
         memory_samples=memory_samples,
     )

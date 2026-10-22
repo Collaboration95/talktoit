@@ -185,7 +185,7 @@ fields/identifiers are rejected. Generated XML/DB/state/shards live in disposabl
 storage; never commit them, frontend dist or coverage. Failures produce only a fixed status.
 
 Latest/ranked/cursor-paged joins are exercised by production query helpers. The bounded
-plan matrix now runs **14 fixed variants** once inside each existing query workload's
+plan matrix now runs **14 fixed variants** once per case/seed/worker, inside the first retained query workload's
 leased EXPLAIN context, after the original cold/warm query metrics. It reuses the already
 parity-verified generation; no variants create another XML corpus or official import.
 
@@ -223,8 +223,10 @@ support is exercised directly by the real-plan fixture tests. Scan/aggregate car
 must be inspected privately or collected in a separately verified profiling experiment
 before making any optimizer or summary-table decision. The original three family success
 flags remain, together with all existing query timing, profile, provider and isolation
-fields. Variant evidence must agree across warmup and retained workloads for the immutable
-generation; missing/unknown variant IDs and arbitrary fields are rejected before publication.
+fields. The report records `plan_matrix_runs=1`; missing/unknown variant IDs and arbitrary fields
+are rejected before publication. The full matrix runs after the timed query/HTTP work, so
+all 20 actual request/query samples remain; process-wall cost honestly includes that one
+structural pass. It is not needlessly repeated in every stochastic workload trial.
 
 The selective/subsequent-page **functional coverage gap is closed**. Actual representative
 plan investigation, timings, filtered-aggregate/summary-table comparisons and candidate
@@ -464,3 +466,14 @@ passed/1 failed); corrected make bench exited 0 (11 passed). All ceilings are un
 Reference inspection found battery power at 94%, low-power mode off; AC is unavailable
 in this session. Comparisons therefore describe this battery-powered reference session,
 with before/after power/load observations, and are not machine-independent limits.
+
+
+Pilot at clean source `fabeb0c` exited 0: 37.63 seconds including build; representative
+import 6.79 s and workload-process median 1.13 s. An auxiliary parity-verified representative
+store measured the 14-plan pass at 84.12 ms median (3 observations after one warmup), about
+7.5% of a workload process. Structural plans are therefore deduplicated to once per config;
+a call-count regression failed before this adjustment and verifies the single execution.
+The pilot is rerun after committing this preparation; both final matrices use the same
+new committed source and locks. Full two-matrix cost is practical (<45-minute declared
+bound), so both sizes/seeds and workers 1/2/4 are retained without reduction. No decision
+criteria or benefit/noise margins are changed in response to pilot observations.
