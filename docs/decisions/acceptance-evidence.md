@@ -1,91 +1,124 @@
 # Roadmap delivery evidence
 
-This index tracks the 22 October 2026 delivery run from `main` at `49510a7`.
-The integration branch is `codex/dev-roadmap-20261022`. All GitHub access uses
-authenticated `gh`; all verification data is synthetic and remains local.
+This index tracks the 22 October 2026 delivery from `main` at `49510a7`.
+The integration branch is `codex/dev-roadmap-20261022`; umbrella
+[PR #200](https://github.com/Collaboration95/talktoit/pull/200) targets `main`.
+All GitHub operations use authenticated `gh`. Verification uses isolated synthetic
+data and denied providers. Personal exports and generated databases are excluded
+from commits. The existing untracked `reports/` remains untouched.
 
 ## Delivery decisions
 
-The user's current instructions supersede the original execution charter's
-one-leaf-per-PR and per-PR review requirements. Related leaves share cohesive
-PRs targeting the integration branch. Independent review runs against the final
-integrated result. At most five Sol 6.1 children may run concurrently, with fast
-service enabled. Children may not launch other agents. Luna design/research
-tasks do not consume that limit. Each writer has an isolated worktree.
+The user's instructions supersede the original charter's one-leaf-per-PR,
+two-writer limit and per-PR independent review. Related leaves share cohesive PRs
+targeting dev. One final independent review assesses the integrated result.
+At most five Sol 6.1 children run concurrently with fast service enabled;
+children may not launch other agents. Writers use separate worktrees.
 
-Tests precede behavior changes. Focused tests run without coverage during
-iteration; complete surface checks and coverage gates run before integration.
-Concurrent pytest runs cap automatic workers at two. Performance measurements
-must run without competing delivery workloads before they establish a baseline
-or support an improvement claim. Existing Ruff/pre-commit tooling remains the
-canonical fast verification path.
+Meaningful regressions precede behavior changes. Focused checks support quick
+iteration; full affected surfaces and unchanged coverage gates qualify each batch.
+Pytest automatic workers and Vitest workers are capped at two locally. Existing
+Ruff/pre-commit checks remain the commit verification path. Timed measurements
+run in a separate quiet phase without competing local tests, builds or browser
+journeys. Prototype selection and production acceptance evidence remain separate.
 
-## Batches
+## Integrated batches
 
-| Batch | Issues | Boundary | Evidence |
+Every batch below is merged into dev. Final PR checks passed: nine for #201/#202,
+ten for #203–#211. These receipts establish integration checkpoints; they do not
+substitute for final review or merged-main acceptance.
+
+| PR | Required leaves | Result | Dev merge |
 | --- | --- | --- | --- |
-| Owned shards and CLI identity | #153, #154 | Coordinator and CLI cache association | PR #202 merged at `d81464e`; nine CI checks passed |
-| Durable activation | #156, #157, #158 | Selected lifecycle protocol and crash recovery | PR #205: original CI passed; integration update pending |
-| Generation identity and retirement | #160, #161, #162, #163 | Leased generation, deletion, owned cleanup | Waiting for durable activation |
-| Supported maintenance | #140, #141, #142, #144, #145, #146, #147 | Toolchain, audit fixes, macOS smoke, historical reconciliation | PR #204 merged at `475e673`; ten CI checks passed |
-| Dashboard scope | #167, #168 | Explicit dataset periods and recoverable empty filters | PR #203 merged at `82c42bf`; ten CI checks passed |
-| Daily-use guidance | #170, #171, #173, #174, #175, #197 | Onboarding, import jobs, truthful chat/provider/route states | PR #206 merged at `c461341`; ten PR CI checks passed |
-| Analytics decisions | #192, #194 | Sleep and metric comparison contracts | PR #201 merged at `4d766aa`; nine CI checks passed |
-| Analytics implementation | #193, #195 | Shared measured queries, tools and templates | Waiting for identity and chat contracts |
-| Measured performance | #179, #180, #181, #183, #184, #186, #187, #188 | Reproducible baseline and selected candidates | Supported baseline integrated; harness in progress; quiet measurements pending |
+| [#201](https://github.com/Collaboration95/talktoit/pull/201) | #192, #194 | Sleep/comparison contracts | `4d766aa` |
+| [#202](https://github.com/Collaboration95/talktoit/pull/202) | #153, #154 | Owned shards; CLI cache isolation | `d81464e` |
+| [#204](https://github.com/Collaboration95/talktoit/pull/204) | #140, #141, #142, #144, #145, #146, #147 | Toolchain, dependency fixes, macOS smoke, historical reconciliation | `475e673` |
+| [#203](https://github.com/Collaboration95/talktoit/pull/203) | #167, #168 | Dataset periods; recoverable empty filters | `82c42bf` |
+| [#206](https://github.com/Collaboration95/talktoit/pull/206) | #170, #171, #173, #174, #175, #197 | Import/onboarding, truthful chat/provider/route states | `c461341` |
+| [#205](https://github.com/Collaboration95/talktoit/pull/205) | #156, #157, #158 | Durable activation and hard-exit recovery | `d2d33b9` |
+| [#207](https://github.com/Collaboration95/talktoit/pull/207) | #160, #161, #162, #163 | Leased consumers, deletion and artifact/job recovery | `b9ccec6` |
+| [#208](https://github.com/Collaboration95/talktoit/pull/208) | #193, #195 | Measured sleep and metric comparisons | `aef8b4b` |
+| [#209](https://github.com/Collaboration95/talktoit/pull/209) | #179, #180, #181 | Baseline harness; bounded validation/mmap | `f45a1db` |
+| [#210](https://github.com/Collaboration95/talktoit/pull/210) | #183, #184, #188 | Short write scopes; SQL buckets; profiling NO-GO | `4fba4c0` |
+| [#211](https://github.com/Collaboration95/talktoit/pull/211) | #186, #187 | Independent volume; deferred charts | `51bc6dc` |
 
-The performance batch comprises #179, #180, #181, #183, #184, #186, #187 and
-#188. Candidate issues permit a measurement-based no-change disposition; such a
-disposition must include reproducible evidence and must not claim a speedup.
+Combined candidate: `51bc6dcc4c0b57768fcfcb50bc70387707f29209`. All ten integrated CI checks
+passed, including macOS lifecycle smoke and Ubuntu suites/build ([run](https://github.com/Collaboration95/talktoit/actions/runs/39803509563)). All 36 required task/spike leaves remain in Review
+until final independent review, merged-main receipts and completion comments exist.
 
-## Final acceptance
+## Criterion-to-evidence map
 
-The maintenance (#148), data safety (#164), daily-use (#176), performance
-(#189), analytics (#199), and whole-roadmap (#150) gates remain open until their
-specific acceptance evidence exists. An open PR, green targeted test, or design
-note does not establish full roadmap completion. Historical issues remain
-unchanged while #142 classifies their current evidence. Optional companion/ZIP
-discovery (#198) does not block the required roadmap and does not advertise a
-supported feature.
+| Gate | Required outcome and current evidence | Remaining qualification |
+| --- | --- | --- |
+| #148 maintenance | Supported Python 3.12.11/Node 20.20.2; locked installs; audit dispositions; Ubuntu suites/macOS lifecycle CI; 55 historical issues classified | Fresh audits, integrated review and main CI |
+| #164 data safety | Process-death activation/deletion/retention matrices; two-dataset identity/cache tests; leases; simultaneous import/query/delete; owned-artifact recovery | Final integrated fault matrix and main/platform receipts |
+| #176 daily use | Native upload and browser DOM checks; desktop/390 px screenshots; visible question; scoped dashboard; persistent empty filters | Final real-browser reconnect/cancel/restart/keyboard journey and Ubuntu browser receipt |
+| #189 performance | Frozen matrices; production portfolio; implementation parity; quiet branch benchmark gates | BLOCKED on #187 first-chart regression, then quiet repair qualification, review and main rerun |
+| #199 analytics | Shared sleep union/stages; independent HTTP/CLI/query oracles; coverage/missing/zero states; provider-denied browser render | Final integrated oracle/browser rerun, review and main receipts |
+| #150 whole roadmap | Eleven cohesive batches integrated; architecture/issue map and reproducible setup | All five gates, final checks/build, independent review, main integration and handoff |
 
-## Integrated checkpoint
+No gate is closed at this checkpoint. Optional companion/ZIP discovery #198 is
+outside the required roadmap. XML upload does not include companion GPX files;
+the UI explains the existing local import route. Historical issues remain
+unchanged: 28 repaired, 8 residual and 19 unverified; classification does not claim
+acceptance or close them.
 
-The integration branch passed all ten CI checks at `82c42bf`, including the macOS
-synthetic lifecycle smoke. Daily-use merge `c461341` has not yet received its
-integrated CI receipt at this checkpoint. Its own PR passed all ten checks.
-PR #200 remains a draft; final independent review and outcome gates are pending.
+## Detailed evidence
 
-Detailed reproducible evidence lives in:
+- [Baseline](maintenance-baseline-2026-10.md), [dependency decision](dependency-remediation.md)
+  and [dispositions](dependency-disposition-2026-10.md): toolchain, locks, audits,
+  official synthetic counts and workflow validation.
+- [Historical reconciliation](audit-reconciliation-2026-10.md): all 55 issues with
+  residual/unverified acceptance items.
+- [Lifecycle protocol](dataset-lifecycle.md) and [artifact ownership](import-artifact-ownership.md):
+  commit point, ordered locks, leases, tombstones, cancellation and actual process
+  death. Targets local POSIX filesystems; physical power loss is not simulated.
+  Ambiguous artifacts are preserved rather than guessed safe to delete.
+- [Daily-use acceptance](daily-use-acceptance.md): component/API regressions, native
+  import, truthful starters/fallbacks and saved provider disclosures.
+- [Sleep](sleep-chat.md) and [comparison](metric-comparisons.md) contracts: measured
+  semantics, interval unions and coverage. The parent's independent synthetic
+  oracle verified 14.5 hours across the two sample sleep days, 90,954 steps,
+  HTTP/CLI identity and three metric comparisons with zero provider calls.
+- [Frozen performance baseline](performance-baseline.md) and [numeric evidence](performance-baseline-results.json):
+  both sizes/seeds, workers 1/2/4, sample counts, outliers and power phases.
+  Reference source: `859f89a405499ecef024fb8dde127a5f3d7c2f77`.
+- [Ingestion](performance-ingestion.md), [chat/trends](performance-chat-trends.md)
+  and [frontend](performance-frontend.md): tests-first implementation, unchanged
+  parity/coverage gates, structural counts and candidate limits. Quiet `make bench`
+  exited 0 at exact heads `bf06ff6`, `2e8e597` and `b568b31`.
+- [Production portfolio](performance-portfolio.md) and [numeric evidence](performance-portfolio-results.json):
+  actual reference/candidate matrices on matching AC power. Representative import
+  RSS falls 13.3–28.2% with a 0.95–6.67% wall tradeoff; numeric trend median falls
+  106.42 to 5.79 ms while transferring 125,000 to 26 rows. These gains do not waive
+  the first-chart failure described below.
 
-- `maintenance-baseline-2026-10.md`, `dependency-remediation.md`, and
-  `dependency-disposition-2026-10.md`: Node 20.20.2/Python 3.12.11, locked installs,
-  full checks, official synthetic V2 counts/relationships, and audit inventory.
-- `audit-reconciliation-2026-10.md`: all 55 historical open issues classified;
-  historical issues remain unchanged.
-- `daily-use-acceptance.md`: tests and real-browser DOM acceptance for import,
-  starters, chat, saved privacy, and routes.
-- `sleep-chat.md` and `metric-comparisons.md`: accepted implementation contracts
-  and the synthetic sleep-semantics oracle; feature implementation remains pending.
-- PR #202: 494 backend tests; A=45.5/B=999-minute cache identity regression;
-  sentinel, retry, symlink, concurrent shard and worker-parity coverage. Coverage
-  was 86.85% overall, 91% ingestion, and 83% LLM.
-- PR #203: 176 frontend tests on its original source, 59 focused tests, and real
-  browser DOM/request evidence for periods, URL history, saved scopes and Reset.
-  Its integration update passed CI under the maintained Vitest 4 toolchain.
+Profile caching (#184) was rejected: 2.61 ms prototype gain missed the predeclared
+10 ms floor. Workout join summaries were rejected: worst tested helper p95
+44.04 ms met the 50 ms budget. Reopening conditions are recorded. Synthetic
+reference timings are not personal-export guarantees. Model inference remains
+unmeasured.
 
-Python and production-only Node audits passed. The full Node audit still exits 1
-with seven vulnerable packages arising from two documented Tailwind 3 development
-tooling advisories. Audit gates remain enabled. These dispositions and the
-existing Tremor/React peer mismatch remain explicit final-review inputs; a clean
-all-dependency audit is not claimed.
+## Explicit limits and next checks
 
-Browser navigation and DOM interactions work, but snapshot capture repeatedly
-reported `Preview automation snapshot timed out after 15000ms.` Screenshot/visual
-acceptance and the complete restart/cancel/phone-width journey remain pending.
-No performance baseline or speedup is claimed while competing test work runs.
+Fresh audits on 23 October match the maintenance inventory: Python and
+production-only Node exit 0 with no findings. Full Node audit exits 1 with seven
+development packages (five high, two moderate) from two documented Tailwind 3
+advisories. Audit gates remain enabled; a clean all-dependency audit is not claimed.
+The existing Tremor/React peer mismatch remains documented. The separate portable
+browser tooling must also be audited when its lock is added.
 
-Record remaining actual head/merge SHAs, commands and exit codes, module coverage,
-Ubuntu/macOS CI links, synthetic known-value and crash/race evidence, browser
-acceptance, independent review, performance metadata, and limitations here as
-batches land. Integrated tests establish the checkpoints above; they do not close
-the whole-roadmap acceptance gate.
+T3 preview twice failed with `Preview automation snapshot timed out after 15000ms.`
+Native Chrome/standalone Playwright subsequently supplied actual desktop/390 px
+screenshots and browser checks. These do not yet establish the complete final
+journey on the combined candidate. Functional failed-chunk testing found Chrome
+retains a failed dynamic import on retry; formatted data remains usable.
+
+Primary frozen baseline matrices ran on battery, later supplements on AC. Those
+latencies are not pooled. The completed production portfolio uses matching AC
+conditions for both reference and candidate. Its actual first-visible nonzero
+canvas plus two frames regressed from 179.60/196.20 to 479.20/495.90 ms median/p95
+across 20 retained trials per head. #187 is back In progress, and #189/main
+acceptance remain blocked. The original result and outliers remain archived;
+repair must preserve deferred dependencies and qualify against the original
+margins. Final checks, independent verdicts and merged-main acceptance remain open.

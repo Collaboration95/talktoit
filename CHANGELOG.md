@@ -31,6 +31,12 @@ in `make check` and CI).
 
 ### Fixed
 
+- Numeric trends aggregate in DuckDB before transferring buckets to Python,
+  preserving timezone, missing-value and zero semantics.
+- Conversation preparation releases committed pending-turn writes before profiling
+  and planning, allowing unrelated state writers to finish during that work.
+- XML validation releases completed sibling shells, and V2 matching scans bounded
+  mmap ranges without copying each worker range; validation and worker parity remain enforced.
 - Dashboard volume granularity changes fetch only training volume, with independent
   loading/error/retry and stale-response protection while other panels stay usable.
 - Trend and route charts load on use. Chart failures retain the query and offer
