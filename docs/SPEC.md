@@ -127,7 +127,10 @@ It is not a health interpretation.
 }
 ```
 
-`table` and `text` are independently nullable. Fallbacks must be useful without exposing raw
+`table` and `text` are independently nullable. The optional nullable `reason` is one of
+`unsupported`, `no_matching_data`, `clarification_needed`, `provider_unavailable`, or
+`unavailable`. Existing clients may ignore it; clients must tolerate its absence in stored
+answers. It selects local recovery guidance and never authorizes a new capability. Fallbacks must be useful without exposing raw
 prompts, SQL, implementation details, or unapproved health records.
 
 ## 3. Runtime and compatibility rules

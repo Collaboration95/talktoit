@@ -43,6 +43,7 @@ const SETTINGS: Settings = {
 }
 
 const server = setupServer(
+  http.get('/api/imports', () => HttpResponse.json([])),
   http.get('/health', () => HttpResponse.json({ status: 'ok' })),
   http.get('/api/conversations', () => HttpResponse.json([])),
   http.get('/api/settings', () => HttpResponse.json(SETTINGS)),

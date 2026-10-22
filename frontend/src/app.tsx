@@ -88,7 +88,7 @@ export function App() {
       </nav>
       <Suspense fallback={<TabFallback />}>
         {tab === 'chat' ? (
-          <ChatView />
+          <ChatView onOpenSettings={() => selectTab('settings')} />
         ) : tab === 'dashboard' ? (
           <DashboardView />
         ) : tab === 'diagnostics' ? (

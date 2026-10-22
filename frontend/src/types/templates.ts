@@ -112,4 +112,10 @@ export interface FallbackData {
   table: FallbackTableRow[] | null
   text: string | null
   message?: string
+  reason?:
+    | 'unsupported'
+    | 'no_matching_data'
+    | 'clarification_needed'
+    | 'provider_unavailable'
+    | 'unavailable'
 }

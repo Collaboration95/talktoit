@@ -75,7 +75,8 @@ def test_unsupported_pace_ranking_does_not_create_a_duration_plan(profile: DataP
         "tool_name": "get_fallback_answer",
         "arguments": {
             "text": "Ranking workouts by pace is not supported yet. "
-            "I can rank them by distance, duration, heart rate, or energy."
+            "Try: Top 5 longest runs this year.",
+            "reason": "unsupported",
         },
     }
 
@@ -87,7 +88,8 @@ def test_metric_comparison_does_not_create_a_workout_comparison_plan(
         "tool_name": "get_fallback_answer",
         "arguments": {
             "text": "Comparing health metrics between periods is not supported yet. "
-            "I can show a trend for that metric instead."
+            "I can show a trend for that metric instead.",
+            "reason": "unsupported",
         },
     }
 

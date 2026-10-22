@@ -12,13 +12,13 @@ export interface LitertStatus {
   endpoint_reachable?: boolean
   model_available?: boolean
   ownership?: 'owned' | 'external' | 'none'
-  pid: number | null
+  pid?: number | null
   base_url: string
   model: string
-  binary: string | null
+  binary?: string | null
   binary_available: boolean
-  pidfile: string
-  log_path: string
+  pidfile?: string
+  log_path?: string
 }
 
 export interface LitertHealth {
@@ -87,8 +87,12 @@ export type ClearScope = 'cache' | 'history' | 'diagnostics' | 'health'
 
 export type DestroyResult = { cleared?: number; deleted?: number; scope: ClearScope }
 
-export async function fetchSettings(): Promise<Settings> {
-  const response = await checkedFetch('/api/settings', undefined, 'Settings request failed')
+export async function fetchSettings(signal?: AbortSignal): Promise<Settings> {
+  const response = await checkedFetch(
+    '/api/settings',
+    signal ? { signal } : undefined,
+    'Settings request failed',
+  )
   return response.json() as Promise<Settings>
 }
 
