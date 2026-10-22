@@ -6,6 +6,69 @@ on:
   pull_request:
 
 jobs:
+  ubuntu-browser-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTEST_XDIST_AUTO_NUM_WORKERS: '2'
+      TTI_INGEST_WORKERS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend/package-lock.json
+            scripts/browser-acceptance/package-lock.json
+      - run: uv sync --directory backend --dev --locked --python 3.12
+      - run: npm --prefix frontend ci
+      - run: npm --prefix scripts/browser-acceptance ci --ignore-scripts
+      - name: Audit isolated browser tooling
+        run: npm --prefix scripts/browser-acceptance audit
+      - name: Install locked Chromium and Ubuntu dependencies
+        working-directory: scripts/browser-acceptance
+        run: ./node_modules/.bin/playwright install --with-deps chromium
+      - name: Check harness syntax and regression sensitivity
+        run: |
+          for script in scripts/browser-acceptance/*.mjs; do node --check "$script"; done
+          uv run --directory backend python -m compileall -q ../scripts/browser-acceptance
+          PYTHONPATH="${GITHUB_WORKSPACE}/backend" uv run --directory backend python ../scripts/browser-acceptance/self_test.py
+          npm --prefix scripts/browser-acceptance run self-test
+      - name: Build actual production frontend
+        run: npm --prefix frontend run build
+      - name: Real Chromium, FastAPI, importer and hard restart (synthetic only)
+        run: >-
+          uv run --directory backend python ../scripts/browser-acceptance/run.py
+          --artifacts "${RUNNER_TEMP}/tti-browser-artifacts"
+      - name: Record setup failure when the harness could not start
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          output = Path(os.environ['RUNNER_TEMP']) / 'tti-browser-artifacts' / 'receipt.json'
+          if not output.exists():
+              output.parent.mkdir(parents=True, exist_ok=True)
+              output.write_text(json.dumps({
+                  'head': os.environ['GITHUB_SHA'],
+                  'criteria': {'harness-started': False},
+                  'exit': 1,
+              }) + '\n')
+          PY
+      - name: Preserve only synthetic screenshots and sanitized criteria
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu-browser-acceptance-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/tti-browser-artifacts/*.png
+            ${{ runner.temp }}/tti-browser-artifacts/receipt.json
+          if-no-files-found: warn
+          retention-days: 7
+
   macos-lifecycle-smoke:
     runs-on: macos-latest
     timeout-minutes: 10

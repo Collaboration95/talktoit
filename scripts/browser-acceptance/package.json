@@ -1,0 +1,14 @@
+{
+  "name": "tti-browser-acceptance",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "20.x"
+  },
+  "scripts": {
+    "self-test": "node self-test.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}
