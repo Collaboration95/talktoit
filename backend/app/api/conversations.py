@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_app_state_repository
+from app.db.connection import dataset_snapshot
 from app.state.app_state import AppStateRepository
 
 router = APIRouter(prefix="/api/conversations")
@@ -29,8 +30,9 @@ async def create_conversation(
     body: ConversationCreate, repo: AppStateRepository = Depends(get_app_state_repository)
 ) -> dict[str, str]:
     """Create a local dataset-scoped conversation."""
-    active = repo.get_active()
-    return {"id": repo.create_conversation(body.title, active.id if active else None)}
+    with dataset_snapshot() as snapshot:
+        active = snapshot.dataset
+        return {"id": repo.create_conversation(body.title, active.id if active else None)}
 
 
 @router.get("")

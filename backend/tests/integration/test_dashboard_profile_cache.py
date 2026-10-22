@@ -26,6 +26,7 @@ import app.db.dashboard_cache as dashboard_cache
 from app.ingest.coordinator import ingest_v2 as ingest
 from app.main import create_app
 from app.state.app_state import AppStateRepository
+from tests.dataset_support import fixture_connection
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "sample.xml"
 
@@ -79,7 +80,7 @@ async def client(
     test_app = create_app()
 
     def _override_get_conn() -> Generator[duckdb.DuckDBPyConnection, None, None]:
-        yield db
+        yield from fixture_connection(db)
 
     test_app.dependency_overrides[_get_conn] = _override_get_conn
     async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as c:
@@ -174,7 +175,10 @@ def test_cold_miss_coalesces_concurrent_panels(
         conn = duckdb.connect(":memory:")
         ingest(str(FIXTURE), conn)
         try:
-            return dashboard_cache.resolve_dashboard_context(conn)
+            from contextlib import contextmanager
+
+            with contextmanager(fixture_connection)(conn):
+                return dashboard_cache.resolve_dashboard_context(conn)
         finally:
             conn.close()
 

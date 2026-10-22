@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from contextlib import contextmanager
 from datetime import date
 
 import duckdb
@@ -11,9 +12,15 @@ import duckdb
 import app.state.app_state as app_state
 from app.api.chat import _finalize_chat, _prepare_chat, _semantic_cached_answer
 from app.db.data_profile import DataProfile
-from app.llm.cache_keys import CACHE_KEY_VERSION, build_cache_key, generation_identity
+from app.llm.cache_keys import (
+    CACHE_KEY_VERSION,
+    build_cache_key,
+    generation_identity,
+    snapshot_plan,
+)
 from app.models.chat import ChatRequest, ChatResponse, ResponseMetadata
 from app.state.app_state import CACHE_MAX_ENTRIES, AppStateRepository
+from tests.dataset_support import fixture_connection
 
 
 def test_exact_cache_is_scoped_to_dataset_and_refreshable(tmp_path) -> None:
@@ -33,7 +40,7 @@ def test_canonical_cache_key_can_share_equivalent_local_intent(tmp_path) -> None
 
 
 def test_versioned_cache_keys_normalize_equivalent_intent_without_sharing_different_facts() -> None:
-    assert CACHE_KEY_VERSION == "chat-cache-v4"
+    assert CACHE_KEY_VERSION == "chat-cache-v5"
     assert build_cache_key("exact", "  Last RUN  ") == build_cache_key("exact", "last run")
     plan = {
         "tool_name": "get_trend",
@@ -171,7 +178,8 @@ def test_prepare_chat_cache_hit_skips_profile_scan(tmp_path, monkeypatch) -> Non
     monkeypatch.setattr("app.api.chat.get_data_profile", _must_not_run)
 
     conn = duckdb.connect(":memory:")
-    prepared = _prepare_chat(ChatRequest(question="show my last run"), conn, repo)
+    with contextmanager(fixture_connection)(conn, repo):
+        prepared = _prepare_chat(ChatRequest(question="show my last run"), conn, repo)
     assert prepared.cache_hit is True
     assert prepared.response is not None
     assert prepared.response.metadata.provenance == "cached"
@@ -206,7 +214,8 @@ def test_prepare_chat_rejects_legacy_fallback_cache_entry(tmp_path, monkeypatch)
     )
     monkeypatch.setattr("app.api.chat.get_data_profile", lambda _conn: profile)
     conn = duckdb.connect(":memory:")
-    prepared = _prepare_chat(ChatRequest(question="show my last run"), conn, repo)
+    with contextmanager(fixture_connection)(conn, repo):
+        prepared = _prepare_chat(ChatRequest(question="show my last run"), conn, repo)
     assert prepared.cache_hit is False
     assert prepared.response is None
 
@@ -231,7 +240,8 @@ def test_prepare_chat_cache_miss_still_scans_and_recomputes(tmp_path, monkeypatc
     monkeypatch.setattr("app.api.chat.get_data_profile", _fake_scan)
 
     conn = duckdb.connect(":memory:")
-    prepared = _prepare_chat(ChatRequest(question="show my last run"), conn, repo)
+    with contextmanager(fixture_connection)(conn, repo):
+        prepared = _prepare_chat(ChatRequest(question="show my last run"), conn, repo)
     assert scanned  # the profile scan ran on the miss path
     assert prepared.cache_hit is False
     assert prepared.canonical_plan == {
@@ -260,7 +270,9 @@ def test_semantic_cache_does_not_reuse_fallback_turn(tmp_path) -> None:
         fallback_json,
         "default",
         "fallback",
-        canonical_plan={"tool_name": "get_last_workout", "arguments": {"activity_type": "Running"}},
+        canonical_plan=snapshot_plan(
+            {"tool_name": "get_last_workout", "arguments": {"activity_type": "Running"}}
+        ),
     )
     result = _semantic_cached_answer(
         repo,
@@ -303,7 +315,8 @@ def test_finalize_chat_never_writes_a_fallback_template_to_cache(tmp_path, monke
     monkeypatch.setattr("app.api.chat.get_data_profile", lambda _conn: profile)
     conn = duckdb.connect(":memory:")
     request = ChatRequest(question="what did i eat")
-    prepared = _prepare_chat(request, conn, repo)
+    with contextmanager(fixture_connection)(conn, repo):
+        prepared = _prepare_chat(request, conn, repo)
     assert prepared.cache_hit is False
 
     fallback = ChatResponse(

@@ -152,7 +152,11 @@ def test_delete_health_database_closes_tracked_connections(monkeypatch, tmp_path
     """Health-file deletion is serialized with app-owned open handles."""
     path = tmp_path / "health.duckdb"
     monkeypatch.setenv("TTI_DB_PATH", str(path))
+    monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
     conn = connect()
+    from app.db.schema import SQL_CREATE_TABLES
+
+    conn.execute(SQL_CREATE_TABLES)
     conn.execute("CREATE TABLE marker(value INTEGER)")
     assert delete_health_database() == 1
     assert not path.exists()
