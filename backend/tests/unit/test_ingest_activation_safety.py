@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import errno
 import sys
-import types
 from pathlib import Path
 
 import pytest
@@ -43,7 +42,7 @@ def test_failed_manifest_activation_restores_previous_database(
     def fail_activation(self: AppStateRepository, source: Path, **manifest: object) -> None:
         raise RuntimeError("manifest write failed")
 
-    monkeypatch.setattr(AppStateRepository, "activate_file", fail_activation)
+    monkeypatch.setattr(AppStateRepository, "build_file_manifest", fail_activation)
 
     with pytest.raises(RuntimeError, match="manifest write failed"):
         run.main()
@@ -82,8 +81,9 @@ def test_unexpected_lock_failure_fails_closed(
     def unsupported_flock(*args: object) -> None:
         raise OSError(errno.ENOTSUP, "flock unsupported")
 
-    fake_fcntl = types.SimpleNamespace(flock=unsupported_flock, LOCK_EX=2, LOCK_UN=8)
-    monkeypatch.setattr(run, "_load_fcntl", lambda: fake_fcntl)
+    import fcntl
+
+    monkeypatch.setattr(fcntl, "flock", unsupported_flock)
 
     with pytest.raises(OSError, match="flock unsupported"):
         run.main()
