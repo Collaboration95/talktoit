@@ -120,11 +120,24 @@ def _comparison_plan(
     return {"tool_name": "get_comparison", "arguments": arguments}
 
 
+def _is_sleep_category_question(question: str) -> bool:
+    """Share known stage/category aliases with classification and unsupported planning."""
+    text = re.sub(r"[\u2010-\u2014]", "-", question.casefold())
+    return re.search(
+        r"\b(?:nrem|(?:non[-\s]*)?rem|(?:non[-\s]*)?rapid[-\s]+eye[-\s]+movement|"
+        r"stages?|categor(?:y|ies)|asleep|awake|awakenings?|bedtime)\b|\bin[- ]?bed\b",
+        text,
+    ) is not None or (
+        re.search(r"\b(?:deep|core|light)\b", text) is not None
+        and (re.search(r"\bsleep\w*\b", text) is not None or _activity_type(text) is None)
+    )
+
+
 def is_sleep_question(question: str) -> bool:
     """Keep sleep wording local even when it is outside the supported grammar."""
-    return (
+    return _is_sleep_category_question(question) or (
         re.search(
-            r"\b(?:sleep\w*|asleep|slept|insomnia|awake|awakenings?|bedtime|rem)\b|\bin[- ]?bed\b",
+            r"\b(?:sleep\w*|slept|insomnia)\b",
             question.casefold(),
         )
         is not None
@@ -250,15 +263,17 @@ def _metric_comparison_plan(question: str) -> dict[str, Any]:
 
 
 def _sleep_date_range(text: str, as_of: date | None) -> tuple[date, date] | None:
-    """Accept one complete supported date clause, never its first matching fragment."""
-    scope = re.search(
-        rf"\b(?:from|between|in|for|during|since|before|after|until|"
-        rf"(?:this|last)\s+(?:week|month|year)|year to date|{_MONTH_PATTERN})\b|\b\d{{4}}-",
-        text,
+    """Consume a bounded request prefix and its entire supported date clause."""
+    request = re.fullmatch(
+        r"(?:(?:show|plot|chart)\s+(?:me\s+)?(?:my\s+)?|my\s+)?"
+        r"(?:(?:daily|weekly|monthly)\s+)?sleep"
+        r"(?:\s+(?:interval coverage|coverage|duration|trend))?\s+(?P<clause>.+)"
+        r"|how\s+(?:did i sleep|much sleep did i get|long did i sleep)\s+(?P<asked_clause>.+)",
+        text.strip().rstrip(".?!"),
     )
-    if scope is None:
+    if request is None:
         return None
-    clause = text[scope.start() :].strip().rstrip(".?!")
+    clause = (request.group("clause") or request.group("asked_clause")).strip()
     if re.match(r"(?:from|between)\b", clause):
         ranges = _explicit_ranges(clause)
         return ranges[0] if len(ranges) == 1 else None
@@ -279,10 +294,7 @@ def _sleep_plan(question: str, profile: DataProfile) -> dict[str, Any]:
     lower = question.casefold()
     # A coverage explanation may name included categories without asking to measure one.
     intent = re.sub(r"\bincluding awake and in[- ]?bed (?:records|intervals)\b", "", lower)
-    if re.search(
-        r"\b(?:stages?|rem|deep|core|light|asleep|awake|awakenings?|bedtime)\b|\bin[- ]?bed\b",
-        intent,
-    ):
+    if _is_sleep_category_question(intent):
         return _fallback_plan(
             "Sleep stages (REM, deep and core) and time asleep, awake or in bed are not supported "
             "in chat yet. I can show measured sleep interval coverage, including awake and "
