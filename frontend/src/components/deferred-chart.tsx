@@ -1,18 +1,72 @@
-import { Component, lazy, Suspense, useState } from 'react'
-import type { ComponentType, LazyExoticComponent, ReactNode } from 'react'
+import { Component, useEffect, useState } from 'react'
+import type { ComponentType, ReactNode } from 'react'
 
 type ChartLoader<P extends object> = () => Promise<{ default: ComponentType<P> }>
+type ChartState<P extends object> =
+  | { status: 'loading' }
+  | { status: 'ready'; Chart: ComponentType<P> }
+  | { status: 'failed'; error: unknown }
 
-// Cache component types, never props or health data. The loader identity fixes
-// its props type; sharing resolved types avoids suspending on every remount.
-const chartTypes = new WeakMap<() => Promise<unknown>, unknown>()
+interface ChartResource<P extends object> {
+  id: number
+  state: ChartState<P>
+  settled: Promise<ChartState<P>>
+}
+
+// Share imports and resolved components, never chart props or health data.
+// A loader's identity fixes its component props type.
+const charts = new WeakMap<() => Promise<unknown>, unknown>()
+let nextResourceId = 0
 
 function chartFor<P extends object>(load: ChartLoader<P>, retry = false) {
-  const cached = chartTypes.get(load) as LazyExoticComponent<ComponentType<P>> | undefined
+  const cached = charts.get(load) as ChartResource<P> | undefined
   if (cached && !retry) return cached
-  const chart = lazy(load)
-  chartTypes.set(load, chart)
-  return chart
+  let request: ReturnType<ChartLoader<P>>
+  try {
+    request = load()
+  } catch (error) {
+    request = Promise.reject(error)
+  }
+  const resource: ChartResource<P> = {
+    id: nextResourceId++,
+    state: { status: 'loading' },
+    settled: request.then(
+      ({ default: Chart }) => (resource.state = { status: 'ready', Chart }),
+      (error: unknown) => (resource.state = { status: 'failed', error }),
+    ),
+  }
+  charts.set(load, resource)
+  return resource
+}
+
+function ChartContent<P extends object>({
+  resource,
+  chartProps,
+}: {
+  resource: ChartResource<P>
+  chartProps: P
+}) {
+  const [state, setState] = useState(resource.state)
+  useEffect(() => {
+    let active = true
+    void resource.settled.then((result) => {
+      if (active) setState(result)
+    })
+    return () => {
+      active = false
+    }
+  }, [resource])
+
+  if (state.status === 'failed') throw state.error
+  if (state.status === 'ready') {
+    const Chart = state.Chart
+    return <Chart {...chartProps} />
+  }
+  return (
+    <p role="status" className="py-5 text-sm text-gray-500">
+      Loading chart…
+    </p>
+  )
 }
 
 interface ChartBoundaryProps {
@@ -48,7 +102,7 @@ class ChartBoundary extends Component<ChartBoundaryProps, { failed: boolean }> {
   }
 }
 
-/** Loads a chart only on use; failures keep the surrounding answer and data usable. */
+/** Loads charts on use without a Suspense reveal delay; errors retain usable data. */
 export function DeferredChart<P extends object>({
   load,
   chartProps,
@@ -58,27 +112,21 @@ export function DeferredChart<P extends object>({
   chartProps: P
   fallback: ReactNode
 }) {
-  const [attempt, setAttempt] = useState(() => ({ Chart: chartFor(load), key: 0 }))
-  const Chart = attempt.Chart
+  const [retry, setRetry] = useState<{ load: ChartLoader<P>; resource: ChartResource<P> } | null>(
+    null,
+  )
+  const resource = retry?.load === load ? retry.resource : chartFor(load)
   return (
     <ChartBoundary
-      key={attempt.key}
+      key={resource.id}
       fallback={fallback}
       onRetry={() => {
-        // React.lazy caches rejections. A fresh type retries the loader; if the
-        // browser retains a failed module, the data fallback remains available.
-        setAttempt((current) => ({ Chart: chartFor(load, true), key: current.key + 1 }))
+        // The browser may retain a failed module; the formatted fallback remains
+        // available even when another import attempt cannot recover it.
+        setRetry({ load, resource: chartFor(load, true) })
       }}
     >
-      <Suspense
-        fallback={
-          <p role="status" className="py-5 text-sm text-gray-500">
-            Loading chart…
-          </p>
-        }
-      >
-        <Chart {...chartProps} />
-      </Suspense>
+      <ChartContent resource={resource} chartProps={chartProps} />
     </ChartBoundary>
   )
 }
