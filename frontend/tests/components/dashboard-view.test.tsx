@@ -1,9 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { Profiler } from 'react'
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { DashboardView } from '@/components/dashboard-view'
-import type { TrendResponse } from '@/api/dashboard'
+import type { TrendResponse, TrainingVolumeResponse } from '@/api/dashboard'
+import * as dashboardApi from '@/api/dashboard'
 
 const server = setupServer(
   http.get('/health', () => HttpResponse.json({ status: 'ok' })),
@@ -1004,4 +1006,264 @@ it('labels sleep interval coverage separately from measured asleep stages', asyn
   ).toBeInTheDocument()
   expect(screen.getByText(/Includes awake and in-bed records/)).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: /Measured Sleep Stages/ })).toBeInTheDocument()
+})
+
+// #186: count real API-client requests; delayed replies deliberately ignore cancellation.
+describe('independent training volume lifecycle', () => {
+  const volume = (granularity = 'week', sessions = 11) => ({
+    granularity,
+    totals: { sessions, duration_minutes: 60, distance_meters: 1000, energy_kj: 100 },
+    series: [
+      {
+        bucket: granularity === 'month' ? '2024-12' : '2024-W52',
+        sessions,
+        duration_minutes: 60,
+        distance_meters: 1000,
+        energy_kj: 100,
+      },
+    ],
+    by_activity: [],
+  })
+  const track = () => {
+    const requests: URL[] = []
+    const listener = ({ request }: { request: Request }) => {
+      const url = new URL(request.url)
+      if (url.pathname.startsWith('/api/dashboard/') || url.pathname === '/api/status')
+        requests.push(url)
+    }
+    server.events.on('request:start', listener)
+    return { requests, stop: () => server.events.removeListener('request:start', listener) }
+  }
+  const settled = async () => {
+    await screen.findByText('46 min')
+    await waitFor(() => expect(screen.queryAllByTestId(/^panel-loading-/)).toHaveLength(0))
+  }
+
+  it('fetches exactly one volume per toggle and preserves all other panels and pending pagination', async () => {
+    setupHandlers()
+    let releasePage: (() => void) | undefined
+    server.use(
+      http.get('/api/dashboard/volume', ({ request }) =>
+        HttpResponse.json(volume(new URL(request.url).searchParams.get('granularity')!)),
+      ),
+    )
+    // Keep a loaded workout so pagination is reachable.
+    server.use(
+      http.get('/api/dashboard/workouts', ({ request }) => {
+        if (new URL(request.url).searchParams.has('cursor'))
+          return new Promise<Response>((resolve) => {
+            releasePage = () =>
+              resolve(
+                HttpResponse.json({
+                  workouts: [
+                    {
+                      id: 2,
+                      activity_type: 'Walking',
+                      date: '2024-12-29',
+                      duration_minutes: 22,
+                      avg_heart_rate: null,
+                      distance_meters: null,
+                      energy_burned_kj: null,
+                      source_name: 'Watch',
+                      fingerprint: 'fedcba9876543210',
+                    },
+                  ],
+                  next_cursor: null,
+                }),
+              )
+          })
+        return HttpResponse.json({
+          workouts: [
+            {
+              id: 1,
+              activity_type: 'Running',
+              date: '2024-12-30',
+              duration_minutes: 45.5,
+              avg_heart_rate: null,
+              distance_meters: null,
+              energy_burned_kj: null,
+              source_name: 'Watch',
+              fingerprint: '0123456789abcdef',
+            },
+          ],
+          next_cursor: 'page-two',
+        })
+      }),
+    )
+    const tracking = track()
+    try {
+      const user = userEvent.setup()
+      render(<DashboardView />)
+      await settled()
+      await user.click(screen.getByRole('button', { name: 'Load more workouts' }))
+      await waitFor(() => expect(releasePage).toBeDefined())
+      tracking.requests.length = 0
+      for (const granularity of ['month', 'week']) {
+        await user.click(screen.getByRole('button', { name: granularity, exact: true }))
+        await waitFor(() =>
+          expect(screen.queryByTestId('panel-loading-volume')).not.toBeInTheDocument(),
+        )
+        expect(screen.getByText('46 min')).toBeInTheDocument()
+      }
+      expect(tracking.requests.map((url) => url.pathname)).toEqual([
+        '/api/dashboard/volume',
+        '/api/dashboard/volume',
+      ])
+      expect(tracking.requests.map((url) => url.searchParams.get('granularity'))).toEqual([
+        'month',
+        'week',
+      ])
+      await act(async () => releasePage!())
+      expect(await screen.findByText('22 min')).toBeInTheDocument()
+    } finally {
+      tracking.stop()
+    }
+  })
+
+  it('isolates loading, failure and retry to volume and keeps controls available', async () => {
+    setupHandlers()
+    let release: (() => void) | undefined
+    let fail = true
+    server.use(
+      http.get('/api/dashboard/volume', ({ request }) => {
+        const granularity = new URL(request.url).searchParams.get('granularity')!
+        if (granularity === 'week') return HttpResponse.json(volume())
+        if (fail)
+          return new Promise<Response>((resolve) => {
+            release = () => resolve(HttpResponse.json({}, { status: 503 }))
+          })
+        return HttpResponse.json(volume('month', 22))
+      }),
+    )
+    const tracking = track()
+    try {
+      const user = userEvent.setup()
+      render(<DashboardView />)
+      await settled()
+      tracking.requests.length = 0
+      await user.click(screen.getByRole('button', { name: 'month', exact: true }))
+      expect(screen.getByTestId('panel-loading-volume')).toBeInTheDocument()
+      expect(screen.getByText('46 min')).toBeInTheDocument()
+      expect(screen.getByLabelText('Filter workouts by source')).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'week', exact: true })).toBeEnabled()
+      await waitFor(() => expect(release).toBeDefined())
+      await act(async () => release!())
+      expect(await screen.findByText('Could not load training volume.')).toBeInTheDocument()
+      expect(screen.queryByText('No data')).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'Retry unavailable panels' }),
+      ).not.toBeInTheDocument()
+      fail = false
+      await user.click(screen.getByRole('button', { name: 'Retry training volume' }))
+      await waitFor(() =>
+        expect(screen.queryByText('Could not load training volume.')).not.toBeInTheDocument(),
+      )
+      expect(screen.getByText('46 min')).toBeInTheDocument()
+      expect(tracking.requests.map((url) => url.pathname)).toEqual([
+        '/api/dashboard/volume',
+        '/api/dashboard/volume',
+      ])
+    } finally {
+      tracking.stop()
+    }
+  })
+
+  it('discards old volume success and failure across toggles, scope generations and unmount', async () => {
+    setupHandlers()
+    const pending: { url: URL; release: (failed?: boolean) => void; signal: AbortSignal }[] = []
+    // This adapter ignores abort so generation guards, rather than fetch cancellation,
+    // must reject its late success/failure.
+    const request = vi.spyOn(dashboardApi, 'fetchTrainingVolume').mockImplementation(
+      (scope, granularity, signal) =>
+        new Promise<TrainingVolumeResponse>((resolve, reject) => {
+          const url = new URL('/api/dashboard/volume', window.location.origin)
+          url.searchParams.set('granularity', granularity)
+          if (scope.start) url.searchParams.set('start', scope.start)
+          pending.push({
+            url,
+            signal: signal!,
+            release: (failed = false) =>
+              failed
+                ? reject(new Error('old volume failure'))
+                : resolve(volume(granularity, scope.start ? 33 : 99) as TrainingVolumeResponse),
+          })
+        }),
+    )
+    try {
+      const user = userEvent.setup()
+      const view = render(<DashboardView />)
+      await waitFor(() => expect(pending).toHaveLength(1))
+      // Controls must remain usable even before volume's first response.
+      await user.click(screen.getByRole('button', { name: 'month', exact: true }))
+      await waitFor(() => expect(pending).toHaveLength(2))
+      await user.click(screen.getByRole('button', { name: 'Latest 7 data days' }))
+      await waitFor(() => expect(pending).toHaveLength(3))
+      expect(pending[2]!.url.searchParams.get('start')).toBe('2024-12-25')
+      expect(pending[2]!.url.searchParams.get('granularity')).toBe('month')
+      expect(pending[0]!.signal.aborted).toBe(true)
+      expect(pending[1]!.signal.aborted).toBe(true)
+      await act(async () => pending[2]!.release())
+      expect(await screen.findByText('33')).toBeInTheDocument()
+      await act(async () => {
+        pending[0]!.release()
+        pending[1]!.release(true)
+      })
+      expect(screen.getByText('33')).toBeInTheDocument()
+      expect(screen.queryByText('99')).not.toBeInTheDocument()
+      expect(screen.queryByText('Could not load training volume.')).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'week', exact: true }))
+      await waitFor(() => expect(pending).toHaveLength(4))
+      view.unmount()
+      expect(pending[3]!.signal.aborted).toBe(true)
+      await act(async () => pending[3]!.release(true))
+    } finally {
+      request.mockRestore()
+    }
+  })
+})
+
+it('never commits previous volume under a newly selected granularity before effects run', async () => {
+  setupHandlers()
+  server.use(
+    http.get('/api/dashboard/volume', ({ request }) => {
+      if (new URL(request.url).searchParams.get('granularity') === 'month')
+        return new Promise(() => {})
+      return HttpResponse.json({
+        granularity: 'week',
+        totals: { sessions: 91, duration_minutes: 60, distance_meters: 1000, energy_kj: 100 },
+        series: [
+          {
+            bucket: '2024-W52',
+            sessions: 91,
+            duration_minutes: 60,
+            distance_meters: 1000,
+            energy_kj: 100,
+          },
+        ],
+        by_activity: [],
+      })
+    }),
+  )
+  const staleCommits: boolean[] = []
+  const user = userEvent.setup()
+  render(
+    <Profiler
+      id="volume-visibility"
+      onRender={() => {
+        // Commit-time DOM inspection precedes passive effects, where requests start.
+        if (
+          screen
+            .queryByRole('button', { name: 'month', exact: true })
+            ?.getAttribute('aria-pressed') === 'true'
+        )
+          staleCommits.push(screen.queryByText('91') !== null)
+      }}
+    >
+      <DashboardView />
+    </Profiler>,
+  )
+  await screen.findByText('91')
+  await user.click(screen.getByRole('button', { name: 'month', exact: true }))
+  expect(staleCommits.length).toBeGreaterThan(0)
+  expect(staleCommits).not.toContain(true)
 })

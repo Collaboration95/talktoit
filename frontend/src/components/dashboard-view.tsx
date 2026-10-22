@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { TrendLine } from '@/charts/trend-line'
+import { LazyTrendLine as TrendLine } from '@/charts/lazy-trend-line'
 import { GaugeRings } from '@/charts/gauge-rings'
 import { WorkoutDetail } from '@/components/workout-detail'
 import type {
@@ -75,6 +75,7 @@ interface DashboardState {
   workoutTypes: string[]
   workoutSources: string[]
   volume: TrainingVolumeResponse | null
+  volumeRequestKey: string | null
   steps: TrendResponse | null
   heart: TrendResponse | null
   sleep: TrendResponse | null
@@ -389,15 +390,7 @@ function TrendPanel({ trend, title }: { trend: TrendResponse | null; title: stri
   )
 }
 
-function TrainingVolumePanel({
-  volume,
-  granularity,
-  onGranularityChange,
-}: {
-  volume: TrainingVolumeResponse | null
-  granularity: 'week' | 'month'
-  onGranularityChange: (value: 'week' | 'month') => void
-}) {
+function TrainingVolumePanel({ volume }: { volume: TrainingVolumeResponse | null }) {
   if (!volume || volume.series.length === 0) return <NoData />
   const totals = volume.totals
   const durationSeries = volume.series.map((item) => ({
@@ -406,26 +399,6 @@ function TrainingVolumePanel({
   }))
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 text-xs text-gray-500">
-        <span>Aggregate by</span>
-        <div
-          className="flex rounded border border-gray-200 bg-white"
-          role="group"
-          aria-label="Training volume granularity"
-        >
-          {(['week', 'month'] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={granularity === option}
-              onClick={() => onGranularityChange(option)}
-              className={`px-2 py-1 capitalize ${granularity === option ? 'bg-blue-50 font-medium text-blue-700' : 'text-gray-600'}`}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-      </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <SummaryMetric label="Sessions" value={formatNumber(totals.sessions)} />
         <SummaryMetric
@@ -531,6 +504,7 @@ export function DashboardView() {
     workoutTypes: [],
     workoutSources: [],
     volume: null,
+    volumeRequestKey: null,
     steps: null,
     heart: null,
     sleep: null,
@@ -566,7 +540,14 @@ export function DashboardView() {
   const [savedViewTitle, setSavedViewTitle] = useState('')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
+  const [volumeReloadToken, setVolumeReloadToken] = useState(0)
   const [volumeGranularity, setVolumeGranularity] = useState<'week' | 'month'>('week')
+  const volumeRequestKey = JSON.stringify([
+    scope,
+    volumeGranularity,
+    reloadToken,
+    volumeReloadToken,
+  ])
   const scopeGeneration = useRef(0)
   const paginationController = useRef<AbortController | null>(null)
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
@@ -648,7 +629,6 @@ export function DashboardView() {
       summary: [],
       workouts: [],
       nextWorkoutCursor: null,
-      volume: null,
       steps: null,
       heart: null,
       sleep: null,
@@ -657,8 +637,11 @@ export function DashboardView() {
       loadingPanels: {
         ...createLoadingPanels(true),
         datasetStatus: current.loadingPanels.datasetStatus,
+        volume: current.loadingPanels.volume,
       },
-      failedPanels: current.failedPanels.filter((panel) => panel === PANEL_LABELS.datasetStatus),
+      failedPanels: current.failedPanels.filter(
+        (panel) => panel === PANEL_LABELS.datasetStatus || panel === PANEL_LABELS.volume,
+      ),
     }))
 
     const isCurrent = () => active && scopeGeneration.current === generation
@@ -710,11 +693,6 @@ export function DashboardView() {
       ],
       nextWorkoutCursor: value.next_cursor,
     }))
-    loadPanel(
-      'volume',
-      fetchTrainingVolume(scope, volumeGranularity, controller.signal),
-      (_current, value) => ({ volume: value }),
-    )
     loadPanel('steps', fetchTrend('steps', 'day', scope, controller.signal), (_current, value) => ({
       steps: value,
     }))
@@ -740,7 +718,50 @@ export function DashboardView() {
       paginationController.current?.abort()
       paginationController.current = null
     }
-  }, [scope, reloadToken, volumeGranularity])
+  }, [scope, reloadToken])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const generation = scopeGeneration.current
+    const isCurrent = () => !controller.signal.aborted && scopeGeneration.current === generation
+    setState((current) => ({
+      ...current,
+      volume: null,
+      volumeRequestKey,
+      loadingPanels: { ...current.loadingPanels, volume: true },
+      failedPanels: current.failedPanels.filter((panel) => panel !== PANEL_LABELS.volume),
+    }))
+    void fetchTrainingVolume(scope, volumeGranularity, controller.signal).then(
+      (volume) => {
+        if (!isCurrent()) return
+        setState((current) =>
+          isCurrent()
+            ? {
+                ...current,
+                volume,
+                loadingPanels: { ...current.loadingPanels, volume: false },
+                failedPanels: current.failedPanels.filter((panel) => panel !== PANEL_LABELS.volume),
+              }
+            : current,
+        )
+      },
+      (error: unknown) => {
+        if (!isCurrent() || isAbortError(error)) return
+        setState((current) =>
+          isCurrent()
+            ? {
+                ...current,
+                loadingPanels: { ...current.loadingPanels, volume: false },
+                failedPanels: current.failedPanels.includes(PANEL_LABELS.volume)
+                  ? current.failedPanels
+                  : [...current.failedPanels, PANEL_LABELS.volume],
+              }
+            : current,
+        )
+      },
+    )
+    return () => controller.abort()
+  }, [scope, reloadToken, volumeGranularity, volumeReloadToken, volumeRequestKey])
 
   const loadMoreWorkouts = () => {
     if (!state.nextWorkoutCursor) return
@@ -880,6 +901,7 @@ export function DashboardView() {
       )
   }
 
+  const unavailablePanels = state.failedPanels.filter((panel) => panel !== PANEL_LABELS.volume)
   const dataset = state.datasetStatus?.readiness === 'ready' ? state.datasetStatus.dataset : null
   const coverage =
     isValidDateOnly(dataset?.coverage_start) &&
@@ -937,9 +959,9 @@ export function DashboardView() {
       >
         Reset
       </button>
-      {state.failedPanels.length > 0 ? (
+      {unavailablePanels.length > 0 ? (
         <div className="flex items-center gap-3 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          <span>Could not load: {state.failedPanels.join(', ')}.</span>
+          <span>Could not load: {unavailablePanels.join(', ')}.</span>
           <button
             type="button"
             className="font-medium text-blue-700 underline"
@@ -995,14 +1017,42 @@ export function DashboardView() {
       </Section>
 
       <Section title={`Training Volume (${periodLabel(90)})`}>
-        {state.loadingPanels.volume && state.volume === null ? (
+        <div className="flex items-center justify-between gap-3 text-xs text-gray-500">
+          <span>Aggregate by</span>
+          <div
+            className="flex rounded border border-gray-200 bg-white"
+            role="group"
+            aria-label="Training volume granularity"
+          >
+            {(['week', 'month'] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={volumeGranularity === option}
+                onClick={() => setVolumeGranularity(option)}
+                className={`px-2 py-1 capitalize ${volumeGranularity === option ? 'bg-blue-50 font-medium text-blue-700' : 'text-gray-600'}`}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        </div>
+        {/* Mask old data in the scope/toggle commit, before the request effect clears it. */}
+        {state.volumeRequestKey !== volumeRequestKey || state.loadingPanels.volume ? (
           <PanelSkeleton panel="volume" />
+        ) : state.failedPanels.includes(PANEL_LABELS.volume) ? (
+          <div className="py-4 text-sm text-amber-800">
+            <p role="alert">Could not load training volume.</p>
+            <button
+              type="button"
+              className="mt-2 font-medium text-blue-700 underline"
+              onClick={() => setVolumeReloadToken((value) => value + 1)}
+            >
+              Retry training volume
+            </button>
+          </div>
         ) : (
-          <TrainingVolumePanel
-            volume={state.volume}
-            granularity={volumeGranularity}
-            onGranularityChange={setVolumeGranularity}
-          />
+          <TrainingVolumePanel volume={state.volume} />
         )}
       </Section>
 

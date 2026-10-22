@@ -8,7 +8,7 @@ import {
   formatNumber,
 } from '@/lib/format'
 
-interface TrendLineProps {
+export interface TrendLineProps {
   series: TrendPoint[]
   metricLabel: string
   metricUnit: string

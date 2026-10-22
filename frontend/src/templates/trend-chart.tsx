@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import type { TrendChartData } from '@/types/templates'
-import { TrendLine } from '@/charts/trend-line'
+import { LazyTrendLine as TrendLine } from '@/charts/lazy-trend-line'
 
 interface TrendChartProps {
   data: TrendChartData

@@ -39,19 +39,21 @@ describe('TrendChart', () => {
     mockOption.current = null
   })
 
-  it('renders the chart when series has data', () => {
+  it('renders the chart when series has data', async () => {
     render(<TrendChart data={validData} />)
-    expect(screen.getByTestId('echarts')).toBeInTheDocument()
+    expect(await screen.findByTestId('echarts')).toBeInTheDocument()
   })
 
-  it('formats x-axis buckets as compact labels', () => {
+  it('formats x-axis buckets as compact labels', async () => {
     render(<TrendChart data={validData} />)
+    await screen.findByTestId('echarts')
     const xAxis = mockOption.current?.xAxis as XAxisOption | undefined
     expect(xAxis?.axisLabel.formatter('2026-W23')).toBe('Jun 1')
   })
 
-  it('formats tooltip buckets as full dates', () => {
+  it('formats tooltip buckets as full dates', async () => {
     render(<TrendChart data={validData} />)
+    await screen.findByTestId('echarts')
     const tooltip = mockOption.current?.tooltip as TooltipOption | undefined
     expect(tooltip?.formatter([{ axisValue: '2026-W23', value: 51 }])).toBe('1 Jun 2026: 51 bpm')
   })
@@ -61,8 +63,9 @@ describe('TrendChart', () => {
     expect(screen.getByText('No trend data available. Try a wider date range.')).toBeInTheDocument()
   })
 
-  it('renders narrative when provided', () => {
+  it('renders narrative when provided', async () => {
     render(<TrendChart data={validData} narrative="Steady HR this month." />)
+    await screen.findByTestId('echarts')
     expect(screen.getByText('Steady HR this month.')).toBeInTheDocument()
   })
 })
@@ -84,7 +87,7 @@ it('shows actionable empty state for all-null sleep without converting it to zer
   expect(screen.getByText(/Includes awake and in-bed/)).toBeInTheDocument()
 })
 
-it('keeps sleep hours on the axis and rounds tooltip durations to minutes', () => {
+it('keeps sleep hours on the axis and rounds tooltip durations to minutes', async () => {
   render(
     <TrendChart
       data={{
@@ -96,6 +99,7 @@ it('keeps sleep hours on the axis and rounds tooltip durations to minutes', () =
       }}
     />,
   )
+  await screen.findByTestId('echarts')
   const tooltip = mockOption.current?.['tooltip'] as TooltipOption
   expect(tooltip.formatter([{ axisValue: '2026-06-01', value: 2.5 }])).toBe('1 Jun 2026: 150 min')
   const axis = mockOption.current?.['yAxis'] as {
