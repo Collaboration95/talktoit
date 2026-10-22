@@ -31,6 +31,14 @@ in `make check` and CI).
 
 ### Fixed
 
+- Sleep requests clarify unsupported/conflicting periods and explain unsupported
+  stages rather than answering a narrower date range or a different measurement.
+- Malformed numeric records no longer advertise Chat starters; measured zeros and
+  categorical sleep remain available. Cache v7 invalidates older incorrect answers.
+- Cancelled chat and dashboard workers retain their connections and generation
+  leases until actual worker exit, including repeated cancellation.
+- Superseded rollback generations retire through durable ownership records;
+  protected, leased, changed and ambiguous data remain preserved.
 - Settings' XML import command wraps within phone-width screens while import and
   recovery controls remain visible.
 - Numeric trends aggregate in DuckDB before transferring buckets to Python,

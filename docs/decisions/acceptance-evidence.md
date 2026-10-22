@@ -11,7 +11,8 @@ from commits. The existing untracked `reports/` remains untouched.
 
 The user's instructions supersede the original charter's one-leaf-per-PR,
 two-writer limit and per-PR independent review. Related leaves share cohesive PRs
-targeting dev. One final independent review assesses the integrated result.
+targeting dev. Final independent review assesses the integrated result; material
+findings receive regressions, corrections and a fresh review round.
 At most five Sol 6.1 children run concurrently with fast service enabled;
 children may not launch other agents. Writers use separate worktrees.
 
@@ -25,7 +26,7 @@ journeys. Prototype selection and production acceptance evidence remain separate
 ## Integrated batches
 
 Every batch below is merged into dev. Final PR checks passed: nine for #201/#202,
-ten for #203–#211. These receipts establish integration checkpoints; they do not
+ten for #203–#211 and eleven for #212. These receipts establish integration checkpoints; they do not
 substitute for final review or merged-main acceptance.
 
 | PR | Required leaves | Result | Dev merge |
@@ -41,10 +42,14 @@ substitute for final review or merged-main acceptance.
 | [#209](https://github.com/Collaboration95/talktoit/pull/209) | #179, #180, #181 | Baseline harness; bounded validation/mmap | `f45a1db` |
 | [#210](https://github.com/Collaboration95/talktoit/pull/210) | #183, #184, #188 | Short write scopes; SQL buckets; profiling NO-GO | `4fba4c0` |
 | [#211](https://github.com/Collaboration95/talktoit/pull/211) | #186, #187 | Independent volume; deferred charts | `51bc6dc` |
+| [#212](https://github.com/Collaboration95/talktoit/pull/212) | #187, #176, #199, #150 | Chart repair, portable browser and phone-width Settings | `476bbd2` |
 
-Combined candidate: `51bc6dcc4c0b57768fcfcb50bc70387707f29209`. All ten integrated CI checks
-passed, including macOS lifecycle smoke and Ubuntu suites/build ([run](https://github.com/Collaboration95/talktoit/actions/runs/39803509563)). All 36 required task/spike leaves remain in Review
-until final independent review, merged-main receipts and completion comments exist.
+Integrated checkpoint: `476bbd25e0cceb5202f6ab591c6e1ddde50313f5`, all eleven
+checks passed ([run](https://github.com/Collaboration95/talktoit/actions/runs/39817790401)).
+Actual Ubuntu browser acceptance passed all 47 criteria; its test-merge tree matches
+this checkpoint. Final round 1 found five P2 gaps, documented below. The correction
+branch is being qualified; work stays In progress/Review until fresh independent
+acceptance, actual main receipts and completion comments exist.
 
 ## Criterion-to-evidence map
 
@@ -55,13 +60,36 @@ until final independent review, merged-main receipts and completion comments exi
 | #176 daily use | Combined real-browser journey passes all 47 criteria: native upload, reconnect/cancel/SIGKILL recovery, keyboard, scoped dashboard, empty-filter Reset and desktop/390 px screenshots | Actual Ubuntu browser CI, review and main receipts |
 | #189 performance | Frozen matrices; production portfolio; implementation parity; repaired charts pass quiet paired browser qualification | Final review and merged-main rerun; original chart blocker is cleared |
 | #199 analytics | Shared sleep union/stages; independent HTTP/CLI/query oracles; fresh combined browser coverage/missing/zero states and provider-denied rendering pass | Review and main/platform receipts |
-| #150 whole roadmap | Eleven cohesive batches integrated; architecture/issue map and reproducible setup | All five gates, final checks/build, independent review, main integration and handoff |
+| #150 whole roadmap | Twelve batches integrated; architecture/issue map and reproducible setup | Corrected-source review, all five gates, main integration and handoff |
 
 No gate is closed at this checkpoint. Optional companion/ZIP discovery #198 is
 outside the required roadmap. XML upload does not include companion GPX files;
 the UI explains the existing local import route. Historical issues remain
 unchanged: 28 repaired, 8 residual and 19 unverified; classification does not claim
 acceptance or close them.
+
+## Final review corrections
+
+Independent round 1 at `476bbd2` returned maintenance/performance PASS and safety
+and UX/analytics REVISE. Original reports remain in [the review index](reviews/README.md).
+Two correction owners implemented all five findings in one combined batch:
+
+- #193/#170: complete supported sleep periods or local clarification, explicit
+  unsupported stage/category guidance, numeric-validity-aware starter states and
+  cache v7. True zero and categorical sleep remain available. See [the receipt](review-corrections.md).
+- #160–#162: shield and drain chat/profile/dashboard workers before releasing
+  their connection/lease, including repeated cancellation. Durable proven retirement
+  candidates prevent normal superseded rollback copies accumulating; protected,
+  leased, changed and unknown data stay preserved. See [the safety receipt](safety-review-corrections.md).
+
+Combined source `ebac37d` has backend app/test trees identical to the correction
+owner's full gate: **1,106 backend /224 frontend tests**, unchanged coverage gates,
+88.80% overall backend coverage, ingestion 92% and LLM 82% (rounded module output).
+The parent rebuilt and reran the real macOS browser journey: **47/47 pass**, exit 0,
+including actual SIGKILL/recovery. Quiet `make bench`: **11 pass**, exit 0.
+Fresh independent review and corrected-source CI remain pending. Earlier production
+timings retain their exact source identities; main qualification must rerun the
+required performance cases after these backend changes.
 
 ## Detailed evidence
 

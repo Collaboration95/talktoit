@@ -292,11 +292,17 @@ health data.
   remain unassociated. No active pointer yields an empty in-memory schema and no identity;
   dashboard resources are empty, Settings metrics unavailable, and chat offers import
   guidance without model execution. Never create a configured health file for onboarding.
+  Connection-consuming offloads use `app.db.async_worker` to shield and drain work
+  before propagating cancellation. Dashboard HTTP registration applies the same rule;
+  snapshot teardown waits for actual worker exit, even after repeated cancellation.
 - **Deletion and retirement** — deletion uses the same writer lock as import, commits an
   inactive pointer, clears the projection, then waits a bounded time for exclusive generation
   leases. Busy/unremovable data stays inactive and returns a safe retryable 409. Recovery
   retries cleanup without resurrecting it. Retain the newest rollback pointer; retire older
   copies only after leases drain. Unknown entries and changed contents are preserved.
+  Versioned `retirement.json` records proven former rollback pointers and directory
+  identities before their reference is replaced. Publication, recovery and snapshot
+  release retry this queue; an unreferenced directory name alone grants no cleanup authority.
 - **Owned import recovery** — after lifecycle recovery returns with no locks held, startup
   runs `recover_import_jobs(repository)` on a worker thread before providers/migrations.
   See `docs/decisions/import-artifact-ownership.md` for ownership/liveness and durable jobs.
@@ -308,7 +314,8 @@ health data.
   `ds_*` id in `dataset_versions`; chat cache entries are scoped by `(cache_key,
   dataset_version_id)` so a re-ingested export (changed file, changed coverage dates)
   automatically misses and refetches fresh answers. `cache_mode="fresh"` forces the same
-  refetch on demand. Cache-v5 invalidates pre-snapshot answers; semantic reuse and selected
+  refetch on demand. Cache-v7 retains snapshot invalidation and rejects earlier incorrect
+  sleep-intent answers; semantic reuse and selected
   follow-ups require a persisted `leased-generation-v1` intent marker. History remains
   readable independently. Synthetic dependency overrides must bind their tuple explicitly
   with `bind_dataset_snapshot`; unbound connections never borrow a dataset identity.
@@ -882,8 +889,12 @@ incomplete or unsupported metric comparisons ask for clarification.
 
 `app.presentation` supplies shared readable backend date labels. Frontend
 `lib/format` supplies coverage/date labels and converts hour-valued tooltip
-measurements to whole minutes. Chat cache v6 includes formatter v3, typed planner
+measurements to whole minutes. Chat cache v7 includes formatter v3, typed planner
 v2 and narration facts v3. Semantic intent includes sleep dates/granularity and
 comparison metric selection; leased generation identity and route boundaries remain
 unchanged. Synthetic acceptance lives in `tests/integration/test_sleep_metric_chat.py`;
 it exercises published generation HTTP/CLI parity with provider calls denied.
+Sleep planning requires one complete supported date clause. Stage/category requests
+return local unsupported guidance instead of coverage for a different measurement.
+Settings starter capabilities count usable numeric observations (including zero) or
+categorical text according to the metric catalog; malformed records do not advertise starters.
