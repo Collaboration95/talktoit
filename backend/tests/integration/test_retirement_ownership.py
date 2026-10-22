@@ -47,6 +47,7 @@ def test_replacement_never_inherits_retirement_authority(
     old = leave_pending_retirement(lifecycle, tmp_path, sources)
     proof = (lifecycle.root / "retirement.json").read_bytes()
     identity = old.parent.stat()
+    original_files = {(p.stat().st_dev, p.stat().st_ino): p.name for p in old.parent.iterdir()}
     saved = tmp_path / "original"
     replacement = tmp_path / "replacement"
     if empty:
@@ -61,7 +62,12 @@ def test_replacement_never_inherits_retirement_authority(
 
     def unlink(path, *args, **kwargs):
         if path in {"health.duckdb", "manifest.json"}:
-            unlinked.append((path, os.fstat(kwargs["dir_fd"]).st_ino))
+            pytest.fail("cleanup must not unlink an unclaimed source name")
+        if path == "payload":
+            captured = os.stat(path, dir_fd=kwargs["dir_fd"], follow_symlinks=False)
+            captured_identity = captured.st_dev, captured.st_ino
+            assert captured_identity in original_files
+            unlinked.append((original_files[captured_identity], captured_identity))
         return real_unlink(path, *args, **kwargs)
 
     def swap():
@@ -114,7 +120,7 @@ def test_replacement_never_inherits_retirement_authority(
         assert (lifecycle.root / "retirement.json").read_bytes() == proof
     assert events == [seam]
     assert saved.stat().st_ino == identity.st_ino
-    assert all(inode == identity.st_ino for _, inode in unlinked)
+    assert all(captured_identity in original_files for _, captured_identity in unlinked)
     if seam in {"before_unlink", "after_manifest"}:
         assert [name for name, _ in unlinked] == ["health.duckdb", "manifest.json"]
     if seam not in {"before_unlink", "after_manifest"}:

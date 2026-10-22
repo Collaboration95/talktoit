@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from app.db.data_profile import get_data_profile
 from app.state.app_state import AppStateRepository, DatasetVersion
+from app.state.cleanup_claims import ClaimError, authority_key, remove_entry
 
 _ID = re.compile(r"ds_[0-9a-f]{32}\Z")
 _MAX_JSON_BYTES = 1024 * 1024
@@ -122,11 +123,18 @@ class _Retirement(_StrictModel):
     inode: Annotated[int, Field(ge=0)]
 
 
+class _LegacyIdentity(_StrictModel):
+    device: Annotated[int, Field(ge=0)]
+    inode: Annotated[int, Field(ge=0)]
+    sha256: _Digest
+
+
 class _Deletion(_StrictModel):
     format_version: Literal[1] = 1
     generations: list[_Pointer]
     legacy: bool
     identities: list[_Retirement] = Field(default_factory=list)
+    legacy_identity: _LegacyIdentity | None = None
 
     @property
     def unproven_generation_ids(self) -> frozenset[str]:
@@ -140,6 +148,8 @@ class _Deletion(_StrictModel):
 
     @model_validator(mode="after")
     def matching_identities(self) -> Self:
+        if self.legacy_identity is not None and not self.legacy:
+            raise ValueError("unexpected legacy authority")
         ids = [item.pointer.generation_id for item in self.identities]
         if len(set(ids)) != len(ids) or any(
             item.pointer not in self.generations or item.pointer.generation_id is None
@@ -732,12 +742,29 @@ class DatasetLifecycle:
                     raise DatasetRecoveryError()
                 if set(os.listdir(directory_fd)) - {"health.duckdb", "manifest.json"}:
                     raise DatasetBusyError(inactive=True)
+                authority = authority_key(identity.model_dump_json())
+                for name in ("health.duckdb", "manifest.json"):
+                    result = remove_entry(
+                        self.root,
+                        authority=authority,
+                        source_parent=directory,
+                        source_fd=directory_fd,
+                        name=name,
+                        namespace_parent=self.root,
+                        namespace_fd=root_fd,
+                        policy="generation_file",
+                        digest=pointer.manifest_sha256 if name == "manifest.json" else None,
+                        boundary=self._boundary,
+                    )
+                    if result is False:
+                        raise DatasetBusyError(inactive=True)
                 files = {}
                 for name in ("manifest.json", "health.duckdb"):
                     handle = _open_regular_at(directory_fd, name)
                     files[name] = stack.enter_context(handle) if handle is not None else None
                 manifest = files["manifest.json"]
                 database = files["health.duckdb"]
+                database_digest = None
                 if manifest is not None:
                     raw = manifest.read(_MAX_JSON_BYTES + 1)
                     if hashlib.sha256(raw).hexdigest() != pointer.manifest_sha256:
@@ -750,6 +777,7 @@ class DatasetLifecycle:
                         != record.database_sha256
                     ):
                         raise DatasetRecoveryError()
+                    database_digest = record.database_sha256
                 elif database is not None:
                     raise DatasetRecoveryError()
                 self._boundary("generation_directory_validated")
@@ -765,19 +793,35 @@ class DatasetLifecycle:
                 ):
                     handle = files[name]
                     if handle is not None:
-                        entry = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
                         opened = os.fstat(handle.fileno())
-                        if (entry.st_dev, entry.st_ino) != (opened.st_dev, opened.st_ino):
-                            raise DatasetRecoveryError()
-                        os.unlink(name, dir_fd=directory_fd)
+                        if not remove_entry(
+                            self.root,
+                            authority=authority,
+                            source_parent=directory,
+                            source_fd=directory_fd,
+                            name=name,
+                            namespace_parent=self.root,
+                            namespace_fd=root_fd,
+                            policy="generation_file",
+                            expected=(opened.st_dev, opened.st_ino),
+                            digest=pointer.manifest_sha256
+                            if name == "manifest.json"
+                            else database_digest,
+                            boundary=self._boundary,
+                        ):
+                            raise DatasetBusyError(inactive=True)
                     self._boundary(boundary)
                 # POSIX has no portable conditional rmdir-by-inode. Retain the
                 # empty allocation rather than risk removing a replacement.
+                if os.listdir(directory_fd):
+                    raise DatasetBusyError(inactive=True)
                 os.fsync(directory_fd)
                 self._boundary("generation_directory_fsynced")
                 os.fsync(parent_fd)
                 self._check_directory_identity(directory, identity)
                 return int(database is not None)
+        except (ClaimError, ValueError) as exc:
+            raise DatasetRecoveryError() from exc
         finally:
             os.close(fd)
 
@@ -855,10 +899,35 @@ class DatasetLifecycle:
                     identities[key] = _Retirement(
                         pointer=candidate, device=actual.st_dev, inode=actual.st_ino
                     )
+            legacy_identity = intent.legacy_identity if intent else None
+            if self.target.exists() and not (intent and intent.legacy):
+                from app.db.connection import close_open_connections
+
+                close_open_connections(self.target)
+                try:
+                    if self.target.with_suffix(self.target.suffix + ".wal").exists():
+                        raise DatasetRecoveryError()
+                    with _directory_fd(self.target.parent) as parent:
+                        handle = _open_regular_at(parent, self.target.name)
+                        if handle is not None:
+                            with handle:
+                                value = os.fstat(handle.fileno())
+                                content_digest = hashlib.sha256()
+                                while chunk := handle.read(1024 * 1024):
+                                    content_digest.update(chunk)
+                                legacy_identity = _LegacyIdentity(
+                                    device=value.st_dev,
+                                    inode=value.st_ino,
+                                    sha256=content_digest.hexdigest(),
+                                )
+                except (OSError, DatasetRecoveryError):
+                    # Commit inactivity, but never invent proof on a later retry.
+                    pass
             intent = _Deletion(
                 generations=list(candidates.values()),
                 legacy=self.target.exists() or bool(intent and intent.legacy),
                 identities=list(identities.values()),
+                legacy_identity=legacy_identity,
             )
             self._replace_record(intent_path, intent, "deletion_intent")
             if pointer is None or pointer.generation_id is not None:
@@ -889,27 +958,9 @@ class DatasetLifecycle:
             except (OSError, DatasetRecoveryError, DatasetBusyError):
                 failed = True
         if intent.legacy:
-            from app.db.connection import close_open_connections
-
-            close_open_connections(self.target)
             try:
-                if self.target.exists():
-                    # Explicit health scope authorizes the imported DB, not an
-                    # export/GPX or unrelated file under a misconfigured name.
-                    with duckdb.connect(str(self.target), read_only=True) as legacy:
-                        tables = {
-                            str(row[0])
-                            for row in legacy.execute(
-                                "SELECT table_name FROM information_schema.tables "
-                                "WHERE table_schema = 'main'"
-                            ).fetchall()
-                        }
-                        if not set(_TABLES).issubset(tables):
-                            raise DatasetRecoveryError()
-                    self.target.unlink()
-                    _fsync_directory(self.target.parent)
-                    removed += 1
-            except (OSError, duckdb.Error, DatasetRecoveryError):
+                removed += self._remove_legacy(intent.legacy_identity)
+            except (OSError, DatasetRecoveryError, DatasetBusyError):
                 failed = True
         if failed:
             raise DatasetBusyError(inactive=True)
@@ -932,6 +983,71 @@ class DatasetLifecycle:
         _fsync_directory(self.root)
         self._boundary("deletion_finished")
         return removed
+
+    @staticmethod
+    def _validate_legacy_claim(path: Path) -> None:
+        try:
+            with duckdb.connect(str(path), read_only=True) as legacy:
+                tables = {
+                    str(row[0])
+                    for row in legacy.execute(
+                        "SELECT table_name FROM information_schema.tables "
+                        "WHERE table_schema = 'main'"
+                    ).fetchall()
+                }
+                if not set(_TABLES).issubset(tables):
+                    raise DatasetRecoveryError()
+        except duckdb.Error as exc:
+            raise DatasetRecoveryError() from exc
+
+    def _remove_legacy(self, original: _LegacyIdentity | None) -> int:
+        if original is None:
+            if self.target.exists() or self.target.is_symlink():
+                raise DatasetRecoveryError()
+            return 0
+        if self.target.with_suffix(self.target.suffix + ".wal").exists():
+            raise DatasetRecoveryError()
+        authority = authority_key(f"legacy:{self.target}:{original.model_dump_json()}")
+        try:
+            with _directory_fd(self.target.parent) as parent, _directory_fd(self.root) as namespace:
+
+                def remove(expected: tuple[int, int] | None = None) -> bool | None:
+                    return remove_entry(
+                        self.root,
+                        authority=authority,
+                        source_parent=self.target.parent,
+                        source_fd=parent,
+                        name=self.target.name,
+                        namespace_parent=self.root,
+                        namespace_fd=namespace,
+                        policy="legacy_database",
+                        digest=original.sha256,
+                        expected=expected,
+                        validator=self._validate_legacy_claim,
+                        boundary=self._boundary,
+                    )
+
+                result = remove()
+                if result is False:
+                    raise DatasetBusyError(inactive=True)
+                if result is True:
+                    return 0
+                handle = _open_regular_at(parent, self.target.name)
+                if handle is None:
+                    os.fsync(parent)
+                    return 0
+                with handle:
+                    value = os.fstat(handle.fileno())
+                    if (value.st_dev, value.st_ino) != (original.device, original.inode):
+                        raise DatasetRecoveryError()
+                    from app.db.connection import close_open_connections
+
+                    close_open_connections(self.target)
+                    if not remove((value.st_dev, value.st_ino)):
+                        raise DatasetBusyError(inactive=True)
+                return 1
+        except (ClaimError, ValueError) as exc:
+            raise DatasetRecoveryError() from exc
 
     def recover(self, repository: AppStateRepository) -> Generation | None:
         """Recover before health migrations or provider startup; repeat safely."""
