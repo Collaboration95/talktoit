@@ -1,6 +1,6 @@
 # Measured synthetic performance baseline — #179
 
-**Measurement complete; production candidates selected, not implemented.** Parent owns the integrated review, candidate batch, CI receipts and issue closure. No one-issue PR was opened.
+**Frozen #179 measurement complete.** All figures below describe the measured source and scratch selection experiments, not subsequent production results. The selected #180/#181 implementation and its pending measured acceptance are tracked in [the ingestion receipt](performance-ingestion.md). Parent owns integrated review, quiet candidate/portfolio measurements, CI receipts and issue closure; the baseline is bundled with those ingestion candidates.
 
 The [closed numeric evidence](performance-baseline-results.json) contains every primary configuration/run metric, spread, retained count, memory experiment, browser count and candidate disposition. No health rows/values, question text, SQL, parameters, plans, local paths, hostname or credentials are in that JSON. Raw scratch plans and generated data remain private on the local machine.
 

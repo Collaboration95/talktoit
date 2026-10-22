@@ -96,6 +96,12 @@ def require_well_formed_export(xml_path: str | Path) -> None:
             if root_tag is None:
                 root_tag = element.getroottree().getroot().tag
             element.clear()
+            # clear() releases contents but leaves a shell in the parent's
+            # child list. Discard completed siblings at every nesting depth.
+            parent = element.getparent()
+            if parent is not None:
+                while element.getprevious() is not None:
+                    del parent[0]
     except (OSError, etree.XMLSyntaxError) as exc:
         raise V2CompatibilityError(
             f"V2 compatibility gate failed: malformed XML export ({exc})"

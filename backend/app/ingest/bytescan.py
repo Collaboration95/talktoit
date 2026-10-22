@@ -638,11 +638,9 @@ def parse_byte_range(
     # Open file and mmap
     with open(xml_path, "rb") as f:
         with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-            # Extract the byte range
-            chunk = mm[start_byte:end_byte]
-
-            # Scan for all top-level elements using the unified regex
-            for match in _TOP_RE.finditer(chunk):
+            # Scan the mapped buffer with exclusive absolute bounds instead
+            # of allocating a bytes copy of the entire assigned range.
+            for match in _TOP_RE.finditer(mm, start_byte, end_byte):
                 if match.group("tag") is None:
                     continue
                 # Extract tag name and attributes
