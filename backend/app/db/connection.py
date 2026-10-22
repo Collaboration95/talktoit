@@ -51,7 +51,11 @@ def connect(
     Returns:
         An open DuckDB connection (read/write, auto-commit).
     """
-    path = resolve_db_path(db_path)
+    configured = resolve_db_path(db_path)
+    path = resolve_effective_db_path(db_path)
+    # Published generations are immutable, including for legacy callers that
+    # requested a writable default connection to run migrations.
+    read_only = read_only or path != configured
     if not read_only:
         path.parent.mkdir(parents=True, exist_ok=True)
     with _DATABASE_LIFECYCLE_LOCK:
@@ -60,9 +64,28 @@ def connect(
     return conn
 
 
+def resolve_effective_db_path(db_path: str | Path | None = None) -> Path:
+    """Resolve managed defaults through the pointer; leave explicit overrides alone."""
+    path = resolve_db_path(db_path)
+    if path.resolve() != resolve_db_path().resolve():
+        return path
+    from app.db.dataset_lifecycle import DatasetLifecycle, DatasetRecoveryError
+
+    lifecycle = DatasetLifecycle(path)
+    if not lifecycle.root.exists():
+        return path
+    active = lifecycle.active()
+    if active is not None:
+        return active.database_path
+    if (lifecycle.root / "active.json").exists():
+        # A versioned inactive tombstone must never fall back to a legacy DB.
+        raise DatasetRecoveryError()
+    return path
+
+
 def health_database_size_bytes() -> int | None:
     """Return the on-disk health database size, or None when no import exists."""
-    path = resolve_db_path()
+    path = resolve_effective_db_path()
     return path.stat().st_size if path.exists() else None
 
 

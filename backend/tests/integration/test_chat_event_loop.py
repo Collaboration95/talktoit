@@ -19,9 +19,9 @@ import duckdb
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.ingest.coordinator import ingest_v2 as ingest
 from app.llm import orchestrator as orchestrator_module
 from app.main import app
+from tests.integration.test_dataset_crash_recovery import _child
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "sample.xml"
 
@@ -29,11 +29,8 @@ FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "sample.xml"
 @pytest.fixture
 def db_file(tmp_path) -> Path:
     """A real on-disk DuckDB seeded from the synthetic fixture."""
-    path = tmp_path / "fixture.duckdb"
-    conn = duckdb.connect(str(path))
-    ingest(str(FIXTURE), conn)
-    conn.close()
-    return path
+    _child(tmp_path, "import", FIXTURE)
+    return tmp_path / "health.duckdb"
 
 
 @pytest.mark.asyncio
