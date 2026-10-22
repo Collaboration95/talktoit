@@ -30,6 +30,12 @@ from app.ingest.coordinator import resolve_worker_count
 from app.observability import configure_logging
 from app.state.app_state import AppStateRepository
 from app.state.diagnostics import safe_record
+from app.state.import_artifacts import (
+    ImportOperation,
+    cleanup_artifact,
+    current_operation,
+    recover_imports,
+)
 
 
 @contextmanager
@@ -37,6 +43,22 @@ def _advisory_import_lock(target_path: Path) -> Generator[None, None, None]:
     """Serialize import, recovery and future deletion on one stable POSIX lock."""
     with DatasetLifecycle(target_path).writer_lock():
         yield
+
+
+def _new_owned_staging(lifecycle: DatasetLifecycle) -> Path:
+    operation = current_operation()
+    if operation is None:
+        raise RuntimeError("Import ownership is required")
+    directory = operation.new_directory("staging", lifecycle.root / "staging")
+    # Preserve the core protocol's synchronous fault seam after ownership is durable.
+    lifecycle._boundary("staging_created")  # pyright: ignore[reportPrivateUsage]
+    return directory / "health.duckdb"
+
+
+def _cleanup_staging(path: Path) -> None:
+    operation = current_operation()
+    if operation is not None:
+        cleanup_artifact(operation, path.parent)
 
 
 def _read_data_profile(target_path: Path) -> DataProfile:
@@ -62,10 +84,28 @@ def _release_import_lock(exc_info: tuple[object, object, object]) -> None:
 
 def main() -> None:
     """Parse CLI args and run ingestion with guaranteed lock cleanup."""
+    operation = None
     try:
-        _main_impl()
+        operation_id = os.environ.get("TTI_IMPORT_OPERATION")
+        if operation_id:
+            operation = ImportOperation.attach(DatasetLifecycle(), operation_id)
+            inherited_fd = int(os.environ["TTI_IMPORT_OPERATION_FD"])
+            inherited = os.fstat(inherited_fd)
+            identity = operation.read_record().lock
+            if (inherited.st_dev, inherited.st_ino) != (identity.device, identity.inode):
+                raise ValueError("Import handoff ownership changed")
+        else:
+            operation = ImportOperation.create(DatasetLifecycle())
+        with operation.current():
+            _main_impl()
     finally:
         _release_import_lock(sys.exc_info())
+        if operation is not None:
+            operation.close()
+            # Backend-owned operations retain their inherited lock until exit;
+            # the API parent reconciles them after communicate() returns.
+            if not os.environ.get("TTI_IMPORT_OPERATION"):
+                recover_imports(repository=AppStateRepository())
 
 
 def _main_impl() -> None:
@@ -156,7 +196,7 @@ def _main_impl() -> None:
     # Explicit re-import can replace an unpaired legacy installation, but it
     # never modifies or deletes that unproven original. Startup adoption is strict.
     lifecycle.recover_locked(repository, adopt_legacy=False)
-    staging_path = lifecycle.new_staging()
+    staging_path = _new_owned_staging(lifecycle)
     db = connect(staging_path)
     parser_version = "legacy-v1" if legacy_mode else "v2"
     manifest_warnings: tuple[str, ...] = ()
@@ -195,8 +235,8 @@ def _main_impl() -> None:
                     raise
                 logger.warning("V2 compatibility gate failed; retrying legacy in fresh staging")
                 db.close()
-                staging_path.unlink(missing_ok=True)
-                staging_path = lifecycle.new_staging()
+                _cleanup_staging(staging_path)
+                staging_path = _new_owned_staging(lifecycle)
                 db = connect(staging_path)
                 from app.ingest.parser import ingest
 
@@ -235,7 +275,6 @@ def _main_impl() -> None:
                 print(f"  Load phase: {stats['load_time_seconds']:.2f}s")
                 print(f"  Total: {stats['total_time_seconds']:.2f}s")
     except Exception:
-        staging_path.unlink(missing_ok=True)
         safe_record(
             None,
             "import",
@@ -254,7 +293,7 @@ def _main_impl() -> None:
             db.close()
         except Exception:
             # A failed close must not strand a fully built staging database.
-            staging_path.unlink(missing_ok=True)
+            _cleanup_staging(staging_path)
             raise
 
     # Migrate only the private copy; published generations remain immutable.
@@ -270,6 +309,9 @@ def _main_impl() -> None:
         counts={key: int(value) for key, value in stats.items() if isinstance(value, int)},
         warnings=manifest_warnings,
     )
+    operation = current_operation()
+    if operation is not None:
+        operation.set_generation(manifest.id)
     lifecycle.activate(staging_path, manifest, xml_path.resolve().parent, repository)
     safe_record(
         None,
