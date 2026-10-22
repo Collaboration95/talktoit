@@ -20,13 +20,11 @@ from httpx import ASGITransport, AsyncClient
 from app.bench.report import ClosedModel, Join, MetricName, Panel
 from app.db import queries
 from app.db.connection import (
+    DatasetSnapshot,
     close_open_connections,
-    connect,
-    resolve_db_path,
-    resolve_effective_db_path,
+    dataset_snapshot,
 )
 from app.llm.provider_gateway import ProviderGateway, ProviderUnavailableError
-from app.state.app_state import AppStateRepository
 
 
 class WorkloadResult(ClosedModel):
@@ -87,13 +85,14 @@ def _timed(fn: Callable[[], object]) -> float:
 def run_queries() -> tuple[dict[MetricName, float], dict[Join, bool]]:
     """Time new-connection and repeated local queries separately from HTTP."""
     metrics: dict[MetricName, float] = {}
-    _verify_generation()
     for name in ("latest", "ranked", "paged", "trend"):
-        with connect(read_only=True) as conn:
+        with dataset_snapshot() as snapshot:
+            _verify_generation(snapshot)
+            conn = snapshot.connection
             query = (
                 _join_queries(conn)[name]
                 if name != "trend"
-                else lambda: queries.get_trend(
+                else lambda conn=conn: queries.get_trend(
                     conn,
                     "HKQuantityTypeIdentifierStepCount",
                     "week",
@@ -103,17 +102,18 @@ def run_queries() -> tuple[dict[MetricName, float], dict[Join, bool]]:
             )
             metrics[cast(MetricName, f"query_{name}_cold")] = _timed(query)
             metrics[cast(MetricName, f"query_{name}_warm")] = _timed(query)
-    with connect(read_only=True) as conn:
-        plans = explain_workout_joins(conn)
+    with dataset_snapshot() as snapshot:
+        _verify_generation(snapshot)
+        plans = explain_workout_joins(snapshot.connection)
     return metrics, {name: bool(plan) for name, plan in plans.items()}
 
 
-def _verify_generation() -> None:
-    manifest = AppStateRepository().get_active()
+def _verify_generation(snapshot: DatasetSnapshot) -> None:
+    manifest = snapshot.dataset
     if (
         manifest is None
         or manifest.id != os.environ.get("TTI_BENCH_GENERATION_ID")
-        or resolve_effective_db_path() == resolve_db_path()
+        or snapshot.generation is None
     ):
         raise RuntimeError("synthetic_generation_mismatch")
 
@@ -162,7 +162,8 @@ async def run_http() -> tuple[dict[MetricName, float], dict[Panel, int], int]:
         )
         app = main.create_app()
         async with app.router.lifespan_context(app):
-            _verify_generation()
+            with dataset_snapshot() as snapshot:
+                _verify_generation(snapshot)
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://synthetic"
             ) as client:

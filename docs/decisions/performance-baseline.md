@@ -7,8 +7,11 @@ maintenance #204). The preparation branch also includes the supplied
 The denied-provider HTTP probe asserts the additive `fallback.reason=provider_unavailable`
 contract while keeping answer contents out of the report. Follow-up merges latest dev
 through #205 (`d2d33b9`, PR head `bbc269a`) and uses its public effective-path/connection APIs.
-The acceptance evidence index is preserved from that merge. Active #160–163 writers retain
-ownership of core lifecycle files; this follow-up changes only the harness boundaries.
+The acceptance evidence index is preserved from that merge. Final compatibility consumes
+#207's committed `bae7984c69041019cb851c595e2bbb0d33233552` and integrated dev `b9ccec6`.
+Core lifecycle and ENGINEERING changes are consumed only by merge. Harness verification and
+query connections now use the public leased `dataset_snapshot()` API, with identity from
+the same immutable snapshot. Analytics writers retain ownership of their production paths.
 Sibling agents are using the machine. Functional test durations are not baseline evidence.
 No throughput, benefit, calibrated budget, go or no-go is claimed in this preparation batch.
 Parent owns quiet measurement, integrated browser acceptance, final review and batching.
@@ -102,15 +105,19 @@ counts divided by full wall duration, not just top-level XML records/s.
 
 Every import trial, including warmups, verifies V2 mode/worker count, all nine exact counts,
 active/report generation identity, six child-parent anti-joins, known step sum and workout
-duration sum. Verification calls public `resolve_effective_db_path()` and `connect()` under
-the isolated configuration; it never opens a configured legacy file directly. All but the
+duration sum. Verification holds public `dataset_snapshot()` under the isolated
+configuration and reads identity, root and connection from that leased tuple; it never opens
+a configured legacy file directly or borrows identity from a SQLite projection. All but the
 final verified import directory are cleaned before cheap sampling. The final generation is
 shared read-only by every workload process; it is never re-imported to collect HTTP samples.
 
 Each workload gets a new app-state path, and real app startup recovers/projects that same
 committed generation through the existing lifecycle APIs. No pointer/manifest formats,
 projection protocol, directory naming or generation files are cloned/reimplemented here.
-Every workload checks the expected generation id and rejects pre-existing app state. Cold
+Every workload checks the expected generation id from its leased snapshot and rejects
+pre-existing app state. No-active/tombstoned snapshots fail the benchmark before query/HTTP
+sampling, rather than contributing empty results. Startup ownership recovery and deletion
+handling remain enabled through the production lifecycle; they are never stubbed away. Cold
 and fresh requests must profile once and remain local; exact cache hits must profile zero
 times. The tiny regression deliberately creates an incorrect configured legacy DB after
 import to prove both parity verification and queries follow the managed generation.
@@ -149,11 +156,20 @@ validation, serialization, route state and query work but use in-process ASGI: t
 TCP/TLS/browser/transfer costs. Do not subtract unrelated query timings to invent pure
 HTTP overhead or equate connection-cold with a cold disk.
 
+Parent's separate functional browser receipt at `d2d33b9` observed nine initial resources
+(status plus eight dashboard requests), then eight dashboard requests on week-to-month
+toggle. The actual viewport was 390×844 with document width 390. The local visual-check
+JSON/script/screenshots record this without timing claims. Native T3 resize reported width
+1402 and two snapshot timeouts; the parent's installed Playwright fallback provided that
+functional evidence. It is not a timed baseline or acceptance of this final harness/base;
+parent reruns integrated browser behavior after analytics. This harness adds no browser
+execution and keeps its explicit per-report browser-evidence limitation.
+
 The scripted dashboard mount requests nine resources concurrently (summary, workouts,
 volume, steps, heart, sleep, stages, capabilities, status), followed by a warm repetition.
-Counts describe **one scripted mount**, not observed browser effect behavior. Actual
-week/month toggle counts and scope/cancellation behavior still require browser/component
-measurement. `browser_evidence=unavailable_requires_browser_run` is an explicit harness
+Counts describe **one scripted mount**, not observed browser effect behavior. Current
+integrated week/month counts and scope/cancellation behavior still require the parent's
+post-analytics browser/component acceptance. `browser_evidence=unavailable_requires_browser_run` is an explicit harness
 limitation; parent supplies integrated browser acceptance. Initial production JS/gzip
 bytes are the unique entry/static-import closure in the freshly built Vite manifest;
 dynamic imports are excluded. Gzip is computed independently per file with mtime zero.
@@ -282,3 +298,39 @@ No coverage/test/CI threshold or production code was changed. Backend gates were
 after the focused regressions passed; functional suite wall times under sibling load are
 not baseline evidence. The retained unresolved measurement/browser/EXPLAIN limitations in
 the original receipt remain, plus rerunning the pilot after #160–163 integration.
+
+## Final leased-lifecycle compatibility receipt
+
+Consumed committed #207 head `bae7984c69041019cb851c595e2bbb0d33233552`, then fetched and
+merged its integrated dev merge `b9ccec6`. The acceptance evidence index is unchanged from
+that origin dev state. No core, analytics, Makefile or ENGINEERING edits were made in this
+compatibility change; existing content was consumed by merge only.
+
+The original 18 harness tests passed on the merged lifecycle before implementation. New
+regression assertions then failed first (exit 1, 2 failures/17 passes): import verification
+had no bound snapshot and local queries acquired no generation leases. Verification now
+reads the manifest/connection from the same public `dataset_snapshot()` context; the four
+local query connections and EXPLAIN context also hold actual generation leases. No-active
+snapshots reject sampling before empty/deleted data could become a benchmark observation.
+
+The additional end-to-end tiny synthetic regression creates an active and retained
+predecessor generation through the official CLI. Across two fresh app-state lifespans,
+real ownership recovery stays enabled; JSON contents, stable lock inodes and both protected
+generation references remain unchanged. It checks `chat-cache-v5`, exact/fresh/cold behavior,
+no real providers/network and `fallback.reason=provider_unavailable`. It then deletes via
+the public API and verifies empty snapshot identity and fail-closed query/HTTP sampling,
+including a new startup after deletion. These are functional oracles, not timing evidence.
+
+| Command | Exit | Evidence |
+| --- | ---: | --- |
+| `uv run --directory backend pytest tests/bench/test_synthetic_harness.py tests/bench/test_synthetic_integration.py --no-cov -n 2 -q` | 0 | 19 passed; original 18 plus leased-startup/retention/ownership/deletion regression |
+| `uv run --directory backend pytest tests/unit/test_chat_cache.py tests/unit/test_cli_chat.py --no-cov -n 2 -q` | 0 | 23 passed; final cache-v5 and CLI contracts |
+| `make check` with Node 20.20.2 on PATH | 0 | Lint, formatting, backend/frontend types and version consistency |
+| `make --dry-run bench-synthetic` with the pilot and full arguments above | 0 | Both command paths inspected; neither measurement command executed |
+
+Sampling remains independently 3 retained imports + 1 warmup and 20 retained workloads +
+2 warmups. No sample/coverage/CI gate was weakened. The full backend/coverage receipts above
+remain historical; this fast compatibility pass ran the focused commands listed here.
+Parent owns the post-analytics browser acceptance, independent integrated review, quiet
+pilot, matrix budget decision and measured candidate batch. No representative export,
+pilot, baseline, benefit claim, new browser run, issue closure, PR or CI watcher was added.

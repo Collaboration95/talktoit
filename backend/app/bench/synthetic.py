@@ -36,8 +36,7 @@ from app.bench.report import (
     summarize,
 )
 from app.bench.workload import WorkloadResult
-from app.db.connection import connect, resolve_db_path, resolve_effective_db_path
-from app.state.app_state import AppStateRepository
+from app.db.connection import dataset_snapshot
 
 ROOT = Path(__file__).resolve().parents[3]
 BACKEND = ROOT / "backend"
@@ -97,20 +96,19 @@ def _verify_import(
     env: dict[str, str], output: str, spec: CorpusSpec, corpus: Corpus, workers: int
 ) -> str:
     # Scope the public default-path APIs to this generated-only subprocess configuration.
-    with patch.dict(os.environ, env, clear=True):
+    with patch.dict(os.environ, env, clear=True), dataset_snapshot() as snapshot:
         private_report = json.loads(output.splitlines()[-1])
-        manifest = AppStateRepository().get_active()
+        manifest = snapshot.dataset
         if (
             private_report["mode"] != "v2"
             or private_report["resolved_workers"] != workers
             or manifest is None
+            or snapshot.generation is None
             or private_report["dataset_version_id"] != manifest.id
             or any(manifest.counts.get(key) != value for key, value in corpus.counts.items())
-            or resolve_effective_db_path() == resolve_db_path()
         ):
             raise RuntimeError("synthetic_activation_failed")
-        with connect(read_only=True) as conn:
-            verify_database(conn, spec, corpus)
+        verify_database(snapshot.connection, spec, corpus)
         return manifest.id
 
 

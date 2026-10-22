@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import sys
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 import duckdb
 import pytest
@@ -22,6 +27,18 @@ def test_official_cli_http_queries_and_publication_are_synthetic(tmp_path, monke
     imports = []
     requests = []
     real_measure = synthetic.measure_process
+    real_verify = synthetic.verify_database
+
+    def verify_with_lease(conn, recipe, corpus):
+        from app.db.connection import snapshot_for_connection
+
+        snapshot = snapshot_for_connection(conn)
+        assert snapshot is not None
+        assert snapshot.dataset is not None
+        assert snapshot.dataset.worker_count == 2
+        real_verify(conn, recipe, corpus)
+
+    monkeypatch.setattr(synthetic, "verify_database", verify_with_lease)
 
     def record_process(command, *, env, **kwargs):
         is_import = "app.ingest.run" in command
@@ -163,3 +180,96 @@ def test_counts_values_relations_and_real_explain_analyze(tmp_path, workers):
             assert str(error) == "synthetic_parity_failed"
         else:
             raise AssertionError("broken child counts must reject the run")
+
+
+async def test_workload_leases_fresh_state_retention_ownership_and_no_active(tmp_path, monkeypatch):
+    from app.bench import workload
+    from app.bench.synthetic import BACKEND, isolated_environment
+    from app.db.connection import dataset_snapshot, delete_health_database
+    from app.db.dataset_lifecycle import DatasetLifecycle
+    from app.llm.cache_keys import CACHE_KEY_VERSION
+    from app.state.app_state import AppStateRepository
+
+    assert CACHE_KEY_VERSION == "chat-cache-v5"
+    env = isolated_environment(tmp_path)
+    source = tmp_path / "synthetic.xml"
+    ids = []
+    for seed in (137, 271):
+        write_corpus(source, CorpusSpec("small", records=24, workouts=6, days=3, seed=seed))
+        result = synthetic.measure_process(
+            [
+                sys.executable,
+                "-m",
+                "app.ingest.run",
+                str(source),
+                "--workers",
+                "1",
+                "--report-json",
+            ],
+            cwd=BACKEND,
+            env=env,
+            timeout=90,
+        )
+        ids.append(json.loads(result.stdout.splitlines()[-1])["dataset_version_id"])
+    env["TTI_BENCH_GENERATION_ID"] = ids[-1]
+    lifecycle = DatasetLifecycle(Path(env["TTI_DB_PATH"]))
+
+    def inventory():
+        # Read-only digests of this tiny test's owned store; no protocol is rewritten.
+        records = {
+            str(path.relative_to(lifecycle.root)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in lifecycle.root.rglob("*.json")
+        }
+        locks = {
+            str(path.relative_to(lifecycle.root)): (path.stat().st_dev, path.stat().st_ino)
+            for path in lifecycle.root.rglob("*.lock")
+        }
+        with lifecycle.writer_lock():
+            protected = lifecycle.protected_generation_ids()
+        return records, locks, protected
+
+    with patch.dict(os.environ, env, clear=True):
+        before = inventory()
+        assert before[2] == frozenset(ids)
+        assert len([name for name in before[0] if name.endswith("record.json")]) == 2
+        leased = []
+
+        @contextmanager
+        def counted_snapshot(*args, **kwargs):
+            with dataset_snapshot(*args, **kwargs) as snapshot:
+                assert snapshot.dataset.id == ids[-1]
+                assert lifecycle.generation_is_leased(ids[-1])
+                leased.append(snapshot.dataset.id)
+                yield snapshot
+
+        with monkeypatch.context() as scoped:
+            scoped.setattr(workload, "dataset_snapshot", counted_snapshot, raising=False)
+            metrics, plans = workload.run_queries()
+            assert metrics and all(plans.values())
+            assert len(leased) == 5  # Four new query connections, then EXPLAIN.
+        for trial in range(2):
+            fresh = tmp_path / f"fresh-{trial}"
+            fresh.mkdir()
+            fresh_env = isolated_environment(fresh)
+            fresh_env["TTI_DB_PATH"] = env["TTI_DB_PATH"]
+            fresh_env["TTI_BENCH_GENERATION_ID"] = ids[-1]
+            with patch.dict(os.environ, fresh_env, clear=True):
+                metrics, counts, network_calls = await workload.run_http()
+                assert metrics["profile_calls"] == 4
+                assert len(counts) == 9 and network_calls == 0
+            assert inventory() == before
+        delete_health_database(AppStateRepository())
+        with dataset_snapshot() as empty:
+            assert empty.dataset is None
+            assert empty.database_path is None
+        with pytest.raises(RuntimeError, match="synthetic_generation_mismatch"):
+            workload.run_queries()
+        fresh = tmp_path / "after-deletion"
+        fresh.mkdir()
+        fresh_env = isolated_environment(fresh)
+        fresh_env["TTI_DB_PATH"] = env["TTI_DB_PATH"]
+        fresh_env["TTI_BENCH_GENERATION_ID"] = ids[-1]
+        with patch.dict(os.environ, fresh_env, clear=True):
+            with pytest.raises(RuntimeError, match="synthetic_generation_mismatch"):
+                await workload.run_http()
+        assert lifecycle.active() is None
