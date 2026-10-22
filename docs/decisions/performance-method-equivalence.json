@@ -1,6 +1,6 @@
 {
   "verification_only": true,
-  "code_head": "c0918d0d54401d090084023ddaaa1c7e2b56c51e",
+  "code_head": "bd1fe696a71e95772e54a2aac56a8c83b78ec4be",
   "production_head": "a0ac51b6a24442f669608f153efe5b0c98931051",
   "production_tree": "3de52384a0c216eaf597f9293e1eb9c3dda6a881",
   "whole_head_is_production_equivalent": true,
@@ -87,5 +87,109 @@
   "method_report_sha256": "7cbab2700a4672dc72e11efe504e0bcae6b3f0d74b22df4e93f2c1bb988a1a36",
   "original_report_sha256": "235018f9af1f8e27818233445e892345862110339d5ac203224fa7d137d8ef24",
   "original_numeric_sha256": "f89c33d170d3efc994fe5821fd31b863481ebed8e5454505210383cd4a30aac1",
-  "new_formal_qualification_started": false
+  "new_formal_qualification_started": false,
+  "code_tree": "2cf85ddef9daf07ae7d78383448b1e422f750d0e",
+  "r2_reviewed_head": "5e9360c1dddfbcb6e0343575c4d42a1befc075c3",
+  "prior_protocol_sha256": "be3422831342aba217c8d03b4c6f50e8310304cecd553e275ba1142cc2d4b723",
+  "prior_protocol_verdict": "REVISE",
+  "current_protocol_sha256": "9ee6b4a46b06ca2e6b74acb0619d4e0b44cc9f7805fb05ecb217de30f7b3ef04",
+  "current_protocol_acceptance": "pending_R3",
+  "r2_report_source_sha256": "6da80ea0960c903210dc5cc00c521f84beb7e5be0769b1a65e0758e8bc7259f2",
+  "r2_report_archive_sha256": "6da80ea0960c903210dc5cc00c521f84beb7e5be0769b1a65e0758e8bc7259f2",
+  "r2_private_footer_removed": false,
+  "current_functional_receipts": {
+    "main": {
+      "production_head": "a0ac51b6a24442f669608f153efe5b0c98931051",
+      "harness_head": "bd1fe696a71e95772e54a2aac56a8c83b78ec4be",
+      "protocol_sha256": "9ee6b4a46b06ca2e6b74acb0619d4e0b44cc9f7805fb05ecb217de30f7b3ef04",
+      "samples": 1,
+      "warmups": 0,
+      "phase_requests": {
+        "mount": 9,
+        "toggle": 1,
+        "scope": 8,
+        "cached_chat": 0,
+        "cached_dashboard": 9
+      },
+      "errors": {
+        "requests": 39,
+        "transport_failures": 0,
+        "panel_transport_failures": 0,
+        "http_failures": 0,
+        "body_failures": 0,
+        "parse_failures": 0,
+        "aborts": 0,
+        "network_failures": 0,
+        "timeouts": 0,
+        "intentional_cancellations": 0,
+        "incomplete_bodies": 0,
+        "endpoints": {
+          "status": 2,
+          "summary": 3,
+          "workouts": 3,
+          "volume": 4,
+          "steps": 3,
+          "heart": 3,
+          "sleep": 3,
+          "sleep_stages": 3,
+          "capabilities": 3,
+          "other": 12
+        }
+      },
+      "official_import_exit": 0,
+      "browser_exit": 0,
+      "parity_verified": true,
+      "corpus_sha256": "8023fc31c760d43a1fe33743c96eca36d57b9d17fb493f1dff48904aed64b0d4",
+      "cleanup": true
+    },
+    "reference": {
+      "production_head": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+      "harness_head": "bd1fe696a71e95772e54a2aac56a8c83b78ec4be",
+      "protocol_sha256": "9ee6b4a46b06ca2e6b74acb0619d4e0b44cc9f7805fb05ecb217de30f7b3ef04",
+      "samples": 1,
+      "warmups": 0,
+      "phase_requests": {
+        "mount": 9,
+        "toggle": 8,
+        "scope": 8,
+        "cached_chat": 0,
+        "cached_dashboard": 9
+      },
+      "errors": {
+        "requests": 46,
+        "transport_failures": 0,
+        "panel_transport_failures": 0,
+        "http_failures": 0,
+        "body_failures": 0,
+        "parse_failures": 0,
+        "aborts": 0,
+        "network_failures": 0,
+        "timeouts": 0,
+        "intentional_cancellations": 0,
+        "incomplete_bodies": 0,
+        "endpoints": {
+          "status": 2,
+          "summary": 4,
+          "workouts": 4,
+          "volume": 4,
+          "steps": 4,
+          "heart": 4,
+          "sleep": 4,
+          "sleep_stages": 4,
+          "capabilities": 4,
+          "other": 12
+        }
+      },
+      "official_import_exit": 0,
+      "browser_exit": 0,
+      "parity_verified": true,
+      "corpus_sha256": "8023fc31c760d43a1fe33743c96eca36d57b9d17fb493f1dff48904aed64b0d4",
+      "cleanup": true
+    }
+  },
+  "frontend_gate_code_head": "c0918d0d54401d090084023ddaaa1c7e2b56c51e",
+  "frontend_tests_tree": "90bd972ec4b12f4b84f9a370c4876a9877eae325",
+  "retained_build_verification_code_head": "c0918d0d54401d090084023ddaaa1c7e2b56c51e",
+  "historical_summary_recomputation_code_head": "c0918d0d54401d090084023ddaaa1c7e2b56c51e",
+  "r2_preserved_inputs_and_output_hashes_rechecked": true
 }
