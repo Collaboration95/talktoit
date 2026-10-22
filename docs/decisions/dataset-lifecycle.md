@@ -343,3 +343,43 @@ write/fsync/replace/root-fsync order and repeated startup after process death.
 No record format or lock protocol changes. The exact historical writer and
 expanded regression evidence are described in
 [legacy deletion authority](legacy-deletion-authority.md).
+
+### Durable entry claims (round-three safety R3-F1/F2)
+
+Generation files are no longer unlinked through public source names. The shared
+`app.state.cleanup_claims` journal captures each entry by atomic same-filesystem
+rename into a newly allocated private namespace, then validates the captured
+inode/type and original digest before private disposal. A directory FD alone
+only anchors the parent; the captured, validated object now supplies the missing
+child-entry boundary. The same primitive captures whole import allocations.
+
+Claim records are strict, bounded version-1 state under `cleanup-claims/<key>/`.
+`PREPARED` persists original expectations before capture; source/claim directory
+flushes precede `CAPTURED`; validation and its durable `VALIDATED` record precede
+private unlink; directory flushes precede `CLEANED`. Completed records remain to
+prevent recapture of replacement source entries. Any observed remaining source
+entry or inconsistent completion state preserves the caller's authority. Queue
+pruning remains last, after all claims finish, the generation is empty, its
+original directory binding matches and required directories are flushed.
+
+Mismatched captures are durably quarantined, never deleted. Regular files can be
+hard-linked back only if the source is absent, retaining the quarantine link too;
+directories remain preserved privately without overwrite restoration. Unknown
+uncommitted metadata and absent/ambiguous captures require local recovery. No
+claim scan infers authority: replay requires the caller's original record and
+existing lock/ownership. In particular, no claim can promote an identity-less
+legacy deletion member.
+
+The configured legacy DB uses the same protocol. New deletion intents add optional
+`legacy_identity: {device, inode, sha256}` captured once after idle checkpoint/close.
+Canonical health-table validation runs on the protected captured database. Older
+`legacy:true` records without this identity preserve present files; retries never
+backfill them. A WAL or failure to capture original proof is preserved for local
+recovery. Missing files remain idempotent. No public envelope or lock changes.
+
+The private catalog/namespaces and captured contents must be protected from other
+writers. These are bounded public-source replacement guarantees, not protection
+against same-account code rewriting private records, captured bindings or contents.
+Empty allocations/private namespaces and completion metadata are retained; normal
+old DB copies are reclaimed. See [the complete claim response](ownership-claim-response.md)
+for the trust boundary, cross-filesystem placement, crash ordering and evidence.

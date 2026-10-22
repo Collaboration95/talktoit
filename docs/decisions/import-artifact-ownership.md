@@ -140,3 +140,49 @@ importer allocation records and remain preserved for their owner. Linux CI,
 parent startup integration and final integrated/browser acceptance remain pending;
 frontend tests were not rerun for this backend-only lane. There is no performance
 measurement or claim in this change.
+
+## Round-three allocation capture correction
+
+The previous final `shutil.rmtree(source_path)` could reopen an unowned replacement
+after ownership/content validation. `_remove_artifact` now holds the originally
+checked allocation/upload FD through capture and delegates to the same durable
+claim helper as generation cleanup. No coordinator, parser, reconciliation, worker
+or original lock protocol changes are needed; `_cleanup_owned_shards` already
+delegates here.
+
+Original artifact/parent identities and operation authority remain mandatory.
+The helper records those unchanged expectations in the private managed claim
+catalog before atomically renaming the source entry into a fresh private namespace.
+For external configured shard roots that namespace is an exclusive sibling below
+the recorded parent, on the allocation filesystem. Metadata can stay in the DB
+store; source and capture moves never cross filesystems or fall back to copy/delete.
+Opened parent/namespace identities are checked and descriptor-relative IO remains
+bound to them. A preflight can preserve already-ambiguous contents in place; only
+post-capture identity/type/complete allowed-entry validation authorizes disposal.
+
+Only canonical regular Parquet or staging entries inside the validated capture
+can be unlinked. Unknown entries, nested objects, links, special files and mismatched
+allocations remain preserved, with racing replacements quarantined privately.
+Uploads use their original file identity. Source names are never recursively
+removed, unlinked or finally rmdir'd. Private empty payload/allocation directories,
+namespace directories and completed claim records remain; tests prove normal
+canonical data disappears and all remaining namespaces are empty metadata.
+Caller parents, sibling runs, source exports and GPX stay outside cleanup authority.
+
+`PREPARED -> CAPTURED -> VALIDATED -> CLEANED/QUARANTINED` provides durable replay.
+Only original authority can look up a claim; no global claim collector exists.
+Repeated startup never adopts current source inodes, and completion tombstones
+prevent recapturing a later replacement under old authority. Directory mismatch
+has no portable atomic no-overwrite restore, so it stays quarantined. A regular
+file can be hard-linked back create-if-absent, retaining the quarantine copy.
+An incomplete initial preparation with no committed record moves no source bytes
+and remains conservatively unproven for manual recovery.
+
+Existing lifecycle writer/generation leases, operation EX recovery and sole
+finished-allocation coordinator ownership serialize callers. Source-path races
+cannot redirect deletion into a replacement; private claim metadata, namespace
+contents and captured objects are trusted against arbitrary mutation. Restrictive
+permissions do not stop same-account adversarial code/private FD writes. There is
+no universal private-namespace, network-filesystem or physical power-loss guarantee.
+See [the ownership claim response](ownership-claim-response.md) for final receipts,
+known limits and the separately preserved old-intent correction.

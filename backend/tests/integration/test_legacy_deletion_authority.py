@@ -16,6 +16,7 @@ import pytest
 
 from app.db import dataset_lifecycle as lifecycle_module
 from app.db.dataset_lifecycle import DatasetBusyError, DatasetLifecycle
+from app.state import cleanup_claims as claims
 from app.state.app_state import AppStateRepository
 from tests.integration.test_dataset_crash_recovery import CHILD, _child, _env
 from tests.integration.test_dataset_snapshots import exports
@@ -363,3 +364,58 @@ def test_new_proven_intent_reuses_original_retirement_identity_after_replacement
             lifecycle.delete(repo, timeout=0)
         assert queue_bytes(lifecycle) == proof
         assert contents(retained) == expected
+
+
+def test_preexisting_prepared_claim_cannot_upgrade_old_intent(legacy_dataset, tmp_path):
+    lifecycle, repo, _, _, directories = legacy_dataset
+    retained = directories[0]
+    (lifecycle.root / "deletion.json").unlink()
+    pointer = lifecycle._read_pointer(lifecycle.root / "retained.json")
+    with lifecycle.writer_lock():
+        lifecycle._queue_retirement(pointer)
+    candidate = lifecycle._retirements().generations[0]
+    source = retained / "health.duckdb"
+    value = source.stat()
+    digest = json.loads((retained / "manifest.json").read_bytes())["database_sha256"]
+    assert hashlib.sha256(source.read_bytes()).hexdigest() == digest
+
+    class PreparedStop(Exception):
+        pass
+
+    def stop(name):
+        if name == "claim_prepared_committed":
+            raise PreparedStop()
+
+    with claims.directory(retained) as parent, claims.directory(lifecycle.root) as namespace:
+        with pytest.raises(PreparedStop):
+            claims.remove_entry(
+                lifecycle.root,
+                authority=claims.authority_key(candidate.model_dump_json()),
+                source_parent=retained,
+                source_fd=parent,
+                name="health.duckdb",
+                namespace_parent=lifecycle.root,
+                namespace_fd=namespace,
+                policy="generation_file",
+                expected=(value.st_dev, value.st_ino),
+                digest=digest,
+                boundary=stop,
+            )
+    write_old_intent(tmp_path)
+    expected = [contents(path) for path in directories]
+    queue = queue_bytes(lifecycle)
+    claim = next(
+        path
+        for path in (lifecycle.root / "cleanup-claims").glob("*/record.json")
+        if json.loads(path.read_bytes())["source_parent"] == str(retained)
+    )
+    original_claim = claim.read_bytes()
+    assert json.loads(original_claim)["state"] == "PREPARED"
+    for _ in range(3):
+        _child(tmp_path, "startup")
+        with pytest.raises(DatasetBusyError):
+            lifecycle.delete(repo, timeout=0)
+        assert queue_bytes(lifecycle) == queue
+        assert claim.read_bytes() == original_claim
+        assert json.loads((lifecycle.root / "deletion.json").read_bytes())["identities"] == []
+        assert [contents(path) for path in directories] == expected
