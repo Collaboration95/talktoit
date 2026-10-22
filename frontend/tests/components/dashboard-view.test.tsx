@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
@@ -843,8 +843,13 @@ describe('DashboardView', () => {
 
   it('removes a cleared source filter from the shared URL', async () => {
     setupHandlers()
+    let releaseWorkouts: (() => void) | undefined
+    const workoutsReady = new Promise<void>((resolve) => {
+      releaseWorkouts = resolve
+    })
     server.use(
-      http.get('/api/dashboard/workouts', ({ request }) => {
+      http.get('/api/dashboard/workouts', async ({ request }) => {
+        await workoutsReady
         const source = new URL(request.url).searchParams.get('source')
         const all = [
           {
@@ -877,11 +882,18 @@ describe('DashboardView', () => {
     const user = userEvent.setup()
     render(<DashboardView />)
     const select = await screen.findByLabelText('Filter workouts by source')
+    expect(screen.getByTestId('panel-loading-workouts')).toBeInTheDocument()
+    expect(select).toBeEnabled()
+    expect(within(select).queryByRole('option', { name: 'Strava' })).not.toBeInTheDocument()
+    releaseWorkouts?.()
+    await within(select).findByRole('option', { name: 'Strava' })
     await user.selectOptions(select, 'Strava')
     await waitFor(() => expect(window.location.search).toContain('source=Strava'))
+    expect(await screen.findByText('60 min')).toBeInTheDocument()
     // Reset to "All sources" — the stale source param must leave the URL.
     await user.selectOptions(select, '')
     await waitFor(() => expect(window.location.search).not.toContain('source='))
+    expect(await screen.findByText('46 min')).toBeInTheDocument()
     expect(screen.getAllByText('Running').length).toBeGreaterThanOrEqual(1)
     window.history.replaceState({}, '', '/')
   })
@@ -935,14 +947,19 @@ describe('DashboardView', () => {
     const user = userEvent.setup()
     const firstView = render(<DashboardView />)
     const select = await screen.findByLabelText('Filter workouts by source')
+    await within(select).findByRole('option', { name: 'Strava' })
     await user.selectOptions(select, 'Strava')
     await waitFor(() => expect(window.location.search).toContain('source=Strava'))
+    expect(await screen.findByText('60 min')).toBeInTheDocument()
     await user.selectOptions(select, '')
     await waitFor(() => expect(window.location.search).not.toContain('source='))
+    expect(await screen.findByText('46 min')).toBeInTheDocument()
     firstView.unmount()
     // Simulate the Chat → Dashboard round trip: the view re-initializes from the URL.
     render(<DashboardView />)
     const restoredSelect = await screen.findByLabelText('Filter workouts by source')
+    await within(restoredSelect).findByRole('option', { name: 'Strava' })
+    expect(await screen.findByText('46 min')).toBeInTheDocument()
     await waitFor(() => expect((restoredSelect as HTMLSelectElement).value).toBe(''))
     expect(screen.getAllByText('Running').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('Cycling').length).toBeGreaterThanOrEqual(1)
