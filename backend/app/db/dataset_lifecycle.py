@@ -128,6 +128,16 @@ class _Deletion(_StrictModel):
     legacy: bool
     identities: list[_Retirement] = Field(default_factory=list)
 
+    @property
+    def unproven_generation_ids(self) -> frozenset[str]:
+        """Keep absence of original authority distinct from later queue proof."""
+        proven = {item.pointer.generation_id for item in self.identities}
+        return frozenset(
+            pointer.generation_id
+            for pointer in self.generations
+            if pointer.generation_id is not None and pointer.generation_id not in proven
+        )
+
     @model_validator(mode="after")
     def matching_identities(self) -> Self:
         ids = [item.pointer.generation_id for item in self.identities]
@@ -595,20 +605,43 @@ class DatasetLifecycle:
         assert isinstance(record, _Retirements)  # noqa: S101
         return record
 
+    def _deletion(self) -> _Deletion | None:
+        path = self._safe(self.root / "deletion.json")
+        if not path.exists():
+            return None
+        record = self._read(path, _Deletion)
+        assert isinstance(record, _Deletion)  # noqa: S101
+        return record
+
     def _queue_retirement(self, pointer: _Pointer) -> None:
+        deletion = self._deletion()
+        original = None
+        if deletion is not None:
+            if pointer.generation_id in deletion.unproven_generation_ids:
+                return  # Journal finalization must not mint missing authority.
+            original = next(
+                (
+                    item
+                    for item in deletion.identities
+                    if item.pointer.generation_id == pointer.generation_id
+                ),
+                None,
+            )
+            if original is not None and original.pointer != pointer:
+                raise DatasetRecoveryError()
         record = self._retirements()
         for candidate in record.generations:
             if candidate.pointer.generation_id == pointer.generation_id:
-                if candidate.pointer != pointer:
+                if candidate.pointer != pointer or (original is not None and candidate != original):
                     raise DatasetRecoveryError()
                 return  # Never replace the original directory identity on replay.
-        directory = self._safe(self.root / "generations" / str(pointer.generation_id))
-        identity = directory.stat()
-        if not stat.S_ISDIR(identity.st_mode):
-            raise DatasetRecoveryError()
-        record.generations.append(
-            _Retirement(pointer=pointer, device=identity.st_dev, inode=identity.st_ino)
-        )
+        if original is None:
+            directory = self._safe(self.root / "generations" / str(pointer.generation_id))
+            identity = directory.stat()
+            if not stat.S_ISDIR(identity.st_mode):
+                raise DatasetRecoveryError()
+            original = _Retirement(pointer=pointer, device=identity.st_dev, inode=identity.st_ino)
+        record.generations.append(original)
         if len(record.model_dump_json().encode()) > _MAX_JSON_BYTES:
             raise DatasetRecoveryError()
         self._replace_record(self.root / "retirement.json", record, "retirement_candidate")
@@ -785,9 +818,9 @@ class DatasetLifecycle:
         with self.writer_lock(timeout=timeout):
             pointer = self._pointer()
             intent_path = self._safe(self.root / "deletion.json")
-            intent = self._read(intent_path, _Deletion) if intent_path.exists() else None
-            if intent is not None:
-                assert isinstance(intent, _Deletion)  # noqa: S101
+            intent = self._deletion()
+            existing = {p.generation_id for p in intent.generations} if intent else set()
+            unproven = intent.unproven_generation_ids if intent else frozenset()
             candidates = {p.generation_id: p for p in intent.generations} if intent else {}
             identities = (
                 {item.pointer.generation_id: item for item in intent.identities} if intent else {}
@@ -801,6 +834,8 @@ class DatasetLifecycle:
                     candidates[previous.generation_id] = previous
             for item in self._retirements().generations:
                 key = item.pointer.generation_id
+                if key in unproven:
+                    continue  # Even a preexisting/poisoned queue cannot backfill intent authority.
                 if key in candidates and candidates[key] != item.pointer:
                     raise DatasetRecoveryError()
                 candidates[key] = item.pointer
@@ -810,7 +845,7 @@ class DatasetLifecycle:
             # Uncommitted/unknown copies are not authorized by a directory scan
             # or content digest, including under explicit health deletion.
             for key, candidate in candidates.items():
-                if key in identities or (intent and candidate in intent.generations):
+                if key in identities or key in existing:
                     continue  # Never recapture ownership on replay/explicit retry.
                 directory = self._safe(self.root / "generations" / str(key))
                 if directory.exists():
@@ -878,6 +913,21 @@ class DatasetLifecycle:
                 failed = True
         if failed:
             raise DatasetBusyError(inactive=True)
+        if intent.unproven_generation_ids:
+            record = self._retirements()
+            remaining = [
+                item
+                for item in record.generations
+                if item.pointer.generation_id not in intent.unproven_generation_ids
+            ]
+            if remaining != record.generations:
+                # Remove disqualified side-channel proof durably before removing
+                # the intent that prevented it from authorizing future cleanup.
+                self._replace_record(
+                    self.root / "retirement.json",
+                    _Retirements(generations=remaining),
+                    "retirement_disqualified",
+                )
         self._safe(self.root / "deletion.json").unlink(missing_ok=True)
         _fsync_directory(self.root)
         self._boundary("deletion_finished")
