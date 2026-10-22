@@ -204,21 +204,24 @@ def test_ambiguous_or_unsupported_metrics_clarify_locally(question):
 
 
 @pytest.mark.parametrize(
-    "question",
+    "question,reason,empty_reason",
     [
-        "How can I improve my sleep?",
-        "Why did I sleep badly?",
-        "Show sleep",
-        "How did I sleep last week?",
-        "Show daily sleep from 2026-06-01 to 2026-06-07",
+        ("How can I improve my sleep?", "unsupported", "unsupported"),
+        ("Why did I sleep badly?", "unsupported", "unsupported"),
+        ("Show sleep", "clarification_needed", "clarification_needed"),
+        ("How did I sleep last week?", "no_matching_data", "clarification_needed"),
+        ("Show daily sleep from 2026-06-01 to 2026-06-07", "no_matching_data", "no_matching_data"),
     ],
 )
-async def test_sleep_never_calls_provider_even_unsupported_or_empty(db, question):
+async def test_sleep_never_calls_provider_even_unsupported_or_empty(
+    db, question, reason, empty_reason
+):
     client = MagicMock()
     client.chat.completions.create = AsyncMock(side_effect=AssertionError("provider denied"))
-    for p in [profile(), profile(None)]:
+    for p, expected in [(profile(), reason), (profile(None), empty_reason)]:
         response = await ChatOrchestrator(client=client, conn=db).answer(question, data_profile=p)
-        assert response.template_id in ["trend_chart", "fallback"]
+        assert response.template_id == "fallback"
+        assert response.data["reason"] == expected
     client.chat.completions.create.assert_not_called()
 
 
@@ -448,6 +451,14 @@ def test_comparison_projection_carries_rounded_coverage_facts_only():
     "question",
     [
         "How much REM did I get?",
+        "How much REM did I get from 2026-06-01 to 2026-06-07",
+        "Show my sleep stages from 2026-06-01 to 2026-06-07",
+        "Show deep sleep last week",
+        "Show core sleep last week",
+        "How long was I asleep last week?",
+        "Show awake time last week",
+        "Show inbed time last week",
+        "Show in-bed time last week",
         "Was I awake a lot last week?",
         "How long was I in bed last night?",
         "Explain my bedtime",
@@ -459,7 +470,10 @@ async def test_unsupported_sleep_category_wording_stays_local(db, question):
     response = await ChatOrchestrator(client=client, conn=db).answer(
         question, data_profile=profile()
     )
-    assert response.template_id in ["fallback", "trend_chart"]
+    assert response.template_id == "fallback"
+    assert response.data["reason"] == "unsupported"
+    assert "coverage" in response.data["text"]
+    assert "not supported" in response.data["text"]
     client.chat.completions.create.assert_not_called()
 
 
