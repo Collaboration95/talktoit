@@ -85,8 +85,8 @@ Pytest/Vitest use at most two workers. No benchmark was run.
   the fixture import and formatting were corrected. Intermediate Pyright:
   **0 errors, exit 0**, `types-initial.log`. No gate was waived.
 
-Final focused and combined full-gate receipts and tested app/test identities will
-be appended after the stable-source commands complete. Parent owns combined
+Final focused and combined full-gate receipts and tested app/test identities are
+recorded below. Parent owns combined
 browser/build/CI, fresh independent round 3 with all original briefs/findings/
 responses, and any actual-main acceptance. These local synthetic POSIX receipts
 make no physical-power-loss, network-filesystem or performance claim.
@@ -103,7 +103,54 @@ make no physical-power-loss, network-filesystem or performance claim.
   unresolved type error. Focused changed-file Ruff format check: **exit 0**.
 - Node-20 locked frontend installation: **exit 0**, `npm-ci.log`.
 
-The new UX correction `58d5f1276bc3b5f86cf3cdfe1f49ed51f378453d` is now supplied
-by the parent for separate integration before the combined gate. Its cache v8 is
-intentional. Broad checks have not yet started. Safety source is committed
-separately so the parent can cherry-pick it independently.
+Safety commit `45b04cef0b6ff638bc4786137852a54aa2b713b2` contains only this
+lane's six files. The parent-supplied new UX correction
+`58d5f1276bc3b5f86cf3cdfe1f49ed51f378453d` was then cherry-picked separately
+as `6bf84f2a4882243cefdf6a792fcfa79e31314991`, with all seven UX files exactly
+equal to the supplied commit. Cache v8 is intentional. No application/test source
+changed while the combined gate ran; only this evidence document changes afterward.
+
+### Combined gate: one stable-source execution
+
+`/tmp/tti-r2-ownership-20261023/check.sh make check-full`: **exit 0**,
+`combined-check-full.log`. **1,238 backend tests and 224 frontend tests passed**.
+Backend overall coverage is **88.90%** (6,927/7,792 statements), ingestion
+**91.55%** (954/1,042; displayed 92%), LLM **82.30%** (1,372/1,667; displayed
+82%), lifecycle **91.57%**, worker helper **100%**. All original 80/90/70 gates
+remain enabled. Frontend statements **89.28%**, branches **80.43%**, functions
+**91.36%**, lines **92.11%** pass unchanged thresholds. Backend/frontend lint,
+formatting, types and version consistency pass in that same command. No broad
+gate was repeated.
+
+Tested head: `6bf84f2a4882243cefdf6a792fcfa79e31314991`. Exact tested trees:
+
+- Backend app: `2133d0178a37bab2b3edb398c65c8d73d4d46fcc`.
+- Backend tests: `6fc716b51b65c232f57f9755e4b891a4bcd155e2`.
+- Frontend source: `9812124868edcd97694b01c31d8fae58d8a32dcb`.
+- Frontend tests: `a77651bf117dbdff932e4299503ed061ee5390d1`.
+
+The complete frontend, original worker/connection/API/orchestrator source and both
+dependency locks have no diff from the candidate. All nine dashboard handlers,
+signatures and cancellation/deletion barriers are unchanged. Coverage JSON and
+machine-readable command/tree receipts remain outside the repository.
+
+Across this lane's entire isolated verification directory the runtime hook
+recorded three DNS and eight TCP denials, no private-file read or real SDK
+completion attempts. Denials are blocked attempts, not successful network access.
+The initial Git commit launcher exited 1 because the system pre-commit Python
+inherited the application runtime hook but lacks the application's dependencies;
+a direct bootstrap probe confirms fail-closed exit 78. The corrected commit uses
+the static-tool environment without that runtime hook and passes every applicable
+commit hook. Test/runtime gates retain their full transport/private-file denial.
+
+The original round-2 report, reproducer and log SHA-256 values remain respectively
+`3fe942105bbf743e829b4627cd3a80c9ecf9b5872153eb0d0f377e73ffc54465`,
+`3bd6da55f9345bf547cf3d543633f049a6787c2e7102091276ba03223271fa27` and
+`757e204d8ea3fcc92738fe74609cc5ae6d663583f844cfdf03902221e0540ee4`.
+Original repository reports and both earlier responses are untouched.
+
+Known limits remain the intentional empty-directory/lease metadata, preserved
+unproven copies and older deletion intents without directory identity. This is
+macOS local synthetic verification of portable POSIX operations, not a fresh
+Ubuntu, browser/build/CI, round-3 independent review or merged-main receipt. Those
+remain parent work, with no merge, issue closure, PR update or monitoring here.
