@@ -71,6 +71,31 @@ it('offers steps-only prompts and retains the selected question with its answer'
   expect(screen.queryByText(/start it in Settings/i)).not.toBeInTheDocument()
 })
 
+it.each(['malformed', 'available'])(
+  'uses the Settings %s numeric state for the steps starter and availability label',
+  async (state) => {
+    server.use(
+      http.get('/api/settings', () =>
+        HttpResponse.json({
+          ...settings,
+          quality: { ...settings.quality, metric_states: { steps: state, sleep: 'available' } },
+        }),
+      ),
+    )
+    render(<ChatView />)
+    if (state === 'malformed') {
+      expect(await screen.findByText(/No supported starter questions/i)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /steps trend/i })).not.toBeInTheDocument()
+      expect(screen.queryByText(/^Available: Steps$/)).not.toBeInTheDocument()
+    } else {
+      expect(
+        await screen.findByRole('button', { name: 'Show my steps trend this year' }),
+      ).toBeInTheDocument()
+      expect(screen.getByText(/^Available: Steps$/)).toBeInTheDocument()
+    }
+  },
+)
+
 it('offers workout prompts only for workouts and no invented prompts for unsupported metrics', async () => {
   server.use(
     http.get('/api/settings', () =>

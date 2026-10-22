@@ -40,7 +40,7 @@ def test_canonical_cache_key_can_share_equivalent_local_intent(tmp_path) -> None
 
 
 def test_versioned_cache_keys_normalize_equivalent_intent_without_sharing_different_facts() -> None:
-    assert CACHE_KEY_VERSION == "chat-cache-v6"
+    assert CACHE_KEY_VERSION == "chat-cache-v7"
     assert build_cache_key("exact", "  Last RUN  ") == build_cache_key("exact", "last run")
     plan = {
         "tool_name": "get_trend",
