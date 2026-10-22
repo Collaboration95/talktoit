@@ -126,7 +126,9 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }))
     expect(await screen.findByTestId('tab-loading')).toBeInTheDocument()
-    await screen.findByText('Activity Rings (Latest available day)')
+    await screen.findByRole('heading', {
+      name: 'Activity Rings (Latest available day in Coverage unavailable)',
+    })
   })
 
   it('restores the active tab from the URL on popstate (back/forward)', async () => {
