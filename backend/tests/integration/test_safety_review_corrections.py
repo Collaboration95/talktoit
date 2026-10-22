@@ -268,8 +268,19 @@ def test_sequential_official_imports_retire_idle_committed_copies(safety_dataset
             lifecycle.recover(repo)
     with lifecycle.writer_lock():
         protected = lifecycle.protected_generation_ids()
-    remaining = {p.name for p in (lifecycle.root / "generations").iterdir() if p.is_dir()}
+    # Empty allocation directories remain because POSIX cannot conditionally
+    # rmdir a pathname by inode. Full old databases must still be reclaimed.
+    remaining = {
+        p.name
+        for p in (lifecycle.root / "generations").iterdir()
+        if (p / "health.duckdb").is_file()
+    }
     assert remaining == protected == set(ids[-2:])
+    assert all(
+        not list(p.iterdir())
+        for p in (lifecycle.root / "generations").iterdir()
+        if p.name not in remaining
+    )
     assert all((lifecycle.root / "leases" / f"{key}.lock").is_file() for key in ids)
 
 
@@ -350,7 +361,7 @@ RETIREMENT_BOUNDARIES = (
     "retirement_cleanup_started",
     "deletion_database_unlinked",
     "generation_manifest_unlinked",
-    "generation_directory_removed",
+    "generation_directory_fsynced",
     "retirement_generation_removed",
     "retirement_drained_written",
     "retirement_drained_fsynced",
@@ -414,7 +425,7 @@ def leave_pending_retirement(lifecycle, tmp_path, sources):
         "retirement_cleanup_started",
         "deletion_database_unlinked",
         "generation_manifest_unlinked",
-        "generation_directory_removed",
+        "generation_directory_fsynced",
         "retirement_drained_written",
         "retirement_drained_replaced",
     ],

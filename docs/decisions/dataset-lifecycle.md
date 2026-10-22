@@ -264,3 +264,60 @@ version remain preserved; that lost proof cannot be reconstructed safely. Subseq
 normal committed copies no longer accumulate indefinitely. This protocol retains
 the existing local POSIX rename/fsync/flock limits and makes no physical power-loss
 or network-filesystem claim.
+
+### Second-review directory ownership correction (R2-F1)
+
+The previous initial pathname check did not protect cleanup from a directory
+replacement between that check and exclusive lease acquisition. Removal now
+receives the recorded directory device/inode, acquires the exclusive generation
+lease, opens the managed root, generations parent and child with no-follow
+directory descriptors, and compares `fstat` against that recorded identity before
+closing any idle connection or unlinking any file. Listing, bounded manifest
+parsing, manifest/DB hashing and both file unlinks use the validated directory
+descriptor. File opens require regular files and use `O_NOFOLLOW | O_NONBLOCK`;
+entry identities are checked against the held file descriptors before unlinking.
+Matching bytes alone never authorize a replacement directory.
+
+`os.unlink(name, dir_fd=validated_directory)` continues to address the original
+allocation if its pathname is renamed and replaced after validation. A final
+pathname identity check preserves durable proof when that replacement is observed.
+The replacement, including an empty replacement, receives no unlink or rmdir.
+File, directory and lease descriptors close on errors and cancellation.
+
+Portable POSIX does not provide conditional rmdir-by-inode. Cleanup deliberately
+retains the emptied generation allocation rather than issuing an unbound pathname
+rmdir. Stable lease files also remain. Normal sequential imports still remove old
+DB and manifest copies, retaining only active/newest rollback health data; metadata
+grows by an empty directory per reclaimed allocation. There is no general directory
+collector. The old `generation_directory_removed` fault seam is replaced by
+`generation_directory_fsynced`; partial unlink, repeated startup and IO-failure
+cases retain their assertions and exercise the anchored directory flush instead.
+
+The validated directory is fsynced after both file unlinks, then its anchored
+parent is fsynced, before queue proof may be pruned. A failed flush retains the
+candidate. An already-empty recorded allocation can be flushed and retried after
+process death; a surviving DB without its manifest remains preserved. The original
+candidate-publication/retained-pointer/journal ordering is unchanged.
+
+Explicit health deletion uses the same removal primitive. New version-1
+`deletion.json` records additionally contain `identities`, a strict list using the
+same pointer/device/inode shape as retirement candidates. Retry/startup never
+refresh these recorded identities. Pending retirement identities are reused;
+active, retained, pending retirement and existing deletion references supply
+authority. Directory scans and complete-but-uncommitted manifests supply none.
+Unknown/uncommitted copies remain preserved even during explicit deletion.
+The confirmation/scope, inactive tombstone, bounded lease wait, useful retryable
+409, missing-file idempotence and independent state scopes remain unchanged.
+
+Older version-1 deletion records without identities still parse. Already missing
+or empty allocations complete without unlink; present files with no recorded
+identity remain inactive and preserved for manual local recovery. Neither startup
+nor explicit retry invents that missing proof. Older binaries reject the additive
+field safely rather than deleting through it. This conservative compatibility limit
+does not affect newly recorded deletion retries.
+
+See [the complete second-round correction evidence](safety-review-corrections-round-2.md).
+These are local POSIX macOS/Ubuntu operations, without Linux-only syscalls or
+`/proc` paths. Process-death/fsync tests do not establish physical power-loss,
+network-filesystem durability, or safety against arbitrary non-cooperating writes
+inside immutable generation files outside the writer/lease protocol.
