@@ -122,6 +122,24 @@ class _Deletion(_StrictModel):
     legacy: bool
 
 
+class _Retirement(_StrictModel):
+    pointer: _Pointer
+    device: Annotated[int, Field(ge=0)]
+    inode: Annotated[int, Field(ge=0)]
+
+
+class _Retirements(_StrictModel):
+    format_version: Literal[1] = 1
+    generations: list[_Retirement]
+
+    @model_validator(mode="after")
+    def unique_generations(self) -> Self:
+        ids = [candidate.pointer.generation_id for candidate in self.generations]
+        if None in ids or len(set(ids)) != len(ids):
+            raise ValueError("ambiguous retirement identity")
+        return self
+
+
 @dataclass(frozen=True)
 class Generation:
     """One validated identity tuple; acquiring a reader lease is future work."""
@@ -487,6 +505,7 @@ class DatasetLifecycle:
         repository.project_generation(dataset, export_root)
         self._boundary("projection_committed")
         self._finish_journal()
+        self._drain_retirements()
         return Generation(dataset, destination / "health.duckdb", export_root.resolve())
 
     def _finish_journal(self) -> None:
@@ -498,6 +517,22 @@ class DatasetLifecycle:
         assert isinstance(journal, _Journal)  # noqa: S101
         if self._pointer() == journal.next:
             retained = self._safe(self.root / "retained.json")
+            replacement = (
+                journal.previous
+                if (
+                    journal.next.generation_id
+                    and journal.previous
+                    and journal.previous.generation_id
+                )
+                else None
+            )
+            if retained.exists():
+                former = self._read_pointer(retained)
+                if former != replacement:
+                    # Persist proof before losing the only reference to a
+                    # formerly committed rollback copy. Replays never infer
+                    # eligibility from unreferenced generation directories.
+                    self._queue_retirement(former)
             if journal.next.generation_id and journal.previous and journal.previous.generation_id:
                 self._replace_record(retained, journal.previous, "retained")
             else:
@@ -508,6 +543,68 @@ class DatasetLifecycle:
         self._boundary("journal_unlinked")
         _fsync_directory(self.root)
         self._boundary("journal_removed")
+
+    def _retirements(self) -> _Retirements:
+        path = self._safe(self.root / "retirement.json")
+        if not path.exists():
+            return _Retirements(generations=[])
+        record = self._read(path, _Retirements)
+        assert isinstance(record, _Retirements)  # noqa: S101
+        return record
+
+    def _queue_retirement(self, pointer: _Pointer) -> None:
+        record = self._retirements()
+        for candidate in record.generations:
+            if candidate.pointer.generation_id == pointer.generation_id:
+                if candidate.pointer != pointer:
+                    raise DatasetRecoveryError()
+                return  # Never replace the original directory identity on replay.
+        directory = self._safe(self.root / "generations" / str(pointer.generation_id))
+        identity = directory.stat()
+        if not stat.S_ISDIR(identity.st_mode):
+            raise DatasetRecoveryError()
+        record.generations.append(
+            _Retirement(pointer=pointer, device=identity.st_dev, inode=identity.st_ino)
+        )
+        if len(record.model_dump_json().encode()) > _MAX_JSON_BYTES:
+            raise DatasetRecoveryError()
+        self._replace_record(self.root / "retirement.json", record, "retirement_candidate")
+
+    def _drain_retirements(self, timeout: float = 0.0) -> None:
+        """Retry only recorded rollback copies under the already-held writer lock."""
+        record = self._retirements()
+        protected = self.protected_generation_ids()
+        remaining = []
+        for candidate in record.generations:
+            pointer = candidate.pointer
+            try:
+                if pointer.generation_id in protected:
+                    remaining.append(candidate)
+                    continue
+                directory = self._safe(self.root / "generations" / str(pointer.generation_id))
+                if directory.exists():
+                    identity = directory.stat()
+                    if (identity.st_dev, identity.st_ino) != (candidate.device, candidate.inode):
+                        raise DatasetRecoveryError()
+                self._boundary("retirement_cleanup_started")
+                self._remove_generation(pointer, timeout)
+                # Also flush an already-missing directory after a prior crash
+                # between rmdir and its parent fsync, before forgetting proof.
+                _fsync_directory(self.root / "generations")
+                self._boundary("retirement_generation_removed")
+            except (OSError, DatasetBusyError, DatasetRecoveryError):
+                remaining.append(candidate)
+        if remaining != record.generations:
+            try:
+                self._replace_record(
+                    self.root / "retirement.json",
+                    _Retirements(generations=remaining),
+                    "retirement_drained",
+                )
+            except OSError:
+                # The old durable candidates remain sufficient for retry if
+                # pruning fails. Never undo a successfully reconciled import.
+                pass
 
     def _replace_record(self, path: Path, record: _StrictModel, phase: str) -> None:
         temporary = self.root / f"{path.name}.tmp.{uuid.uuid4().hex}"
@@ -558,7 +655,9 @@ class DatasetLifecycle:
             database.unlink(missing_ok=True)
             self._boundary("deletion_database_unlinked")
             manifest_path.unlink(missing_ok=True)
+            self._boundary("generation_manifest_unlinked")
             directory.rmdir()
+            self._boundary("generation_directory_removed")
             _fsync_directory(self.root / "generations")
             return removed
         finally:
@@ -575,12 +674,8 @@ class DatasetLifecycle:
             with self.writer_lock(timeout=timeout):
                 if generation_id in self.protected_generation_ids():
                     return False
-                path = self._safe(self.root / "generations" / generation_id / "manifest.json")
-                if not path.exists():
-                    return not path.parent.exists()
-                pointer = _Pointer(generation_id=generation_id, manifest_sha256=_hash_file(path))
-                self._remove_generation(pointer, timeout)
-                return True
+                self._drain_retirements(timeout)
+                return not self._safe(self.root / "generations" / generation_id).exists()
         except (OSError, DatasetBusyError, DatasetRecoveryError):
             return False
 
@@ -633,7 +728,9 @@ class DatasetLifecycle:
             repository.deactivate_active_dataset()
             self._boundary("deletion_projected")
             self._finish_journal()
-            return self._complete_deletion(intent, timeout)
+            removed = self._complete_deletion(intent, timeout)
+            self._drain_retirements()
+            return removed
 
     def _complete_deletion(self, intent: _Deletion, timeout: float) -> int:
         removed = 0
@@ -687,6 +784,7 @@ class DatasetLifecycle:
     ) -> Generation | None:
         """Recover under an already-held writer lock (also used by the importer)."""
         self._validate_retained()
+        self._retirements()  # Unknown cleanup authority fails closed before activation.
         pointer = self._pointer()
         journal_path = self._safe(self.root / "transaction.json")
         journal = self._read(journal_path, _Journal) if journal_path.exists() else None
@@ -722,6 +820,7 @@ class DatasetLifecycle:
             repository.project_generation(generation.dataset, generation.export_root)
         self._boundary("recovery_projected")
         self._finish_journal()
+        self._drain_retirements()
         if generation is None:
             deletion = self._safe(self.root / "deletion.json")
             if deletion.exists():

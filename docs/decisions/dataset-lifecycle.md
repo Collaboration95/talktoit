@@ -157,6 +157,10 @@ The integration requirements carried forward were to represent no-active-data ex
 
 ## Leased consumers, deletion and artifact integration (#160–#163)
 
+The final safety-review corrections below strengthen worker lifetime and normal
+retirement. They supersede the original snapshot-release-only retirement behavior
+described in this section; see [the correction evidence](safety-review-corrections.md).
+
 `app.db.connection.dataset_snapshot()` owns a request's `DatasetSnapshot`: connection, immutable manifest, database path and export root. `DatasetLifecycle.lease()` reads the pointer, opens the already-published stable generation lease inode without following links, takes a shared POSIX lock, rereads the pointer and validates the manifest. A changed pointer releases everything and retries the whole tuple, up to four attempts; lease waits are bounded to 250 ms per attempt. The DB opens read-only while that lease is held. Each context closes its connection and releases its lease at completion, including exceptions and cancellation. Existing connection-manager leases also prevent idle-close code from closing in-use handles. Acquisition/open errors produce safe recovery/conflict messages, not DuckDB paths or SQL.
 
 Chat prephase/finalization, dashboard profiles/capabilities, workout route loading, HTTP status/Settings and managed CLI identity all use that connection's snapshot. They never acquire the identity or root independently from the mutable SQLite projection. Route parsing completes within the lease and uses only its allowed root; browser route downloads derive from that same returned geometry. Explicit external CLI overrides bypass managed recovery, identity, caches and conversation associations, even if the managed pointer is unavailable. An unassociated legacy CLI source retains its readonly behavior and holds a shared lifecycle lock so import/deletion cannot remove it mid-query.
@@ -189,3 +193,74 @@ Dev `d2d33b9a46593ac53ef613f39d17564198c9df0e` is included, and the original PR 
 - Final module coverage gates: `coverage report --include='app/ingest/*' --fail-under=90` — **91%, exit 0**; `--include='app/llm/*' --fail-under=70` — **83%, exit 0**. No coverage threshold or exclusion was changed.
 
 Private lease/operation lock inodes and closed ownership records are intentionally retained. Ambiguous/unproven files may require local recovery rather than automatic reclamation; status stays inactive after committed deletion. Ubuntu/macOS PR CI and the parent's independent integrated/browser acceptance remain pending. This batch performs no PR review loop, monitoring, merge or issue closure.
+
+## Final safety-review corrections (#160–#162, 23 October 2026)
+
+A request's snapshot must outlive the **actual connection-consuming worker**, not
+only its asyncio waiter. `app.db.async_worker` shields each borrowed-connection
+worker and drains it before propagating cancellation. Further cancellations cannot
+abandon that drain. Worker exceptions are retrieved while cancellation remains the
+request's terminal result. Both orchestrator dispatch branches, standalone profiling,
+and HTTP chat preparation use this rule. Cancelled-turn cleanup is also drained,
+so a prephase that commits its turn late cannot strand it. The pending-only terminal
+state transitions remain unchanged.
+
+All synchronous dashboard handlers use `db_worker_endpoint`: an async wrapper with
+the original callable signature that runs the existing handler through the same
+helper. This also covers native asyncio task cancellation, which can abandon the
+framework's ordinary synchronous-handler offload. Dependencies retain their
+snapshot until the actual handler exits. Local queries stay off the event loop;
+handler bodies, request/query counts, schemas, pagination, caches and route roots
+are unchanged. Status and Settings acquire and close their snapshots **inside**
+their off-thread payload function; they do not borrow a connection from an earlier
+request dependency. SQLite-only chat finalization does not consume the health
+connection. Import/recovery workers likewise own their lifecycle locks/resources.
+
+### Durable retirement candidates
+
+`retirement.json` is a new additive, strict, bounded version-1 record. It does not
+change the pointer, manifest, journal, retention or deletion formats:
+
+```json
+{"format_version":1,"generations":[{"pointer":{"format_version":1,"generation_id":"ds_<32 lowercase hex>","manifest_sha256":"<64 lowercase hex>"},"device":0,"inode":0}]}
+```
+
+`device` and `inode` identify the exact generation directory when its former
+retained pointer is recorded. Candidate IDs must be non-null and unique. Normal
+successful cleanup leaves an empty list. A missing record means no proven pending
+candidates; older stores remain readable. Unknown versions/fields, duplicates,
+symlinks and malformed records fail closed before import/startup reconciliation.
+
+Under the lifecycle writer lock, after successful projection reconciliation:
+
+1. Before replacing or clearing `retained.json`, record its exact former pointer
+   and directory identity if superseded. Write a unique temporary record, flush
+   and fsync it, atomically replace `retirement.json`, and fsync the managed root.
+   Failure here leaves the retained reference/journal available for replay.
+2. Replace/fsync the retained pointer, then unlink/fsync the activation journal as
+   before. Replaying an existing candidate never refreshes its directory identity
+   or digest from current filesystem contents.
+3. Attempt candidate cleanup without waiting for readers. Recheck active,
+   retained, journal and deletion protections under the writer lock. Require the
+   original directory device/inode, exact manifest digest and DB hash, no extra
+   entries, and the stable exclusive generation lease before unlinking anything.
+4. Flush the generations parent after successful removal, then atomically
+   write/fsync the remaining candidates. A crash before pruning leaves proof for
+   idempotent retry. A crash during unlinking can resume only the exact recorded
+   directory; a surviving DB without its matching manifest is preserved.
+
+Activation and every successful reconciliation retry this queue. Snapshot teardown
+also makes a nonblocking writer attempt **after** closing the connection/releasing
+the shared generation lease. If publication holds the writer lock at release, its
+post-reconciliation drain or subsequent startup retries the durable candidate.
+Busy leases, IO failures, changed contents/identities and unknown entries preserve
+the candidate for retry. Pruning IO failure can leave already-removed candidates in
+the queue; this does not roll back a reconciled import. Stable lease lock records
+remain in place. Active and newest rollback copies remain protected.
+
+No directory scan infers retirement authority. Complete but uncommitted generations,
+ambiguous old allocations and copies whose retained reference was lost by an older
+version remain preserved; that lost proof cannot be reconstructed safely. Subsequent
+normal committed copies no longer accumulate indefinitely. This protocol retains
+the existing local POSIX rename/fsync/flock limits and makes no physical power-loss
+or network-filesystem claim.

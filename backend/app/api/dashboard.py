@@ -28,6 +28,7 @@ from app.db.aggregations import (
     to_local_dt,
     utc_bounds,
 )
+from app.db.async_worker import db_worker_endpoint
 from app.db.connection import dataset_snapshot, resolve_db_path, snapshot_for_connection
 from app.db.dashboard_cache import (
     CapabilitiesGlobal,
@@ -362,7 +363,7 @@ def _resource_metadata(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/summary", response_model=ActivitySummaryResponse)
+@db_worker_endpoint(router.get("/summary", response_model=ActivitySummaryResponse))
 def get_summary(
     start: date | None = None,
     end: date | None = None,
@@ -396,7 +397,7 @@ def get_summary(
     )
 
 
-@router.get("/workouts", response_model=WorkoutsResponse)
+@db_worker_endpoint(router.get("/workouts", response_model=WorkoutsResponse))
 def get_workouts(
     start: date | None = None,
     end: date | None = None,
@@ -474,7 +475,7 @@ def get_workouts(
     )
 
 
-@router.get("/volume", response_model=TrainingVolumeResponse)
+@db_worker_endpoint(router.get("/volume", response_model=TrainingVolumeResponse))
 def get_volume(
     granularity: Literal["week", "month"] = Query(default="week"),
     start: date | None = None,
@@ -530,7 +531,7 @@ def get_volume(
     )
 
 
-@router.get("/steps", response_model=TrendResponse)
+@db_worker_endpoint(router.get("/steps", response_model=TrendResponse))
 def get_steps(
     granularity: str = Query(default="day", pattern="^(day|week|month)$"),
     start: date | None = None,
@@ -556,7 +557,7 @@ def get_steps(
     return response
 
 
-@router.get("/heart", response_model=TrendResponse)
+@db_worker_endpoint(router.get("/heart", response_model=TrendResponse))
 def get_heart(
     granularity: str = Query(default="week", pattern="^(day|week|month)$"),
     start: date | None = None,
@@ -582,7 +583,7 @@ def get_heart(
     return response
 
 
-@router.get("/sleep", response_model=TrendResponse)
+@db_worker_endpoint(router.get("/sleep", response_model=TrendResponse))
 def get_sleep(
     granularity: str = Query(default="day", pattern="^(day|week|month)$"),
     start: date | None = None,
@@ -614,7 +615,7 @@ def get_sleep(
     )
 
 
-@router.get("/sleep/stages", response_model=SleepStagesResponse)
+@db_worker_endpoint(router.get("/sleep/stages", response_model=SleepStagesResponse))
 def get_sleep_stages(
     start: date | None = None,
     end: date | None = None,
@@ -687,7 +688,7 @@ def get_sleep_stages(
     )
 
 
-@router.get("/capabilities", response_model=CapabilitiesResponse)
+@db_worker_endpoint(router.get("/capabilities", response_model=CapabilitiesResponse))
 def get_capabilities(
     start: date | None = None,
     end: date | None = None,
@@ -843,7 +844,7 @@ def _build_trend(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/workouts/{workout_id}", response_model=WorkoutDetail)
+@db_worker_endpoint(router.get("/workouts/{workout_id}", response_model=WorkoutDetail))
 def get_workout_detail(
     workout_id: int = Path(ge=1),
     fingerprint: str | None = Query(default=None, pattern="^[a-f0-9]{16}$"),

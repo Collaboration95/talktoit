@@ -17,6 +17,7 @@ import duckdb
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.api.deps import get_app_state_repository, get_diagnostics_repository
+from app.db.async_worker import await_worker
 from app.db.connection import connection_dataset, dataset_snapshot, snapshot_for_connection
 from app.db.data_profile import DataProfile, get_data_profile
 from app.db.dataset_lifecycle import DatasetBusyError, DatasetRecoveryError
@@ -488,7 +489,7 @@ async def chat(
                 )
             )
             prepare_task = task
-            prepared_state = await asyncio.shield(task)
+            prepared_state = await await_worker(task)
             prepared = prepared_state
             response = prepared.response
             if response is None:
@@ -535,10 +536,14 @@ async def chat(
             )
         return response
     except asyncio.CancelledError:
-        await _cancel_pending_turn(prepared, pending_handle, prepare_task, repository)
-        await _record_chat_error_async(
-            diagnostics_repository, started_at, "cancelled", request.cache_mode
-        )
+
+        async def finish_cancelled() -> None:
+            await _cancel_pending_turn(prepared, pending_handle, prepare_task, repository)
+            await _record_chat_error_async(
+                diagnostics_repository, started_at, "cancelled", request.cache_mode
+            )
+
+        await await_worker(asyncio.create_task(finish_cancelled()))
         raise
     except HTTPException:
         await _terminate_pending(

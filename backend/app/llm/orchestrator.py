@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import openai
 
+from app.db.async_worker import run_db_worker
 from app.db.data_profile import DataProfile, get_data_profile
 from app.db.queries import get_fallback
 from app.llm.answer_facts import deterministic_narrative, narration_facts
@@ -284,12 +285,12 @@ class ChatOrchestrator:
 
         Note:
             Local DuckDB work (the data-profile query and tool dispatch) runs
-            on worker threads via ``asyncio.to_thread``; only the optional
-            remote provider calls are awaited on the event loop.
+            on worker threads. Cancellation drains each worker before returning
+            so its caller can safely close the connection and snapshot lease.
         """
         self.executed_plan = None
         if data_profile is None:
-            data_profile = await asyncio.to_thread(get_data_profile, self.conn)
+            data_profile = await run_db_worker(get_data_profile, self.conn)
         today = (data_profile.latest_date or date.today()).isoformat()
 
         # ── Stage 1: deterministic local plan ────────────────────────────────
@@ -311,7 +312,7 @@ class ChatOrchestrator:
                 meta={"mode": "local", "model": "local", "error_class": ""},
             )
             try:
-                template_id, data_dict = await asyncio.to_thread(
+                template_id, data_dict = await run_db_worker(
                     self._dispatch_tool, tool_name, args, question
                 )
             except Exception:
@@ -383,7 +384,7 @@ class ChatOrchestrator:
 
         # ── Execute the tool ─────────────────────────────────────────────────
         try:
-            template_id, data_dict = await asyncio.to_thread(
+            template_id, data_dict = await run_db_worker(
                 self._dispatch_tool, tool_name, args, question
             )
         except Exception:
