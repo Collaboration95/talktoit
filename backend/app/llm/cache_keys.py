@@ -5,10 +5,23 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Literal
 
-CACHE_KEY_VERSION = "chat-cache-v3"
+CACHE_KEY_VERSION = "chat-cache-v4"
 """Bump when a local fact, formatter, privacy, or response contract changes."""
+
+
+def matches_managed_database(database_path: Path, managed_database_path: Path) -> bool:
+    """Require existing, canonical path equality before sharing managed identity.
+
+    Arbitrary CLI databases have no manifest binding. Only the configured health
+    database can borrow the active manifest; failed path resolution means bypass.
+    """
+    try:
+        return database_path.resolve(strict=True) == managed_database_path.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return False
 
 
 def generation_identity(config: Mapping[str, object]) -> str:
