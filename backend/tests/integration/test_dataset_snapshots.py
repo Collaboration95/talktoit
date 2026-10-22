@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import selectors
 import subprocess
 import sys
@@ -317,14 +318,14 @@ async def test_failed_unlink_stays_inactive_and_preserves_other_scopes(dataset, 
     lifecycle, repo, _ = dataset
     active = lifecycle.active()
     repo.create_conversation("keep", active.dataset.id)
-    real_unlink = Path.unlink
+    real_unlink = os.unlink
 
     def fail(path, *args, **kwargs):
-        if path == active.database_path:
+        if path == "health.duckdb" and kwargs.get("dir_fd") is not None:
             raise OSError("private path should not escape")
         return real_unlink(path, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "unlink", fail)
+    monkeypatch.setattr(os, "unlink", fail)
     async with AsyncClient(
         transport=ASGITransport(app=create_app()), base_url="http://test"
     ) as client:

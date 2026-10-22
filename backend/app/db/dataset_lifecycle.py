@@ -15,10 +15,10 @@ import stat
 import time
 import uuid
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Annotated, Literal, Self
+from typing import Annotated, BinaryIO, Literal, Self
 
 import duckdb
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -116,16 +116,27 @@ class _Journal(_StrictModel):
     legacy_adoption: bool = False
 
 
-class _Deletion(_StrictModel):
-    format_version: Literal[1] = 1
-    generations: list[_Pointer]
-    legacy: bool
-
-
 class _Retirement(_StrictModel):
     pointer: _Pointer
     device: Annotated[int, Field(ge=0)]
     inode: Annotated[int, Field(ge=0)]
+
+
+class _Deletion(_StrictModel):
+    format_version: Literal[1] = 1
+    generations: list[_Pointer]
+    legacy: bool
+    identities: list[_Retirement] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def matching_identities(self) -> Self:
+        ids = [item.pointer.generation_id for item in self.identities]
+        if len(set(ids)) != len(ids) or any(
+            item.pointer not in self.generations or item.pointer.generation_id is None
+            for item in self.identities
+        ):
+            raise ValueError("ambiguous deletion identity")
+        return self
 
 
 class _Retirements(_StrictModel):
@@ -160,6 +171,31 @@ def _fsync_directory(path: Path) -> None:
         os.fsync(fd)
     finally:
         os.close(fd)
+
+
+@contextmanager
+def _directory_fd(path: str | Path, *, parent: int | None = None) -> Generator[int, None, None]:
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+    try:
+        if not stat.S_ISDIR(os.fstat(fd).st_mode):
+            raise DatasetRecoveryError()
+        yield fd
+    finally:
+        os.close(fd)
+
+
+def _open_regular_at(directory: int, name: str) -> BinaryIO | None:
+    try:
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    except FileNotFoundError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise DatasetRecoveryError()
+        return os.fdopen(fd, "rb")
+    except BaseException:
+        os.close(fd)
+        raise
 
 
 class DatasetLifecycle:
@@ -349,6 +385,13 @@ class DatasetLifecycle:
                 raise DatasetRecoveryError()
             with self._safe(path).open("rb") as handle:
                 raw = handle.read(_MAX_JSON_BYTES + 1)
+            return self._decode_record(raw, model)
+        except OSError as exc:
+            raise DatasetRecoveryError() from exc
+
+    @staticmethod
+    def _decode_record(raw: bytes, model: type[_StrictModel]) -> _StrictModel:
+        try:
             if len(raw) > _MAX_JSON_BYTES:
                 raise ValueError("oversize record")
 
@@ -363,7 +406,7 @@ class DatasetLifecycle:
 
             json.loads(raw, object_pairs_hook=unique)
             return model.model_validate_json(raw)
-        except (OSError, ValueError, ValidationError) as exc:
+        except (ValueError, ValidationError) as exc:
             raise DatasetRecoveryError() from exc
 
     def _pointer(self) -> _Pointer | None:
@@ -587,9 +630,9 @@ class DatasetLifecycle:
                     if (identity.st_dev, identity.st_ino) != (candidate.device, candidate.inode):
                         raise DatasetRecoveryError()
                 self._boundary("retirement_cleanup_started")
-                self._remove_generation(pointer, timeout)
-                # Also flush an already-missing directory after a prior crash
-                # between rmdir and its parent fsync, before forgetting proof.
+                self._remove_generation(pointer, timeout, identity=candidate)
+                # Also flush an already-missing directory left by a previous
+                # version's rmdir before forgetting its durable proof.
                 _fsync_directory(self.root / "generations")
                 self._boundary("retirement_generation_removed")
             except (OSError, DatasetBusyError, DatasetRecoveryError):
@@ -614,7 +657,9 @@ class DatasetLifecycle:
         _fsync_directory(self.root)
         self._boundary(f"{phase}_committed")
 
-    def _remove_generation(self, pointer: _Pointer, timeout: float) -> int:
+    def _remove_generation(
+        self, pointer: _Pointer, timeout: float, *, identity: _Retirement | None
+    ) -> int:
         import fcntl
 
         if pointer.generation_id is None:
@@ -622,8 +667,6 @@ class DatasetLifecycle:
         directory = self._safe(self.root / "generations" / pointer.generation_id)
         if not directory.exists():
             return 0
-        if any(p.name not in {"health.duckdb", "manifest.json"} for p in directory.iterdir()):
-            raise DatasetBusyError(inactive=True)
         fd = os.open(
             self._safe(self.root / "leases" / f"{pointer.generation_id}.lock"),
             os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
@@ -632,36 +675,83 @@ class DatasetLifecycle:
             if not stat.S_ISREG(os.fstat(fd).st_mode):
                 raise DatasetRecoveryError()
             self._lock(fd, fcntl.LOCK_EX, timeout)
-            manifest_path = self._safe(directory / "manifest.json")
-            database = self._safe(directory / "health.duckdb")
-            if manifest_path.exists():
-                if _hash_file(manifest_path) != pointer.manifest_sha256:
-                    raise DatasetRecoveryError()
-                record = self._read(manifest_path, _Manifest)
-                assert isinstance(record, _Manifest)  # noqa: S101
-                if record.dataset.id != pointer.generation_id:
-                    raise DatasetRecoveryError()
-                if database.exists() and (
-                    not database.is_file() or _hash_file(database) != record.database_sha256
+            # Open every managed component without following links. All reads,
+            # unlinks and flushes below stay on these inodes even after rename.
+            with ExitStack() as stack:
+                root_fd = stack.enter_context(_directory_fd(self._safe(self.root)))
+                parent_fd = stack.enter_context(_directory_fd("generations", parent=root_fd))
+                directory_fd = stack.enter_context(
+                    _directory_fd(pointer.generation_id, parent=parent_fd)
+                )
+                actual = os.fstat(directory_fd)
+                if identity is None:
+                    if os.listdir(directory_fd):
+                        raise DatasetRecoveryError()
+                    # An older intent cannot prove ownership of present files.
+                    # Flushing an already-empty allocation requires no unlink.
+                    os.fsync(directory_fd)
+                    os.fsync(parent_fd)
+                    return 0
+                if (actual.st_dev, actual.st_ino) != (
+                    identity.device,
+                    identity.inode,
                 ):
                     raise DatasetRecoveryError()
-            elif database.exists():
-                raise DatasetRecoveryError()
-            # Close only idle handles; OS leases exclude all snapshot readers.
-            from app.db.connection import close_open_connections
+                if set(os.listdir(directory_fd)) - {"health.duckdb", "manifest.json"}:
+                    raise DatasetBusyError(inactive=True)
+                files = {}
+                for name in ("manifest.json", "health.duckdb"):
+                    handle = _open_regular_at(directory_fd, name)
+                    files[name] = stack.enter_context(handle) if handle is not None else None
+                manifest = files["manifest.json"]
+                database = files["health.duckdb"]
+                if manifest is not None:
+                    raw = manifest.read(_MAX_JSON_BYTES + 1)
+                    if hashlib.sha256(raw).hexdigest() != pointer.manifest_sha256:
+                        raise DatasetRecoveryError()
+                    record = self._decode_record(raw, _Manifest)
+                    assert isinstance(record, _Manifest)  # noqa: S101
+                    if record.dataset.id != pointer.generation_id or (
+                        database is not None
+                        and hashlib.file_digest(database, "sha256").hexdigest()
+                        != record.database_sha256
+                    ):
+                        raise DatasetRecoveryError()
+                elif database is not None:
+                    raise DatasetRecoveryError()
+                self._boundary("generation_directory_validated")
+                self._check_directory_identity(directory, identity)
+                # OS leases exclude snapshot readers; never close before the
+                # recorded directory has passed post-lease validation.
+                from app.db.connection import close_open_connections
 
-            close_open_connections(database)
-            removed = int(database.exists())
-            database.unlink(missing_ok=True)
-            self._boundary("deletion_database_unlinked")
-            manifest_path.unlink(missing_ok=True)
-            self._boundary("generation_manifest_unlinked")
-            directory.rmdir()
-            self._boundary("generation_directory_removed")
-            _fsync_directory(self.root / "generations")
-            return removed
+                close_open_connections(directory / "health.duckdb")
+                for name, boundary in (
+                    ("health.duckdb", "deletion_database_unlinked"),
+                    ("manifest.json", "generation_manifest_unlinked"),
+                ):
+                    handle = files[name]
+                    if handle is not None:
+                        entry = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+                        opened = os.fstat(handle.fileno())
+                        if (entry.st_dev, entry.st_ino) != (opened.st_dev, opened.st_ino):
+                            raise DatasetRecoveryError()
+                        os.unlink(name, dir_fd=directory_fd)
+                    self._boundary(boundary)
+                # POSIX has no portable conditional rmdir-by-inode. Retain the
+                # empty allocation rather than risk removing a replacement.
+                os.fsync(directory_fd)
+                self._boundary("generation_directory_fsynced")
+                os.fsync(parent_fd)
+                self._check_directory_identity(directory, identity)
+                return int(database is not None)
         finally:
             os.close(fd)
+
+    def _check_directory_identity(self, directory: Path, identity: _Retirement) -> None:
+        actual = self._safe(directory).stat(follow_symlinks=False)
+        if (actual.st_dev, actual.st_ino) != (identity.device, identity.inode):
+            raise DatasetRecoveryError()
 
     def retire_generation(self, generation_id: str, *, timeout: float = 0.0) -> bool:
         """Retire a superseded copy only after leases drain; retain rollback data."""
@@ -675,7 +765,14 @@ class DatasetLifecycle:
                 if generation_id in self.protected_generation_ids():
                     return False
                 self._drain_retirements(timeout)
-                return not self._safe(self.root / "generations" / generation_id).exists()
+                directory = self._safe(self.root / "generations" / generation_id)
+                return not directory.exists() or (
+                    not any(directory.iterdir())
+                    and all(
+                        item.pointer.generation_id != generation_id
+                        for item in self._retirements().generations
+                    )
+                )
         except (OSError, DatasetBusyError, DatasetRecoveryError):
             return False
 
@@ -692,6 +789,9 @@ class DatasetLifecycle:
             if intent is not None:
                 assert isinstance(intent, _Deletion)  # noqa: S101
             candidates = {p.generation_id: p for p in intent.generations} if intent else {}
+            identities = (
+                {item.pointer.generation_id: item for item in intent.identities} if intent else {}
+            )
             if pointer is not None and pointer.generation_id:
                 candidates[pointer.generation_id] = pointer
             retained = self._safe(self.root / "retained.json")
@@ -699,24 +799,31 @@ class DatasetLifecycle:
                 previous = self._read_pointer(retained)
                 if previous.generation_id:
                     candidates[previous.generation_id] = previous
-            for directory in (self.root / "generations").iterdir():
-                if not _ID.fullmatch(directory.name):
-                    continue
-                path = self._safe(directory / "manifest.json")
-                if directory.name in candidates:
-                    continue
-                # A recognized complete manifest proves an exact managed child;
-                # unknown or extra content is never recursively traversed.
-                record = self._read(path, _Manifest)
-                assert isinstance(record, _Manifest)  # noqa: S101
-                if record.dataset.id != directory.name:
+            for item in self._retirements().generations:
+                key = item.pointer.generation_id
+                if key in candidates and candidates[key] != item.pointer:
                     raise DatasetRecoveryError()
-                candidates[directory.name] = _Pointer(
-                    generation_id=directory.name, manifest_sha256=_hash_file(path)
-                )
+                candidates[key] = item.pointer
+                if key in identities and identities[key] != item:
+                    raise DatasetRecoveryError()
+                identities[key] = item
+            # Uncommitted/unknown copies are not authorized by a directory scan
+            # or content digest, including under explicit health deletion.
+            for key, candidate in candidates.items():
+                if key in identities or (intent and candidate in intent.generations):
+                    continue  # Never recapture ownership on replay/explicit retry.
+                directory = self._safe(self.root / "generations" / str(key))
+                if directory.exists():
+                    actual = directory.stat(follow_symlinks=False)
+                    if not stat.S_ISDIR(actual.st_mode):
+                        raise DatasetRecoveryError()
+                    identities[key] = _Retirement(
+                        pointer=candidate, device=actual.st_dev, inode=actual.st_ino
+                    )
             intent = _Deletion(
                 generations=list(candidates.values()),
                 legacy=self.target.exists() or bool(intent and intent.legacy),
+                identities=list(identities.values()),
             )
             self._replace_record(intent_path, intent, "deletion_intent")
             if pointer is None or pointer.generation_id is not None:
@@ -736,9 +843,14 @@ class DatasetLifecycle:
         removed = 0
         failed = False
         deadline = time.monotonic() + timeout
+        identities = {item.pointer.generation_id: item for item in intent.identities}
         for pointer in intent.generations:
             try:
-                removed += self._remove_generation(pointer, max(0, deadline - time.monotonic()))
+                removed += self._remove_generation(
+                    pointer,
+                    max(0, deadline - time.monotonic()),
+                    identity=identities.get(pointer.generation_id),
+                )
             except (OSError, DatasetRecoveryError, DatasetBusyError):
                 failed = True
         if intent.legacy:
