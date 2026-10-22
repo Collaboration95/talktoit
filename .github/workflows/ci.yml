@@ -7,7 +7,7 @@ on:
 
 jobs:
   ubuntu-browser-acceptance:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       PYTEST_XDIST_AUTO_NUM_WORKERS: '2'
@@ -27,9 +27,23 @@ jobs:
       - run: npm --prefix scripts/browser-acceptance ci --ignore-scripts
       - name: Audit isolated browser tooling
         run: npm --prefix scripts/browser-acceptance audit
-      - name: Install locked Chromium and Ubuntu dependencies
+      - name: Cache the locked Chromium headless shell
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-shell-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/browser-acceptance/package-lock.json') }}
+      - name: Install locked Chromium headless shell
         working-directory: scripts/browser-acceptance
-        run: ./node_modules/.bin/playwright install --with-deps chromium
+        run: ./node_modules/.bin/playwright install --only-shell chromium
+      - name: Verify runner libraries by launching Chromium
+        working-directory: scripts/browser-acceptance
+        run: |
+          node --input-type=module <<'JS'
+          import { chromium } from 'playwright'
+          const browser = await chromium.launch({ headless: true })
+          console.log('Chromium', browser.version())
+          await browser.close()
+          JS
       - name: Check harness syntax and regression sensitivity
         run: |
           for script in scripts/browser-acceptance/*.mjs; do node --check "$script"; done
