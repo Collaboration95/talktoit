@@ -114,6 +114,70 @@ try {
   ledger.close();
   await page.close();
 
+  // Nonempty Activity Rings must use the same all-canvas predicate as trends.
+  // These short deadlines assert negative fixture states; they are not timing
+  // samples, sleeps, production markers, or qualification-driver preconditions.
+  const summaryPage = await browser.newPage();
+  summaryPage.setDefaultTimeout(200);
+  const summaryPhase = { bodies: async () => ({ summary: { days: [{}] } }) };
+  const summaryHtml =
+    '<section><h2>Activity Rings</h2><canvas width="100" height="100"></canvas></section>';
+  for (const kind of [
+    "absent",
+    "zero_intrinsic",
+    "zero_layout",
+    "previous",
+    "mixed_zero",
+    "mixed_previous",
+  ]) {
+    await summaryPage.setContent(summaryHtml);
+    await summaryPage.evaluate(() => {
+      window.__ttiPreviousCanvases = new WeakSet();
+    });
+    if (kind === "previous" || kind === "mixed_previous")
+      await capturePreviousCanvases(summaryPage);
+    await summaryPage.evaluate((kind) => {
+      const old = document.querySelector("canvas");
+      if (kind === "absent") old.remove();
+      if (kind === "zero_intrinsic") {
+        old.width = 0;
+        old.height = 0;
+      }
+      if (kind === "zero_layout") {
+        old.style.width = "0px";
+        old.style.height = "0px";
+      }
+      if (kind === "mixed_zero" || kind === "mixed_previous") {
+        const extra = document.createElement("canvas");
+        extra.width = kind === "mixed_zero" ? 0 : 100;
+        extra.height = kind === "mixed_zero" ? 0 : 100;
+        document.querySelector("section").append(extra);
+      }
+    }, kind);
+    await assert.rejects(
+      () => waitForRenderedPanels(summaryPage, summaryPhase),
+      (error) => error.name === "TimeoutError",
+      kind + " summary must remain pending",
+    );
+    await summaryPage.evaluate(() => {
+      document.querySelectorAll("canvas").forEach((c) => c.remove());
+      for (let i = 0; i < 2; i++) {
+        const c = document.createElement("canvas");
+        c.width = 100;
+        c.height = 100;
+        document.querySelector("section").append(c);
+      }
+    });
+    await waitForRenderedPanels(summaryPage, summaryPhase);
+  }
+  await summaryPage.setContent(
+    "<section><h2>Activity Rings</h2>No data</section>",
+  );
+  await waitForRenderedPanels(summaryPage, {
+    bodies: async () => ({ summary: { days: [] } }),
+  });
+  await summaryPage.close();
+
   // Actual aborted browser body, explicit superseding action and observed signal.
   release = false;
   const cancelPage = await browser.newPage();
@@ -203,6 +267,7 @@ try {
   await leavePage.close();
   console.log(
     JSON.stringify({
+      summaryCanvasControls: true,
       chatUnmountAbortLedger: true,
       bodyAndRenderedBarrier: true,
       exactEight: true,

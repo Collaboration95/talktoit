@@ -31,11 +31,13 @@ export async function waitForRenderedPanels(
         : [],
     rows: endpoint === "workouts" ? body.workouts.length : 0,
     chart:
-      endpoint === "volume"
-        ? body.series.length > 0
-        : ["steps", "heart", "sleep"].includes(endpoint)
-          ? body.series.some((p) => p.value !== null)
-          : false,
+      endpoint === "summary"
+        ? body.days.length > 0
+        : endpoint === "volume"
+          ? body.series.length > 0
+          : ["steps", "heart", "sleep"].includes(endpoint)
+            ? body.series.some((p) => p.value !== null)
+            : false,
     caps:
       endpoint === "capabilities"
         ? body.capabilities.map(
@@ -109,12 +111,6 @@ export async function waitForRenderedPanels(
         )
           return false;
         if (item.empty && !section.textContent.includes("No data"))
-          return false;
-        if (
-          item.endpoint === "summary" &&
-          !item.empty &&
-          !section.querySelector("canvas")
-        )
           return false;
         if (
           item.endpoint === "sleep_stages" &&
