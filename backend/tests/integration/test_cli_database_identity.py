@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
@@ -10,6 +11,8 @@ import duckdb
 import pytest
 
 from app.cli import chat as chat_cli
+from app.db.data_profile import get_data_profile
+from app.db.dataset_lifecycle import DatasetLifecycle
 from app.ingest.coordinator import ingest_v2
 from app.llm.provider_gateway import ProviderUnavailableError
 from app.state.app_state import AppStateRepository
@@ -31,16 +34,36 @@ def databases(tmp_path, monkeypatch):
     monkeypatch.setenv("TTI_DB_PATH", str(managed))
     monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
     repo = AppStateRepository()
-    active = repo.activate(
-        source_bytes=b"synthetic-a",
-        source_size_bytes=1,
+    with duckdb.connect(str(managed), read_only=True) as conn:
+        profile = get_data_profile(conn)
+        counts = {
+            name: conn.execute(f"SELECT count(*) FROM {name}").fetchone()[0]  # noqa: S608
+            for name in (
+                "records",
+                "record_metadata",
+                "hrv_beats",
+                "workouts",
+                "workout_events",
+                "workout_statistics",
+                "workout_routes",
+                "workout_metadata",
+                "activity_summaries",
+            )
+        }
+    active = repo.build_file_manifest(
+        FIXTURE,
         parser_version="v2",
         schema_version="1",
         worker_count=1,
-        coverage_start="2026-06-01",
-        coverage_end="2026-06-30",
-        counts={"workouts": 3},
+        coverage_start=profile.first_date.isoformat(),
+        coverage_end=profile.latest_date.isoformat(),
+        counts=counts,
     )
+    lifecycle = DatasetLifecycle(managed)
+    with lifecycle.writer_lock():
+        staging = lifecycle.new_staging()
+        shutil.copyfile(managed, staging)
+        lifecycle.activate(staging, active, FIXTURE.parent, repo)
     gateway = Mock(client=object(), model="stub")
     gateway.complete = AsyncMock(side_effect=ProviderUnavailableError("Synthetic offline provider"))
     monkeypatch.setattr(chat_cli, "_ensure_local_server", Mock())
@@ -136,6 +159,10 @@ def test_no_active_manifest_bypasses_cache_and_conversation(databases, capsys, u
     conversation = repo.create_conversation("A history", active.id)
     with repo.session() as conn:
         conn.execute("DELETE FROM app_state WHERE key = 'active_dataset_id'")
+    if not use_override:
+        # No authoritative pointer or manifest: model a pre-lifecycle,
+        # unassociated DB. A committed pointer would correctly repair SQLite.
+        shutil.rmtree(DatasetLifecycle().root)
     before = _cache_snapshot(repo)
     response, hint = _run(
         capsys, override if use_override else None, QUESTION, "--conversation-id", conversation

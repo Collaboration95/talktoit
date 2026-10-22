@@ -210,27 +210,15 @@ async def test_http_and_cli_json_keep_fallback_contract(
     import json
     from pathlib import Path
 
-    import duckdb
-
     from app.cli import chat
-    from app.ingest.coordinator import ingest_v2
     from app.llm.orchestrator import ChatOrchestrator
     from app.models.chat import ChatResponse
+    from tests.integration.test_dataset_crash_recovery import _child
 
     fixture = Path(__file__).resolve().parents[1] / "fixtures" / "sample.xml"
-    conn = duckdb.connect(str(tmp_path / "health.duckdb"))
-    ingest_v2(str(fixture), conn)
-    conn.close()
-    repo = AppStateRepository()
-    repo.activate_file(
-        fixture,
-        parser_version="v2",
-        schema_version="1",
-        worker_count=1,
-        coverage_start="2026-06-01",
-        coverage_end="2026-06-08",
-        counts={"workouts": 3},
-    )
+    # Use the official importer so HTTP and CLI share a complete committed
+    # generation, including canonical counts, coverage and the route root.
+    _child(tmp_path, "import", fixture)
 
     async def forbidden(*args, **kwargs):
         pytest.fail("supported fallback must not call a provider")

@@ -269,6 +269,14 @@ health data.
   aggregation into SQL rather than into Python. Example: `get_top_workouts` ranks with
   `ORDER BY {metric} DESC NULLS LAST, start_date DESC, id DESC LIMIT ?` in a single query
   (metric column comes from a closed Literal whitelist — never interpolated input).
+- **Durable activation** — new imports publish immutable DB/manifest generations under
+  `<configured-db-path>.datasets/`; a versioned atomic `active.json` pointer is the activation
+  authority. Import and startup recovery share a mandatory POSIX writer lock. Recovery
+  validates the committed generation before providers/health migrations and repairs the
+  SQLite manifest/root projection. `resolve_db_path()` identifies the configured namespace;
+  `resolve_effective_db_path()` follows the pointer. Published DBs open read-only. See
+  `docs/decisions/dataset-lifecycle.md` for the wire format, crash boundaries, legacy adoption,
+  and the remaining snapshot/deletion/cleanup integration boundaries.
 - **SQLite app-state** — `backend/data/app_state.sqlite` (override via `TTI_APP_STATE_PATH`):
   dataset manifests, conversations/turns, saved views, and the validated chat cache. Opened
   with `PRAGMA journal_mode = WAL`, `synchronous = NORMAL`, and a bounded
