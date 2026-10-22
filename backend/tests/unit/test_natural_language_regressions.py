@@ -84,14 +84,11 @@ def test_unsupported_pace_ranking_does_not_create_a_duration_plan(profile: DataP
 def test_metric_comparison_does_not_create_a_workout_comparison_plan(
     profile: DataProfile,
 ) -> None:
-    assert plan_local_question("Compare resting heart rate this month vs last month", profile) == {
-        "tool_name": "get_fallback_answer",
-        "arguments": {
-            "text": "Comparing health metrics between periods is not supported yet. "
-            "I can show a trend for that metric instead.",
-            "reason": "unsupported",
-        },
-    }
+    plan = plan_local_question("Compare resting heart rate this month vs last month", profile)
+    assert plan is not None
+    assert plan["tool_name"] == "get_fallback_answer"
+    assert plan["arguments"]["reason"] == "clarification_needed"
+    assert "two complete date ranges" in plan["arguments"]["text"]
 
 
 @pytest.mark.parametrize(
@@ -117,7 +114,12 @@ async def test_unsupported_intent_returns_an_honest_terminal_response(
 
         assert response.template_id == "fallback"
         assert response.metadata.provenance == "fallback"
-        assert "not supported" in (response.data["text"] or "").casefold()
+        if question.startswith("Compare"):
+            assert response.data["reason"] == "clarification_needed"
+            assert "two complete date ranges" in response.data["text"]
+        else:
+            assert response.data["reason"] == "unsupported"
+            assert "not supported" in (response.data["text"] or "").casefold()
         assert response.narrative == ""
     finally:
         conn.close()

@@ -53,18 +53,53 @@ describe('TrendChart', () => {
   it('formats tooltip buckets as full dates', () => {
     render(<TrendChart data={validData} />)
     const tooltip = mockOption.current?.tooltip as TooltipOption | undefined
-    expect(tooltip?.formatter([{ axisValue: '2026-W23', value: 51 }])).toBe(
-      '1 Jun 2026: 51 bpm',
-    )
+    expect(tooltip?.formatter([{ axisValue: '2026-W23', value: 51 }])).toBe('1 Jun 2026: 51 bpm')
   })
 
   it('renders empty state when series is empty', () => {
     render(<TrendChart data={{ ...validData, series: [] }} />)
-    expect(screen.getByText('No trend data available.')).toBeInTheDocument()
+    expect(screen.getByText('No trend data available. Try a wider date range.')).toBeInTheDocument()
   })
 
   it('renders narrative when provided', () => {
     render(<TrendChart data={validData} narrative="Steady HR this month." />)
     expect(screen.getByText('Steady HR this month.')).toBeInTheDocument()
   })
+})
+
+it('shows actionable empty state for all-null sleep without converting it to zero', () => {
+  render(
+    <TrendChart
+      data={{
+        title: 'Sleep interval coverage',
+        metric_label: 'Sleep',
+        metric_unit: 'hours',
+        granularity: 'day',
+        series: [{ bucket: '2026-06-01', value: null }],
+      }}
+      narrative="Includes awake and in-bed records."
+    />,
+  )
+  expect(screen.getByText(/Try a wider date range/)).toBeInTheDocument()
+  expect(screen.getByText(/Includes awake and in-bed/)).toBeInTheDocument()
+})
+
+it('keeps sleep hours on the axis and rounds tooltip durations to minutes', () => {
+  render(
+    <TrendChart
+      data={{
+        title: 'Sleep interval coverage',
+        metric_label: 'Sleep',
+        metric_unit: 'hours',
+        granularity: 'day',
+        series: [{ bucket: '2026-06-01', value: 2.5 }],
+      }}
+    />,
+  )
+  const tooltip = mockOption.current?.['tooltip'] as TooltipOption
+  expect(tooltip.formatter([{ axisValue: '2026-06-01', value: 2.5 }])).toBe('1 Jun 2026: 150 min')
+  const axis = mockOption.current?.['yAxis'] as {
+    axisLabel: { formatter: (value: number) => string }
+  }
+  expect(axis.axisLabel.formatter(2.5)).toBe('2.5')
 })

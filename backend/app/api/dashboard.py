@@ -24,8 +24,6 @@ from app.analytics.registry import (
 from app.api.deps import get_app_state_repository
 from app.db.aggregations import (
     DEFAULT_TZ,
-    bucket_key,
-    generate_buckets,
     minutes_from_duration,
     to_local_dt,
     utc_bounds,
@@ -44,7 +42,12 @@ from app.db.migrate import table_has_column
 from app.db.queries import (
     SQL_DISTANCE_BY_WORKOUT,
     SQL_ENERGY_BY_WORKOUT,
+    SQL_SLEEP_ROWS,
+    get_sleep_trend,
     get_training_volume,
+)
+from app.db.queries import (
+    union_interval_hours as _union_interval_hours,
 )
 from app.ingest.gpx import parse_gpx_route
 from app.models.dashboard import (
@@ -114,14 +117,7 @@ LIMIT ?
 # The sleep trend and the sleep-stage panel read the same rows through this one
 # query, so their source policy cannot drift: measured sleep intervals only,
 # excluding AutoSleep's metadata-only summary records.
-_SQL_SLEEP_ROWS = """
-SELECT start_date, end_date, text_value
-FROM records
-WHERE type = 'HKCategoryTypeIdentifierSleepAnalysis'
-  AND source_name != 'AutoSleep'
-  AND start_date >= ? AND start_date < ?
-ORDER BY start_date
-"""
+_SQL_SLEEP_ROWS = SQL_SLEEP_ROWS
 
 _SQL_CAPABILITIES_RECORD_HEALTH = """
 SELECT type, COUNT(*) AS row_count, COUNT(value) AS numeric_count, COUNT(text_value) AS text_count
@@ -594,39 +590,13 @@ def get_sleep(
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
     repo: AppStateRepository | None = Depends(get_app_state_repository),  # noqa: B008
 ) -> TrendResponse:
-    """Return daily sleep duration trend (default: latest 30 local-data days)."""
+    """Return measured sleep interval coverage (default: latest 30 local-data days)."""
     started_at = time.perf_counter()
     context = resolve_dashboard_context(conn, repo)
     start_date, end_date = _resolve_window(context.profile, start, end, days=30)
 
-    utc_start, utc_end = utc_bounds(start_date, end_date, DEFAULT_TZ)
-    rows = conn.execute(_SQL_SLEEP_ROWS, [utc_start, utc_end]).fetchall()
-
-    # Apple Health commonly stores overlapping in-bed, awake, and stage
-    # intervals.  The raw category value is not persisted, so sum-of-rows
-    # double-counts sleep. Merge intervals instead to report elapsed time.
-    bucket_intervals: dict[str, list[tuple[datetime, datetime]]] = {}
-    for start_dt_utc, end_dt_utc, _text_value in rows:
-        local_start = to_local_dt(start_dt_utc, DEFAULT_TZ)
-        local_end = to_local_dt(end_dt_utc, DEFAULT_TZ)
-        key = bucket_key(local_start.date(), granularity)  # type: ignore[arg-type]
-        bucket_intervals.setdefault(key, []).append((local_start, local_end))
-
-    bucket_sums: dict[str, float] = {}
-    for key, intervals in bucket_intervals.items():
-        merged: list[list[datetime]] = []
-        for interval_start, interval_end in sorted(intervals):
-            if not merged or interval_start > merged[-1][1]:
-                merged.append([interval_start, interval_end])
-            elif interval_end > merged[-1][1]:
-                merged[-1][1] = interval_end
-        bucket_sums[key] = sum(
-            (interval_end - interval_start).total_seconds() / 3600.0
-            for interval_start, interval_end in merged
-        )
-
-    all_buckets = generate_buckets(start_date, end_date, granularity)  # type: ignore[arg-type]
-    series = [TrendPoint(bucket=b, value=bucket_sums.get(b)) for b in all_buckets]
+    chart = get_sleep_trend(conn, start_date, end_date, granularity)  # type: ignore[arg-type]
+    series = [TrendPoint(bucket=p.bucket, value=p.value) for p in chart.series]
 
     return TrendResponse(
         metric_label="Sleep",
@@ -634,7 +604,12 @@ def get_sleep(
         granularity=granularity,
         series=series,
         resource=_resource_metadata(
-            context, start_date, end_date, started_at, bool(bucket_sums), "sleep"
+            context,
+            start_date,
+            end_date,
+            started_at,
+            any(p.value is not None for p in series),
+            "sleep",
         ),
     )
 
@@ -861,17 +836,6 @@ def _build_trend(
         granularity=chart.granularity,
         series=[TrendPoint(bucket=point.bucket, value=point.value) for point in chart.series],
     )
-
-
-def _union_interval_hours(intervals: list[tuple[datetime, datetime]]) -> float:
-    """Return elapsed hours for intervals after merging compatible overlaps."""
-    merged: list[list[datetime]] = []
-    for interval_start, interval_end in sorted(intervals):
-        if not merged or interval_start > merged[-1][1]:
-            merged.append([interval_start, interval_end])
-        elif interval_end > merged[-1][1]:
-            merged[-1][1] = interval_end
-    return sum((end - start).total_seconds() / 3600.0 for start, end in merged)
 
 
 # ---------------------------------------------------------------------------

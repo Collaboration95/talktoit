@@ -10,6 +10,11 @@ in `make check` and CI).
 
 ### Added
 
+- Local sleep trends share the dashboard's interval union, with explicit coverage
+  labels that include awake/in-bed records and preserve missing buckets.
+- Explicit two-period comparisons for steps, resting HR and HRV show observed and
+  requested days, missing values and neutral unit-aware changes.
+
 - Dataset-relevant chat starters and first-import instructions, with a direct Settings action.
 - Import-job reconnection, cancellation and honest state/count reporting in Settings.
 - Distinct chat fallback reasons and explanations for missing or unreadable workout routes.
@@ -25,6 +30,13 @@ in `make check` and CI).
   and CI) fails when the backend, frontend, or runtime version desync.
 
 ### Fixed
+
+- Workout answer narration and chat coverage dates use readable Singapore dates.
+  Sleep tooltips show whole minutes instead of rounding fractional hours away.
+- Semantic-cache identity includes sleep dates/granularity and comparison metric
+  selection, preventing reuse of a different measured scope.
+- Sleep questions, including unsupported wording, and sleep results stay local;
+  changed analytics and presentation contracts invalidate older chat caches.
 
 - Queries, caches, provenance and workout routes now share a leased generation.
   Empty installs return useful dashboard/chat guidance without creating a database.

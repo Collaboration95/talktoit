@@ -274,7 +274,7 @@ async def test_get_comparison(
         "Test narrative.",
     )
     orchestrator = ChatOrchestrator(client=client, conn=db)  # type: ignore[arg-type]
-    response = await orchestrator.answer("Compare my two selected periods")
+    response = await orchestrator.answer("Compare my selected workout periods")
 
     assert response.template_id == "comparison"
     assert "metrics" in response.data

@@ -84,7 +84,8 @@ METRIC_CATALOG: dict[str, MetricDefinition] = {
         "Sleep",
         "hours",
         "duration",
-        "Overlapping intervals are unioned locally to avoid double counting.",
+        "All category intervals, including Awake and InBed, are unioned per SGT start bucket; "
+        "exact AutoSleep and NULL sources are excluded. This is interval coverage.",
         "local_only",
         "measured_only",
         value_kind="category",

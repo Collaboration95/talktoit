@@ -22,7 +22,7 @@ def test_narration_projection_is_an_allowlist() -> None:
     )
 
     assert projected == {
-        "projection_version": "v2",
+        "projection_version": "v3",
         "question": "How was my run?",
         "tool_name": "get_last_workout",
         "facts": {

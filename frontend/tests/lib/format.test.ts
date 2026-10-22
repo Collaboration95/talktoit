@@ -87,3 +87,10 @@ describe('trend bucket labels', () => {
     expect(formatChartBucketFullDate('2026-13-40')).toBe('2026-13-40')
   })
 })
+
+it('formats sleep coverage hours as whole measured minutes', () => {
+  expect(formatMetricValue(2.5, 'hours')).toBe('150 min')
+  expect(formatMetricValue(1 / 60, 'hours')).toBe('1 min')
+  expect(formatMetricValue(0, 'hours')).toBe('0 min')
+  expect(formatMetricValue(null, 'hours')).toBeNull()
+})

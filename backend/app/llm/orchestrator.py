@@ -20,7 +20,7 @@ from app.db.data_profile import DataProfile, get_data_profile
 from app.db.queries import get_fallback
 from app.llm.answer_facts import deterministic_narrative, narration_facts
 from app.llm.client import DEFAULT_MODEL
-from app.llm.local_planner import plan_local_question
+from app.llm.local_planner import is_sleep_question, plan_local_question
 from app.llm.provider_gateway import ProviderGateway, ProviderUnavailableError
 from app.llm.provider_projection import narration_projection, planning_projection
 from app.llm.tools import TOOL_NAMES, dispatch_tool, normalize_tool_name, render_tool_catalog
@@ -296,6 +296,8 @@ class ChatOrchestrator:
         # A recognised question must not touch the optional provider. This is
         # both the privacy boundary and the fast path for ordinary use.
         local_plan = _validated_plan(plan_override)
+        if is_sleep_question(question):
+            local_plan = _validated_plan(plan_local_question(question, data_profile))
         if local_plan is None and not local_plan_checked:
             local_plan = _validated_plan(plan_local_question(question, data_profile))
         if local_plan is not None:
@@ -391,6 +393,14 @@ class ChatOrchestrator:
         terminal = _terminal_response(template_id, data_dict, question)
         if terminal is not None:
             return terminal
+
+        if tool_name == "get_sleep_trend" or data_dict.get("metric_label") == "Sleep":
+            return ChatResponse(
+                template_id=template_id,
+                data=data_dict,
+                narrative=_local_narrative(template_id, data_dict),
+                metadata=ResponseMetadata(provenance="remote_planned"),
+            )
 
         narrative_prompt = _NARRATIVE_PROMPT.format(today=today)
         projection = narration_projection(question, tool_name, data_dict, template_id=template_id)

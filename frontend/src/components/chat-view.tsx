@@ -1,3 +1,4 @@
+import { formatDateRange, isValidDateOnly } from '@/lib/format'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { askQuestion, ChatApiError } from '@/api/chat'
 import { decodeChatEnvelope, recoveryChatEnvelope } from '@/api/decode-chat-envelope'
@@ -498,8 +499,9 @@ export function ChatView({ onOpenSettings }: { onOpenSettings?: () => void } = {
                     : turn.envelope.metadata?.provenance === 'deterministic_local'
                       ? 'Deterministic local answer'
                       : 'Generated answer'}
-                  {turn.envelope.metadata?.coverage_start && turn.envelope.metadata?.coverage_end
-                    ? ` · data coverage ${turn.envelope.metadata.coverage_start} to ${turn.envelope.metadata.coverage_end}`
+                  {isValidDateOnly(turn.envelope.metadata?.coverage_start) &&
+                  isValidDateOnly(turn.envelope.metadata?.coverage_end)
+                    ? ` · data coverage ${formatDateRange(turn.envelope.metadata.coverage_start, turn.envelope.metadata.coverage_end)}`
                     : ''}
                   {turn.envelope.metadata?.dataset_version_id
                     ? ` · dataset ${turn.envelope.metadata.dataset_version_id}`
