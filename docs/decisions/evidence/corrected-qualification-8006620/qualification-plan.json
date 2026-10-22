@@ -1,0 +1,44 @@
+{
+  "production_main": "a0ac51b6a24442f669608f153efe5b0c98931051",
+  "reference": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+  "harness_head": "8006620ec27f06dd9834b5cfdc268974c2f439fc",
+  "harness_tree": "649fb8539ffa04e9a06913dff95263baec0d969d",
+  "protocol_sha256": "9ee6b4a46b06ca2e6b74acb0619d4e0b44cc9f7805fb05ecb217de30f7b3ef04",
+  "warmups_per_browser_head": 2,
+  "retained_per_browser_head": 20,
+  "browser_primary_order": [
+    "reference",
+    "main"
+  ],
+  "conditional_browser_confirmation_order": [
+    "main",
+    "reference"
+  ],
+  "max_browser_confirmation_pairs": 1,
+  "natural_confirmation_order": [
+    "main",
+    "reference"
+  ],
+  "natural_confirmation_pairs": 1,
+  "natural_warmups": 2,
+  "natural_retained": 20,
+  "primary_metrics": [
+    "cold_chat_ready_ms",
+    "first_chart_canvas_ms",
+    "cached_chat_shell_ms",
+    "cached_dashboard_ms",
+    "volume_response_plus_two_frames_ms"
+  ],
+  "diagnostic_metric": "first_chart_locator_upper_bound_ms",
+  "regression": {
+    "median_ratio_strictly_greater_than": 1.1,
+    "p95_ratio_strictly_greater_than": 1.15,
+    "minimum_absolute_difference_ms": 5
+  },
+  "normal_trial_errors_allowed": 0,
+  "warmup_errors_allowed": 0,
+  "original_results_remain_unchanged": true,
+  "source_or_method_edit_during_window_allowed": false,
+  "repeated_unconfirmed_tail_retry_allowed": false,
+  "unaffected_backend_reuse": "group_exact_identity_and_provenance_only"
+}

@@ -8,6 +8,26 @@ requires independent review and actual merged-main acceptance; green branch
 checks alone do not close a gate. Post-merge completion receipts belong to those
 GitHub issues and PR #200, with exact source and CI identities.
 
+## Current qualification and final receipt location
+
+Feature source is main `a0ac51b` through #200. Verification-only followup #214
+preserves the complete production/backend-test/configuration/build/lock inputs.
+The [evidence index](acceptance-evidence.md) and
+[composed qualification](evidence/corrected-qualification-8006620/corrected-qualification.md)
+distinguish every measured source, harness version, window and reused/fresh group.
+All88 new browser/natural numeric trials are committed; original cached-navigation
+failures remain archived unchanged. The corrected body-render-v1 harness is
+`8006620`/digest9ee6b4… . All five browser metrics pass unchanged margins; the
+single natural-chat tail confirmation is below the5ms materiality floor.
+
+Actual main has1390backend/224frontend/full quality/build, macOS/Ubuntu47/47 and
+CI39851476974 receipts. Changed frontend tests subsequently pass227 and the
+harness24; these are source-qualified executions, not a newly executed full
+backend suite. Final-main CI/platform/changed-surface reconciliation and independent
+five-gate outcome acceptance remain required. Their completion comments and #150
+bind the final main SHA/tree without a self-referential documentation commit.
+Do not infer completion merely from this prepromotion publication.
+
 ## Reproduce the supported setup
 
 Use Python 3.12+ with `uv`, and Node 20 with npm. Local delivery used Python
@@ -87,7 +107,7 @@ frozen baseline; archive failed setup separately. Summed sampled process RSS is
 not PSS or a physical peak. ASGI timings are distinct from real TCP/browser
 timings; model inference is unmeasured.
 
-The production portfolio caught the original lazy chart's React 300 ms Suspense
+The historical production portfolio caught the original lazy chart's React 300 ms Suspense
 commit delay. The repair uses explicit loading state with the same dynamic
 imports and error/data fallbacks. [Quiet paired qualification](performance-chart-requalification.md)
 passes the unchanged first-chart/navigation margins: first-chart median/p95 is

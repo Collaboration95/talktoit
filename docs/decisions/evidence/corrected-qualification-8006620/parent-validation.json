@@ -1,0 +1,13 @@
+{
+  "scope": "parent offline validation; final independent outcome pending",
+  "status": "PASS",
+  "raw_trials": 88,
+  "summaries_recomputed": 18,
+  "fixed_thresholds_rechecked": true,
+  "four_qualifying_exits_zero": true,
+  "errors_including_warmups_zero": true,
+  "browser_confirmation_pairs": 0,
+  "natural_confirmation_pairs": 1,
+  "source_harness_unchanged": true,
+  "numeric_sha256": "aeb9a09e8b61d7ee5734f96f4256a6cec3305b4a9b419599f468a557719adcd0"
+}

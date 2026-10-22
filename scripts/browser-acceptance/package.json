@@ -6,7 +6,7 @@
     "node": "20.x"
   },
   "scripts": {
-    "self-test": "node self-test.mjs"
+    "self-test": "node self-test.mjs && node --test performance-*.test.mjs && node performance-self-test.mjs && node performance-history.mjs"
   },
   "dependencies": {
     "playwright": "1.63.0"

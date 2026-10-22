@@ -1,0 +1,14 @@
+{
+  "numeric_results": "aeb9a09e8b61d7ee5734f96f4256a6cec3305b4a9b419599f468a557719adcd0",
+  "markdown_report": "3e79287a881195cdf67b46700c25839543f6b31c3a6a114a037ea1a7c819aaa8",
+  "json_schema": "cee79be120bbc71ace4bd24819a44a50ef6a608a8860a4c1f7c11202f061d182",
+  "validation": "be064ecaa6bd15db84835be96d94e09e4fa1b02334d39197c3b8137a6b2f8c9e",
+  "publisher": "789452ca4d1427f8e67ecc3a4c1dde4a439e54e8e80f9adb9323a8a6e384b68d",
+  "report_writer": "7b3dc1cca657bc759356a97cfdc45be57da01aaafe9089c213273a6c494fadf2",
+  "preflight": "705bb19099069d5ca6d0b6370c757fe8f79e92d5964221d014ab317f329520ba",
+  "natural_adapter": "51e22308b41a2a5a3733f904fe81ef01b0dce18ff855909b827cf9cda4e8799b",
+  "controller": "17fb517851ecda0a9300e21c5324f329481fcb09497a4c3beeadf594ebd8e9f2",
+  "awake_observer": "65e482414c160fdbd3652e643d7c26320ab4b80b1137943fef416b332f4fb981",
+  "private_browser_main_capture_bundle": "c0a69a46f7a60c5815e4105b284f93b3d37c46f68bf27b428f42f4076e2acf77",
+  "private_browser_reference_capture_bundle": "be2e6dfb78c7c232930dbc2d914ef170b88f88873f849393977c142b5f8b72fd"
+}

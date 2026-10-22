@@ -1,8 +1,10 @@
 # Roadmap delivery evidence
 
 This index tracks the 22 October 2026 delivery from `main` at `49510a7`.
-The integration branch is `codex/dev-roadmap-20261022`; umbrella
-[PR #200](https://github.com/Collaboration95/talktoit/pull/200) targets `main`.
+The integration branch is `codex/dev-roadmap-20261022`.
+[PR #200](https://github.com/Collaboration95/talktoit/pull/200) promoted the feature
+batches to main `a0ac51b`; [PR #214](https://github.com/Collaboration95/talktoit/pull/214)
+contains the subsequent verification-only method correction and publication.
 All GitHub operations use authenticated `gh`. Verification uses isolated synthetic
 data and denied providers. Personal exports and generated databases are excluded
 from commits. The existing untracked `reports/` remains untouched.
@@ -25,7 +27,7 @@ journeys. Prototype selection and production acceptance evidence remain separate
 
 ## Integrated batches
 
-Every batch below is merged into dev. Final PR checks passed: nine for #201/#202,
+Feature batches below are merged into dev and main through #200. Final PR checks passed: nine for #201/#202,
 ten for #203–#211 and eleven for #212. These receipts establish integration checkpoints; they do not
 substitute for final review or merged-main acceptance.
 
@@ -43,24 +45,64 @@ substitute for final review or merged-main acceptance.
 | [#210](https://github.com/Collaboration95/talktoit/pull/210) | #183, #184, #188 | Short write scopes; SQL buckets; profiling NO-GO | `4fba4c0` |
 | [#211](https://github.com/Collaboration95/talktoit/pull/211) | #186, #187 | Independent volume; deferred charts | `51bc6dc` |
 | [#212](https://github.com/Collaboration95/talktoit/pull/212) | #187, #176, #199, #150 | Chart repair, portable browser and phone-width Settings | `476bbd2` |
+| [#213](https://github.com/Collaboration95/talktoit/pull/213) | #153, #160–#163, #170, #173, #193 | Final review corrections: drained workers, durable claims, local analytics guidance | `aba715f` |
 
-Integrated checkpoint: `476bbd25e0cceb5202f6ab591c6e1ddde50313f5`, all eleven
-checks passed ([run](https://github.com/Collaboration95/talktoit/actions/runs/39817790401)).
-Actual Ubuntu browser acceptance passed all 47 criteria; its test-merge tree matches
-this checkpoint. Final round 1 found five P2 gaps, documented below. The correction
-branch is being qualified; work stays In progress/Review until fresh independent
-acceptance, actual main receipts and completion comments exist.
+The initial dev checkpoint `476bbd2` was followed by all recorded R1–R4 corrections.
+The current production tree is accepted by R4; the following chronological review
+sections preserve their original status/measurements rather than claiming those
+older checkpoints passed later gates.
+
+## Current composed qualification
+
+Production main `a0ac51b` passed actual `make check-full` (**1,390 backend /224
+frontend**, original coverage gates), build, quiet small bench11, six additional
+capture/crash probes, complete macOS47-criterion journey and hosted main
+[CI39851476974](https://github.com/Collaboration95/talktoit/actions/runs/39851476974).
+That run includes full Ubuntu backend/fault/coverage, Ubuntu47/47 and macOS smoke.
+Actual-main audits: Python/production Node/browser tooling exit0; full Node exit1
+with the same seven explicitly dispositioned development packages.
+
+The actual-main performance comparison caught a cached-navigation regression and
+unclassified request failures. Its [original report and numeric archive](evidence/main-a0ac-performance-revise/main-performance.md)
+remain byte-identical and REVISE. Diagnosis exposed stale SPA document-idle waits.
+The [corrected protocol](performance-measurement-correction.md) now checks actual
+body delivery and all affected rendered panels, preserves every error and retains
+the original timing/margin rules. No production app, backend tests/configuration,
+build input or dependency lock changed. New frontend tests passed **227** with
+unchanged coverage gates; the corrected harness has **24** deterministic tests.
+
+[Corrected bounded qualification](evidence/corrected-qualification-8006620/corrected-qualification.md)
+uses production a0ac/reference859 and harness8006620, frozen digest9ee6b4… . All
+five browser metrics pass, 2+20/head, zero errors including warmups. Cached Chat
+median/p95 is **59.20/68.80→62.95/69.50ms**. The single counterbalanced natural
+confirmation is **15.63/16.31→17.13/19.21ms**; the2.90ms p95 increase is below the
+fixed5ms floor, so the original tail flag is not confirmed under the declared rule.
+All88 raw numeric trials, schema, source/authority hashes and12 negative validation
+cases are published alongside the report. No browser confirmation was triggered.
+
+This is an explicitly composed receipt: unchanged backend matrices/phases/trend/
+retirement/graph retain their original a0ac source/method/window, while corrected
+browser/natural groups are fresh. [Equivalence proof](performance-method-equivalence.json)
+and independent method R1–R3 acceptance bind the permitted reuse; no old command
+is renamed a new `make check-full`. The final publication/integration head must
+retain those exact production/harness inputs and pass required exact-head CI.
+
+Final-main changed-surface/platform reconciliation and fresh independent outcome
+acceptance remain pending for all five gates and #150. Completion receipts on
+those issues and the promotion PR record the final main SHA/tree/CI/review links;
+this publication does not close any issue. Optional198 and historical55 remain
+outside required closure.
 
 ## Criterion-to-evidence map
 
 | Gate | Required outcome and current evidence | Remaining qualification |
 | --- | --- | --- |
-| #148 maintenance | Supported Python 3.12.11/Node 20.20.2; locked installs; audit dispositions; Ubuntu suites/macOS lifecycle CI; 55 historical issues classified | Fresh audits, integrated review and main CI |
-| #164 data safety | Process-death activation/deletion/retention matrices; two-dataset identity/cache tests; leases; simultaneous import/query/delete; owned-artifact recovery | Final integrated fault matrix and main/platform receipts |
-| #176 daily use | Combined real-browser journey passes all 47 criteria: native upload, reconnect/cancel/SIGKILL recovery, keyboard, scoped dashboard, empty-filter Reset and desktop/390 px screenshots | Actual Ubuntu browser CI, review and main receipts |
-| #189 performance | Frozen matrices; production portfolio; implementation parity; repaired charts pass quiet paired browser qualification | Final review and merged-main rerun; original chart blocker is cleared |
-| #199 analytics | Shared sleep union/stages; independent HTTP/CLI/query oracles; fresh combined browser coverage/missing/zero states and provider-denied rendering pass | Review and main/platform receipts |
-| #150 whole roadmap | Twelve batches integrated; architecture/issue map and reproducible setup | Corrected-source review, all five gates, main integration and handoff |
+| #148 maintenance | Actual-main supported toolchain, audits/dispositions,55 historical rows and Ubuntu/macOS CI recorded | Final-head CI/audit reconciliation and independent gate acceptance |
+| #164 data safety | Actual-main1390-test suite includes crash/deletion/retention/claims/concurrency/CLI matrices; six extra crash probes and both platform receipts | Final-source identity/platform reconciliation and independent gate acceptance |
+| #176 daily use | Real macOS/Ubuntu47/47, pending-request App navigation, cancellation/restart, keyboard/390px/Reset and disclosure | Final-main platform reconciliation and independent gate acceptance |
+| #189 performance | Actual-main matrices plus source-verified fresh corrected browser/natural qualification PASS; old failures preserved | Final composed head/source map and independent outcome acceptance |
+| #199 analytics | Independent sleep/comparison query/HTTP/CLI/UI/privacy/missing/zero oracles plus real platform journeys | Final-main identity/platform reconciliation and independent gate acceptance |
+| #150 whole roadmap | Feature batches integrated; verification followup214; complete architecture/provenance/setup/limits | All five accepted final-main gates, issue completion receipts and final handoff |
 
 No gate is closed at this checkpoint. Optional companion/ZIP discovery #198 is
 outside the required roadmap. XML upload does not include companion GPX files;
@@ -68,7 +110,7 @@ the UI explains the existing local import route. Historical issues remain
 unchanged: 28 repaired, 8 residual and 19 unverified; classification does not claim
 acceptance or close them.
 
-## Current corrected candidate
+## Historical lifecycle correction checkpoint
 
 Round three passed UX/analytics but reproduced three cleanup gaps: missing legacy
 ownership proof could be manufactured on retry, a child file could be replaced

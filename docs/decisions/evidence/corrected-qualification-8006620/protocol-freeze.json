@@ -1,0 +1,20 @@
+{
+  "status": "PASS",
+  "scope": "protocol_implementation_and_parent_exact_head_ci_verification_only",
+  "protocol": "body-render-v1",
+  "head": "8006620ec27f06dd9834b5cfdc268974c2f439fc",
+  "tree": "649fb8539ffa04e9a06913dff95263baec0d969d",
+  "protocol_sha256": "9ee6b4a46b06ca2e6b74acb0619d4e0b44cc9f7805fb05ecb217de30f7b3ef04",
+  "review_report_sha256": "2be79a68291740522b5754a2a019beed3b8992ab77090ff3510032979bf48da7",
+  "review_receipt_sha256": "d5b3fd04ba750a5efc7d280c19c1c65d415748374348ecb77b14b2d6002f4362",
+  "ci_receipt_sha256": "291a6f0cbacc9cc9c3cdddc0daf58cc7819d57f1995b99b8e1b63c7c2a9e4bd4",
+  "ci_run": 39867103866,
+  "ci_test_merge": "e83d09efa6463f4b6c52f877016217e494affc8e",
+  "ci_tree": "649fb8539ffa04e9a06913dff95263baec0d969d",
+  "ci_checks_successful": 11,
+  "ubuntu_criteria_successful": 47,
+  "parent_discharged_ci_condition": true,
+  "qualification_outcome": "PENDING",
+  "issue_189": "REVISE",
+  "frozen_at_utc": "2026-10-22T22:54:50.166336+00:00"
+}
