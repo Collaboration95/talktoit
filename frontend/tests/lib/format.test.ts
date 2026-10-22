@@ -5,9 +5,18 @@ import {
   formatDateTime,
   formatDurationMinutes,
   formatMetricValue,
+  isValidDateOnly,
+  shiftDateOnly,
 } from '@/lib/format'
 
 describe('format helpers', () => {
+  it('validates calendar dates and shifts data days across leap and year boundaries', () => {
+    expect(isValidDateOnly('2024-02-29')).toBe(true)
+    expect(isValidDateOnly('2023-02-29')).toBe(false)
+    expect(isValidDateOnly('2024-02-30')).toBe(false)
+    expect(shiftDateOnly('2024-03-01', -1)).toBe('2024-02-29')
+    expect(shiftDateOnly('2024-01-03', -6)).toBe('2023-12-28')
+  })
   it('rounds duration to whole minutes', () => {
     expect(formatDurationMinutes(61.051)).toBe('61 min')
   })
