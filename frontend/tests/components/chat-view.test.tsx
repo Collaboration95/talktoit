@@ -7,6 +7,7 @@ import { ChatView } from '@/components/chat-view'
 const server = setupServer(
   http.get('/health', () => HttpResponse.json({ status: 'ok' })),
   http.get('/api/conversations', () => HttpResponse.json([])),
+  http.get('/api/settings', () => HttpResponse.json({ dataset: null })),
   http.post('/api/conversations', () => HttpResponse.json({ id: 'cv_test' })),
 )
 beforeAll(() => server.listen())
@@ -202,7 +203,11 @@ describe('ChatView', () => {
   it('shows the safe unknown-template fallback for a live answer', async () => {
     server.use(
       http.post('/api/chat', () =>
-        HttpResponse.json({ template_id: 'future_template', data: {}, narrative: 'Future answer.' }),
+        HttpResponse.json({
+          template_id: 'future_template',
+          data: {},
+          narrative: 'Future answer.',
+        }),
       ),
     )
     const user = userEvent.setup()
@@ -243,10 +248,15 @@ describe('ChatView', () => {
   })
 
   it('seed prompt submits directly and shows the query', async () => {
-    server.use(http.post('/api/chat', () => HttpResponse.json(WORKOUT_ENVELOPE)))
+    server.use(
+      http.post('/api/chat', () => HttpResponse.json(WORKOUT_ENVELOPE)),
+      http.get('/api/settings', () =>
+        HttpResponse.json({ dataset: { counts: { workouts: 3 } }, quality: { metric_states: {} } }),
+      ),
+    )
     const user = userEvent.setup()
     render(<ChatView />)
-    await user.click(screen.getByRole('button', { name: /last long run/i }))
+    await user.click(await screen.findByRole('button', { name: /last workout/i }))
     await waitFor(() => {
       expect(screen.getByText('Running')).toBeInTheDocument()
     })
@@ -324,25 +334,27 @@ describe('ChatView', () => {
     expect(laterRequest).not.toHaveProperty('parent_turn_id')
   })
 
-  it('shows a dismissible degraded-answer notice for fallback responses', async () => {
-    const FALLBACK_ENVELOPE = {
-      template_id: 'fallback',
-      data: { question: 'blah', table: null, text: 'Try again.' },
-      narrative: 'Try again.',
-      metadata: {
-        api_version: 'v1' as const,
-        provenance: 'fallback' as const,
-        dataset_version_id: 'ds_fixture',
-      },
-    }
-    server.use(http.post('/api/chat', () => HttpResponse.json(FALLBACK_ENVELOPE)))
+  it('renders fallback guidance without blaming the local model', async () => {
+    server.use(
+      http.post('/api/chat', () =>
+        HttpResponse.json({
+          template_id: 'fallback',
+          data: {
+            question: 'pace',
+            table: null,
+            text: 'Pace ranking is unsupported.',
+            reason: 'unsupported',
+          },
+          narrative: '',
+        }),
+      ),
+    )
     const user = userEvent.setup()
     render(<ChatView />)
-    await user.type(screen.getByRole('textbox'), 'blah')
-    await user.click(screen.getByRole('button', { name: /ask/i }))
-    await screen.findByText(/showing a basic summary of your data/i)
-    await user.click(screen.getByRole('button', { name: /dismiss/i }))
-    expect(screen.queryByText(/showing a basic summary of your data/i)).not.toBeInTheDocument()
+    await user.type(screen.getByRole('textbox'), 'pace')
+    await user.click(screen.getByRole('button', { name: /^ask$/i }))
+    expect(await screen.findByRole('heading', { name: 'Not supported yet' })).toBeInTheDocument()
+    expect(screen.queryByText(/start it in Settings/i)).not.toBeInTheDocument()
   })
 
   it('shows no degraded-answer notice for full answers', async () => {

@@ -115,9 +115,16 @@ class FallbackTableRow(BaseModel):
     value: str
 
 
+FallbackReason = Literal[
+    "unsupported", "no_matching_data", "clarification_needed", "provider_unavailable", "unavailable"
+]
+
+
 class FallbackData(BaseModel):
     """Data payload for the ``fallback`` template (SPEC §2.6)."""
 
     question: str
     table: list[FallbackTableRow] | None
     text: str | None
+
+    reason: FallbackReason | None = None

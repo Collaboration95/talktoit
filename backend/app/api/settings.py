@@ -38,10 +38,13 @@ ProviderType = Literal["local", "groq"]
 
 _EGRESS_CATEGORIES: dict[str, tuple[str, ...]] = {
     "local_only": (),
-    "remote_planning": ("coverage, metric and activity metadata (planning)",),
+    "remote_planning": ("question text and coverage, metric and activity metadata (planning)",),
     "remote_planning_and_narration": (
-        "coverage, metric and activity metadata (planning)",
-        "compact measurements: duration, heart rate, distance, energy (narration)",
+        "question text and coverage, metric and activity metadata (planning)",
+        (
+            "question text and compact rounded measurements: "
+            "duration, heart rate, distance, energy (narration)"
+        ),
     ),
 }
 
@@ -127,41 +130,89 @@ def _metric_states(repository: AppStateRepository) -> dict[str, str]:
     return states
 
 
+def _local_readiness(config: dict[str, str]) -> dict[str, object]:
+    """Project the same bounded, local-only readiness for both Settings endpoints."""
+    from app.llm.litert import health, status
+    from app.llm.provider_gateway import is_loopback_url
+
+    # Chat uses the effective saved fields, including environment defaults.
+    base_url = config.get("base_url", "")
+    model = config.get("model", "")
+    local_status: dict[str, object] = {"running": False, "ownership": "none"}
+    local_health: dict[str, object] = {
+        "ok": False,
+        "endpoint_reachable": False,
+        "model_available": False,
+    }
+    if not is_loopback_url(base_url):
+        local_health["error"] = "Local provider requires a loopback LiteRT endpoint"
+    else:
+        try:
+            raw_status = status(base_url=base_url, model=model)
+            # Keep compatible keys without returning private filesystem paths.
+            local_status.update(
+                {
+                    key: raw_status[key]
+                    for key in (
+                        "running",
+                        "ownership",
+                        "pid",
+                        "binary_available",
+                    )
+                    if key in raw_status
+                }
+            )
+            raw_health = health(timeout_seconds=1.0, base_url=base_url, model=model)
+            local_health.update(
+                {
+                    key: raw_health[key]
+                    for key in (
+                        "ok",
+                        "endpoint_reachable",
+                        "model_available",
+                        "latency_ms",
+                        "status_code",
+                    )
+                    if key in raw_health
+                }
+            )
+            if not local_health["ok"]:
+                local_health["error"] = (
+                    "Selected model is unavailable"
+                    if local_health["endpoint_reachable"]
+                    else "Local endpoint is unavailable; check the server and retry"
+                )
+        except Exception:
+            local_health["error"] = "Local readiness could not be checked; retry"
+    local_status.update(
+        {
+            "base_url": base_url,
+            "model": model,
+            "endpoint_reachable": bool(local_health["endpoint_reachable"]),
+            "model_available": bool(local_health["model_available"]),
+            "available": bool(local_health["ok"]),
+        }
+    )
+    if local_health["endpoint_reachable"] and not local_status.get("running"):
+        local_status["ownership"] = "external"
+    return {
+        "provider": "local",
+        "model": model,
+        "base_url": base_url,
+        "status": local_status,
+        "health": local_health,
+    }
+
+
 def _build_settings_payload(
     repo: AppStateRepository, diagnostics: DiagnosticsRepository
 ) -> dict[str, object]:
     """Return introspective settings and storage state; no health values."""
     active = repo.get_active()
     config = repo.get_provider_config()
-    litert_status: dict[str, object] = {}
-    try:
-        from app.llm.litert import status as litert_status_fn
-
-        litert_status = litert_status_fn(
-            base_url=config.get("litert_base_url"), model=config.get("litert_model")
-        )
-    except Exception:
-        logger.debug("litert status unavailable", exc_info=True)
-        litert_status = {"running": False, "error": "status unavailable"}
-    litert_health: dict[str, object] | None = None
-    if config.get("provider") == "local":
-        try:
-            from app.llm.litert import health as litert_health_fn
-
-            litert_health = litert_health_fn(
-                timeout_seconds=1.0,
-                base_url=config.get("litert_base_url"),
-                model=config.get("litert_model"),
-            )
-            endpoint_reachable = bool(litert_health.get("endpoint_reachable"))
-            litert_status["endpoint_reachable"] = endpoint_reachable
-            litert_status["model_available"] = bool(litert_health.get("model_available"))
-            litert_status["available"] = bool(litert_health.get("ok"))
-            if endpoint_reachable and not litert_status.get("running"):
-                litert_status["ownership"] = "external"
-        except Exception:
-            logger.debug("litert health unavailable", exc_info=True)
-            litert_health = {"ok": False, "error": "health unavailable"}
+    local = _local_readiness(config) if config.get("provider") == "local" else None
+    litert_status = local["status"] if local else {}
+    litert_health = local["health"] if local else None
     mode: ProviderMode = config.get("mode", "local_only")  # type: ignore[assignment]
     provider: ProviderType = config.get("provider", "local")  # type: ignore[assignment]
     storage_path = repo.path
@@ -273,23 +324,7 @@ async def llm_health(
     """
     config = repo.get_provider_config()
     if config.get("provider") == "local":
-        try:
-            from app.llm.litert import health as litert_health_fn
-            from app.llm.litert import status as litert_status_fn
-
-            return {
-                "provider": "local",
-                "model": config.get("litert_model"),
-                "base_url": config.get("litert_base_url"),
-                "status": litert_status_fn(
-                    base_url=config.get("litert_base_url"), model=config.get("litert_model")
-                ),
-                "health": litert_health_fn(
-                    base_url=config.get("litert_base_url"), model=config.get("litert_model")
-                ),
-            }
-        except Exception as exc:
-            return {"provider": "local", "ok": False, "error": str(exc)}
+        return await asyncio.to_thread(_local_readiness, config)
     return {
         "provider": "groq",
         "model": config.get("groq_model"),

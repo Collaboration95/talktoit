@@ -118,6 +118,7 @@ export interface WorkoutDetail {
   elevation_ascent_meters: number | null
   source_name: string
   gps_route: GpsRoute | null
+  route?: { state: 'available' | 'missing' | 'invalid'; message: string }
   metadata: KeyValuePair[]
   route_summary?: {
     point_count: number

@@ -87,8 +87,8 @@ def _requested_granularity(question: str) -> str:
     return "week"
 
 
-def _fallback_plan(text: str) -> dict[str, Any]:
-    return {"tool_name": "get_fallback_answer", "arguments": {"text": text}}
+def _fallback_plan(text: str, reason: str = "unsupported") -> dict[str, Any]:
+    return {"tool_name": "get_fallback_answer", "arguments": {"text": text, "reason": reason}}
 
 
 def _comparison_plan(
@@ -133,6 +133,21 @@ def plan_local_question(question: str, profile: DataProfile) -> dict[str, Any] |
     as_of = profile.latest_date
     activity_type = _activity_type(question)
     period = _period_for_question(question, as_of)
+
+    if "pace" in lower and any(word in lower for word in ("top", "rank", "fastest", "longest")):
+        return _fallback_plan(
+            "Ranking workouts by pace is not supported yet. Try: Top 5 longest runs this year."
+        )
+    if lower.strip().rstrip("?.!") in {
+        "compare that",
+        "compare this",
+        "what about that",
+        "show that",
+    }:
+        return _fallback_plan(
+            "Select an answer with Ask about this answer, or name a workout type and date range.",
+            "clarification_needed",
+        )
 
     trend_metric = _trend_metric(question)
 
@@ -227,7 +242,8 @@ def plan_local_question(question: str, profile: DataProfile) -> dict[str, Any] |
     if activity_type is not None and period is not None:
         return _fallback_plan(
             f"I can summarize {activity_type} workouts for that period, but I need to know "
-            "whether you want a count, distance, duration, or energy."
+            "whether you want a count, distance, duration, or energy.",
+            "clarification_needed",
         )
 
     return None

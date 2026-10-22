@@ -23,7 +23,7 @@ from app.analytics.registry import (
 )
 from app.db import queries
 from app.db.data_profile import resolve_activity_type
-from app.models.templates import FallbackData
+from app.models.templates import FallbackData, FallbackReason
 
 
 class _StrictToolInput(BaseModel):
@@ -107,6 +107,7 @@ class _FallbackToolInput(_StrictToolInput):
     """Validated, bounded fallback text returned by a provider."""
 
     text: str = Field(default="", max_length=500)
+    reason: FallbackReason | None = None
 
 
 if TYPE_CHECKING:
@@ -344,7 +345,11 @@ def _tool_get_last_workout(
         fallback = FallbackData(
             question=question,
             table=None,
-            text=f"No {activity_type or 'workouts'} found.",
+            text=(
+                f"No matching {activity_type or 'workouts'} found. "
+                "Try a wider date range or another workout type."
+            ),
+            reason="no_matching_data",
         )
         return ("fallback", fallback.model_dump(mode="json"))
     return ("workout_card", result.model_dump(mode="json"))
@@ -479,6 +484,7 @@ def _tool_get_fallback_answer(
     """
     parsed = _FallbackToolInput.model_validate(args)
     result = queries.get_fallback(question, text=parsed.text.strip())
+    result.reason = parsed.reason
     return ("fallback", result.model_dump(mode="json"))
 
 

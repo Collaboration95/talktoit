@@ -70,8 +70,8 @@ describe('WorkoutDetail', () => {
     await waitFor(() => {
       expect(screen.getByText('Running')).toBeInTheDocument()
     })
-    // GPS route section should not appear
-    expect(screen.queryByText('GPS Route')).not.toBeInTheDocument()
+    expect(screen.getByText('No route available')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Download GeoJSON' })).not.toBeInTheDocument()
   })
 
   it('renders GPS map when gps_route has coordinates', async () => {
@@ -132,4 +132,15 @@ describe('WorkoutDetail', () => {
       expect(screen.getByText(/error/i)).toBeInTheDocument()
     })
   })
+})
+
+it('explains an invalid route without offering download or exposing paths', async () => {
+  server.use(
+    http.get('/api/dashboard/workouts/1', () =>
+      HttpResponse.json({ ...MOCK_WORKOUT, route: { state: 'invalid', message: 'unreadable' } }),
+    ),
+  )
+  render(<WorkoutDetail workoutId={1} onBack={vi.fn()} />)
+  expect(await screen.findByText('Route could not be read')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Download GeoJSON' })).not.toBeInTheDocument()
 })
