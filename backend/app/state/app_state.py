@@ -425,6 +425,72 @@ class AppStateRepository:
             **manifest,  # type: ignore[arg-type]
         )
 
+    def build_file_manifest(
+        self,
+        source: Path,
+        *,
+        parser_version: str,
+        schema_version: str,
+        worker_count: int,
+        coverage_start: str | None,
+        coverage_end: str | None,
+        counts: Mapping[str, int],
+        warnings: tuple[str, ...] = (),
+    ) -> DatasetVersion:
+        """Prepare an identity without advertising activation in SQLite."""
+        with source.open("rb") as handle:
+            digest = hashlib.file_digest(handle, "sha256").hexdigest()[:16]
+        now = _now()
+        return DatasetVersion(
+            id=f"ds_{uuid.uuid4().hex}",
+            content_hash_prefix=digest,
+            source_size_bytes=source.stat().st_size,
+            parser_version=parser_version,
+            schema_version=schema_version,
+            worker_count=worker_count,
+            coverage_start=coverage_start,
+            coverage_end=coverage_end,
+            counts=dict(counts),
+            warnings=warnings,
+            imported_at=now,
+            activated_at=now,
+            status="ready",
+        )
+
+    def project_generation(self, dataset: DatasetVersion, export_root: Path) -> None:
+        """Rebuild the compatibility projection from one committed generation.
+
+        Pointer publication is the durable authority. A projection failure must
+        leave it committed so startup can retry this idempotent transaction.
+        """
+        self._ensure_ready()
+        with self._connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                "INSERT OR REPLACE INTO dataset_versions VALUES "
+                "(?, ?, ?, ?, ?, ?, ?, ?, json(?), json(?), ?, ?, ?)",
+                (
+                    dataset.id,
+                    dataset.content_hash_prefix,
+                    dataset.source_size_bytes,
+                    dataset.parser_version,
+                    dataset.schema_version,
+                    dataset.worker_count,
+                    dataset.coverage_start,
+                    dataset.coverage_end,
+                    json.dumps(dataset.counts, sort_keys=True),
+                    json.dumps(dataset.warnings),
+                    dataset.imported_at,
+                    dataset.activated_at,
+                    dataset.status,
+                ),
+            )
+            conn.executemany(
+                "INSERT INTO app_state(key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [("active_dataset_id", dataset.id), ("export_root", str(export_root.resolve()))],
+            )
+
     def get_active(self, conn: sqlite3.Connection | None = None) -> DatasetVersion | None:
         """Return the active manifest, or None while no validated import exists."""
         self._ensure_ready()

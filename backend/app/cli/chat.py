@@ -11,6 +11,7 @@ from pathlib import Path
 
 from app.db.connection import connect, resolve_db_path
 from app.db.data_profile import get_data_profile
+from app.db.dataset_lifecycle import DatasetLifecycle, DatasetRecoveryError
 from app.db.migrate import migrate
 from app.llm.cache_keys import build_cache_key, generation_identity, matches_managed_database
 from app.llm.cache_policy import cacheable_envelope, cacheable_response
@@ -138,9 +139,20 @@ async def _ask_question(
     """Run one question through the same local cache and orchestration path as HTTP."""
     managed_path = resolve_db_path().resolve()
     effective_path = resolve_db_path(db_path).resolve()
-    migrate(effective_path)
-    conn = connect(effective_path, read_only=True)
     repository = AppStateRepository()
+    managed_request = effective_path == managed_path
+    generation = None
+    if managed_request:
+        lifecycle = DatasetLifecycle(managed_path)
+        # A pre-lifecycle DB with no identity remains an unassociated local
+        # query source. Never invent a manifest for it or use shared caches.
+        if lifecycle.root.exists() or repository.get_active() is not None:
+            generation = lifecycle.recover(repository)
+        if generation is not None:
+            managed_path = effective_path = generation.database_path
+    if generation is None:
+        migrate(effective_path)
+    conn = connect(effective_path, read_only=True)
     repository.migrate()
     config = repository.get_provider_config()
     cache_identity = generation_identity(config)
@@ -155,7 +167,7 @@ async def _ask_question(
         with repository.session() as store:
             active = (
                 repository.get_active(conn=store)
-                if matches_managed_database(effective_path, managed_path)
+                if managed_request and matches_managed_database(effective_path, managed_path)
                 else None
             )
             if active is None:
@@ -315,15 +327,19 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     configure_logging(level=logging.INFO if args.verbose else logging.CRITICAL)
     question = _resolve_question(args.question)
-    response = asyncio.run(
-        _ask_question(
-            question,
-            db_path=args.db_path,
-            conversation_id=args.conversation_id,
-            parent_turn_id=args.parent_turn_id,
-            cache_mode=args.cache_mode,
+    try:
+        response = asyncio.run(
+            _ask_question(
+                question,
+                db_path=args.db_path,
+                conversation_id=args.conversation_id,
+                parent_turn_id=args.parent_turn_id,
+                cache_mode=args.cache_mode,
+            )
         )
-    )
+    except DatasetRecoveryError as exc:
+        print(f"tti: {exc}", file=sys.stderr)
+        return 1
     _print_response(response, args.json)
     return 0
 
