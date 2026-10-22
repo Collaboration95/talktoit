@@ -1,0 +1,27 @@
+{
+  "exit_code": 0,
+  "closed_schema": true,
+  "raw_browser_trials": 44,
+  "raw_natural_trials": 44,
+  "negative_cases_rejected": [
+    "unknown_question",
+    "unknown_endpoint_url",
+    "raw_sql_metric",
+    "changed_warmup_membership",
+    "omitted_trial",
+    "hidden_warmup_transport_failure",
+    "sample_count",
+    "method_path_instead_of_hash",
+    "changed_median",
+    "diagnostic_in_primary_flags",
+    "loosened_floor",
+    "natural_missing_profile"
+  ],
+  "all_statistics_recomputed": true,
+  "all_flags_recomputed_from_frozen_thresholds": true,
+  "warmups_separate": true,
+  "raw_errors_all_zero": true,
+  "sources_unchanged": true,
+  "owned_jobs_stopped": true,
+  "status": "PASS"
+}

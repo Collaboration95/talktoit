@@ -1,6 +1,6 @@
 # Browser phase readiness correction — #179 / #189 / #186 / #176 / #150
 
-**Implementation and functional verification only. #189 remains REVISE.** No production optimization, application change, new performance qualification, or gate closure is claimed. The [independent method proposal review](reviews/performance-method-r1.md) accepts the operational plan, not this implementation or its future results. Its exact source SHA-256 is `7cbab2700a4672dc72e11efe504e0bcae6b3f0d74b22df4e93f2c1bb988a1a36`; the supplied file had no private footer to remove.
+**Implementation accepted; bounded qualification PASS, final independent outcome pending.** No production optimization, application change or gate closure is claimed. The original actual-main REVISE remains historical. The [independent method proposal review](reviews/performance-method-r1.md) accepts the operational plan, not this implementation or its future results. Its exact source SHA-256 is `7cbab2700a4672dc72e11efe504e0bcae6b3f0d74b22df4e93f2c1bb988a1a36`; the supplied file had no private footer to remove.
 
 The production pair stays main `a0ac51b6a24442f669608f153efe5b0c98931051` / tree `3de52384a0c216eaf597f9293e1eb9c3dda6a881`, and reference `859f89a405499ecef024fb8dde127a5f3d7c2f77` / tree `13e56c633e8c9c55cafb2d53e68cc15d07c015c6`. Current correction source is `bd1fe696a71e95772e54a2aac56a8c83b78ec4be`, built on the original tooling/test commit `c0918d0d54401d090084023ddaaa1c7e2b56c51e`. The protocol digest, computed over the six named driver/helper/service/controller files by `performance-run.py`, is **`9ee6b4a46b06ca2e6b74acb0619d4e0b44cc9f7805fb05ecb217de30f7b3ef04`**. Subsequent receipt documentation does not change those files. Production identity and harness identity are separate in every controller receipt.
 
@@ -115,8 +115,24 @@ uv run --directory backend python ../scripts/browser-acceptance/performance-run.
   --role reference --toggle-count 8 --channel chrome --artifacts /tmp/tti-method-reference-new
 ```
 
-`TTI_BROWSER_CHANNEL=chrome` selects Chrome for self-tests when desired; default Chromium is portable functional tooling. The controller's default is functional, one scenario and no published timings. **Do not run qualification now.** After the parent freezes H/protocol and explicitly releases the sole quiet window, use the same commands with `--mode qualification --method-review REVIEW.json` and fresh directories. That supplied receipt must contain `{"status":"PASS","protocol":"body-render-v1"}` and be tied by the parent's index to this method adjudication and pinned implementation. Fixed 2+20 counts cannot be lowered in qualification mode. Source/build/runtime/environment and final merged-head acceptance still require independent verification; the receipt flag is not acceptance authority.
+`TTI_BROWSER_CHANNEL=chrome` selects Chrome for self-tests when desired; default Chromium is portable functional tooling. The controller's default is functional, one scenario and no published timings. **The authorized bounded qualification has now completed; do not repeat its confirmation population.** For a separately authorized future run, after the parent freezes H/protocol and explicitly releases the sole quiet window, use the same commands with `--mode qualification --method-review REVIEW.json` and fresh directories. That supplied receipt must contain `{"status":"PASS","protocol":"body-render-v1"}` and be tied by the parent's index to this method adjudication and pinned implementation. Fixed 2+20 counts cannot be lowered in qualification mode. Source/build/runtime/environment and final merged-head acceptance still require independent verification; the receipt flag is not acceptance authority.
 
 The natural confirmation uses the preserved original contention helper (`production_helpers` digest in the equivalence artifact), with a fresh output/app-state directory and the same parity-verified source corpus. Any wrapper must preserve that kernel and source-specific generation mapping; it is a separate quiet followup, not implemented by replacing it with this browser driver.
 
 No new PR, GitHub comment/status mutation, CI watcher, merge, issue closure, or child agent was created. The parent owns existing PR214; this branch supplies its fast-forward correction. Parent owns the batched PR description/base, integration, required CI, quiet measurements, final index and fresh independent gate acceptance.
+
+## Completed frozen qualification
+
+Independent [R3 implementation acceptance](reviews/performance-method-r3-implementation.md)
+and parent exact-head CI/artifact verification froze8006620/current9ee6b4… digest.
+The [closed result package](evidence/corrected-qualification-8006620/corrected-qualification.md)
+retains all44 browser and44 natural trials, including eight warmups, and original
+fixed predicates. All five browser metrics pass; no conditional browser confirmation
+was triggered. Exactly one natural confirmation passed the original floor, so the
+old tail is not confirmed. No old failed trial/outcome was modified or pooled.
+
+Production a0ac and reference859 are separate from harness800. The publication
+commit adds only documents/evidence; it changes neither production nor the frozen
+six-file driver. Final required exact-head CI, source/group composition and
+independent actual-main gate acceptance remain pending. No issue closes on this
+bounded measurement PASS.

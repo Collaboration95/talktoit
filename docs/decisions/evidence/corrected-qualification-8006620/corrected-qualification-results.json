@@ -1,0 +1,4325 @@
+{
+  "schema_version": 1,
+  "bounded_qualification_only": true,
+  "status": "PASS",
+  "parent_final_acceptance": "pending",
+  "authority": {
+    "harness_head": "8006620ec27f06dd9834b5cfdc268974c2f439fc",
+    "harness_tree": "649fb8539ffa04e9a06913dff95263baec0d969d",
+    "protocol_sha256": "9ee6b4a46b06ca2e6b74acb0619d4e0b44cc9f7805fb05ecb217de30f7b3ef04",
+    "freeze_sha256": "b020b3b7ac3cd5f42e37be224610bc89331e1d9c2ef173b3364d66df9e1585ba",
+    "plan_sha256": "5381f867b91e88c9f6af7c256311d6a07ffa21d1e523ad5dd0d1af782cc03232",
+    "r1_report_sha256": "7cbab2700a4672dc72e11efe504e0bcae6b3f0d74b22df4e93f2c1bb988a1a36",
+    "r2_report_sha256": "6da80ea0960c903210dc5cc00c521f84beb7e5be0769b1a65e0758e8bc7259f2",
+    "r3_report_sha256": "2be79a68291740522b5754a2a019beed3b8992ab77090ff3510032979bf48da7",
+    "r3_receipt_sha256": "d5b3fd04ba750a5efc7d280c19c1c65d415748374348ecb77b14b2d6002f4362",
+    "ci_binding_sha256": "291a6f0cbacc9cc9c3cdddc0daf58cc7819d57f1995b99b8e1b63c7c2a9e4bd4",
+    "ci_run": 39867103866,
+    "ci_job": 120131931189,
+    "ci_test_merge": "e83d09efa6463f4b6c52f877016217e494affc8e",
+    "ci_tree": "649fb8539ffa04e9a06913dff95263baec0d969d",
+    "ci_successful_checks": 11,
+    "ubuntu_functional_criteria": 47,
+    "ci_condition_parent_verified": true,
+    "final_outcome_acceptance": "pending_parent_independent_acceptance"
+  },
+  "sources": {
+    "main": {
+      "production_head": "a0ac51b6a24442f669608f153efe5b0c98931051",
+      "production_tree": "3de52384a0c216eaf597f9293e1eb9c3dda6a881",
+      "source_checkout_head": "8006620ec27f06dd9834b5cfdc268974c2f439fc",
+      "source_checkout_tree": "649fb8539ffa04e9a06913dff95263baec0d969d",
+      "backend_app_tree": "f75d9a0948217621e380a655fbe0560f3dcb23f3",
+      "backend_tests_tree": "5bfcff185625429808f0e8db68b9d296f6170c6d",
+      "frontend_source_tree": "9812124868edcd97694b01c31d8fae58d8a32dcb",
+      "frontend_tests_tree": "90bd972ec4b12f4b84f9a370c4876a9877eae325",
+      "backend_lock_sha256": "7876f551af3cf1869ab7f8c4ccccb500fd2074aa60e634fe1ee7fe000ddda47b",
+      "frontend_lock_sha256": "c21fa14151c29af2cb126af43274e83ad37c0f2537bc9e21881c33d838d93c9c"
+    },
+    "reference": {
+      "production_head": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+      "production_tree": "13e56c633e8c9c55cafb2d53e68cc15d07c015c6",
+      "source_checkout_head": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+      "source_checkout_tree": "13e56c633e8c9c55cafb2d53e68cc15d07c015c6",
+      "backend_app_tree": "3934fb047b4bca6fb1b461c6f963540318d82482",
+      "backend_tests_tree": "e17d1d1c8d9ffc7531de3a5d29a012b09d3a5842",
+      "frontend_source_tree": "ae79c92abf515b381b737e71598a74b9770a3997",
+      "frontend_tests_tree": "19ae71f01eec76002174959b9c7fec06ca570e05",
+      "backend_lock_sha256": "7876f551af3cf1869ab7f8c4ccccb500fd2074aa60e634fe1ee7fe000ddda47b",
+      "frontend_lock_sha256": "c21fa14151c29af2cb126af43274e83ad37c0f2537bc9e21881c33d838d93c9c"
+    }
+  },
+  "runtime": {
+    "python": "3.12.11",
+    "node": "20.20.2",
+    "duckdb": "1.5.4",
+    "playwright": "1.63.0",
+    "chrome": "155.0.8059.85",
+    "chrome_executable_sha256": "6e156f2271cef44afce9db36a5b920e94518857b94a4160f082696f8c3bd1c9d",
+    "chrome_executable_hash_unchanged_after_run": true,
+    "os_product": "26.6.2",
+    "os_release": "25.6.0",
+    "hardware_model": "Mac17,2",
+    "cpu": "Apple M5",
+    "logical_cpus": 10,
+    "memory_bytes": 34359738368,
+    "browser_lock_sha256": "4b63d0083815166106973b47948eb925887d419fc91e3bb76372c610b9feadcb",
+    "runtime_substitution": false
+  },
+  "window": {
+    "start_epoch": 1792710003.949737,
+    "end_epoch": 1792710254.983254,
+    "duration_seconds": 251.0335168838501,
+    "formal_commands_start_epoch": 1792710152.931196,
+    "formal_commands_end_epoch": 1792710227.952092,
+    "formal_commands_span_seconds": 75.02089595794678,
+    "sleep_events": 0,
+    "wake_events": 0,
+    "battery_power_mentions": 0,
+    "assertion_lost": false,
+    "sampled_alive_checkpoints": 1211,
+    "maximum_observation_gap_seconds": 0.3887031078338623,
+    "assertion_present_in_final_pmset": true,
+    "assertion_exit": -15,
+    "owned_assertion_stopped": true,
+    "owned_servers_stopped": true,
+    "source_worktree_clean": true
+  },
+  "environment": [
+    {
+      "checkpoint": "after-browser-primary-main",
+      "observed_epoch": 1792710227.863107,
+      "power_source": "AC",
+      "battery_percent": 95,
+      "low_power_modes": [
+        0,
+        0
+      ],
+      "load_average": [
+        3.2861328125,
+        3.1201171875,
+        3.0751953125
+      ],
+      "background_apps": [
+        "Brave Browser",
+        "ChatGPT",
+        "Docker",
+        "FigmaAgent",
+        "Mail",
+        "Microsoft Outlook",
+        "Microsoft Word",
+        "Notes",
+        "Photos",
+        "Preview",
+        "Safari",
+        "T3 Code (Beta)",
+        "Telegram",
+        "Visual Studio Code",
+        "WhatsApp",
+        "Xcode",
+        "iTerm"
+      ],
+      "other_app_count": 60,
+      "sampled_process_groups": [
+        {
+          "name": "WindowServer",
+          "cpu_percent": 48.7,
+          "rss_bytes": 155648000,
+          "processes": 1
+        },
+        {
+          "name": "other_system_or_user_processes",
+          "cpu_percent": 47.2,
+          "rss_bytes": 21479653376,
+          "processes": 622
+        },
+        {
+          "name": "mds_stores",
+          "cpu_percent": 1.8,
+          "rss_bytes": 215678976,
+          "processes": 1
+        },
+        {
+          "name": "ChatGPT",
+          "cpu_percent": 0.2,
+          "rss_bytes": 2976858112,
+          "processes": 35
+        },
+        {
+          "name": "Finder",
+          "cpu_percent": 0.0,
+          "rss_bytes": 88506368,
+          "processes": 1
+        },
+        {
+          "name": "Safari",
+          "cpu_percent": 0.0,
+          "rss_bytes": 11960320,
+          "processes": 2
+        },
+        {
+          "name": "uv",
+          "cpu_percent": 0.0,
+          "rss_bytes": 400752640,
+          "processes": 12
+        },
+        {
+          "name": "Python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 76972032,
+          "processes": 8
+        },
+        {
+          "name": "node",
+          "cpu_percent": 0.0,
+          "rss_bytes": 434225152,
+          "processes": 10
+        },
+        {
+          "name": "python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 532578304,
+          "processes": 11
+        },
+        {
+          "name": "mdworker_shared",
+          "cpu_percent": 0.0,
+          "rss_bytes": 113229824,
+          "processes": 4
+        }
+      ]
+    },
+    {
+      "checkpoint": "after-browser-primary-reference",
+      "observed_epoch": 1792710194.175651,
+      "power_source": "AC",
+      "battery_percent": 95,
+      "low_power_modes": [
+        0,
+        0
+      ],
+      "load_average": [
+        3.2265625,
+        3.099609375,
+        3.06689453125
+      ],
+      "background_apps": [
+        "Brave Browser",
+        "ChatGPT",
+        "Docker",
+        "FigmaAgent",
+        "Mail",
+        "Microsoft Outlook",
+        "Microsoft Word",
+        "Notes",
+        "Photos",
+        "Preview",
+        "Safari",
+        "T3 Code (Beta)",
+        "Telegram",
+        "Visual Studio Code",
+        "WhatsApp",
+        "Xcode",
+        "iTerm"
+      ],
+      "other_app_count": 60,
+      "sampled_process_groups": [
+        {
+          "name": "other_system_or_user_processes",
+          "cpu_percent": 60.1,
+          "rss_bytes": 21607104512,
+          "processes": 622
+        },
+        {
+          "name": "WindowServer",
+          "cpu_percent": 52.7,
+          "rss_bytes": 155566080,
+          "processes": 1
+        },
+        {
+          "name": "mds_stores",
+          "cpu_percent": 2.0,
+          "rss_bytes": 215646208,
+          "processes": 1
+        },
+        {
+          "name": "ChatGPT",
+          "cpu_percent": 0.1,
+          "rss_bytes": 2977660928,
+          "processes": 35
+        },
+        {
+          "name": "Finder",
+          "cpu_percent": 0.0,
+          "rss_bytes": 88506368,
+          "processes": 1
+        },
+        {
+          "name": "Safari",
+          "cpu_percent": 0.0,
+          "rss_bytes": 11960320,
+          "processes": 2
+        },
+        {
+          "name": "uv",
+          "cpu_percent": 0.0,
+          "rss_bytes": 405094400,
+          "processes": 12
+        },
+        {
+          "name": "Python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 76972032,
+          "processes": 8
+        },
+        {
+          "name": "node",
+          "cpu_percent": 0.0,
+          "rss_bytes": 434110464,
+          "processes": 10
+        },
+        {
+          "name": "python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 532578304,
+          "processes": 11
+        },
+        {
+          "name": "mdworker_shared",
+          "cpu_percent": 0.0,
+          "rss_bytes": 86458368,
+          "processes": 3
+        }
+      ]
+    },
+    {
+      "checkpoint": "after-natural-main",
+      "observed_epoch": 1792710154.065353,
+      "power_source": "AC",
+      "battery_percent": 95,
+      "low_power_modes": [
+        0,
+        0
+      ],
+      "load_average": [
+        3.025390625,
+        3.01708984375,
+        3.037109375
+      ],
+      "background_apps": [
+        "Brave Browser",
+        "ChatGPT",
+        "Docker",
+        "FigmaAgent",
+        "Mail",
+        "Microsoft Outlook",
+        "Microsoft Word",
+        "Notes",
+        "Photos",
+        "Preview",
+        "Safari",
+        "T3 Code (Beta)",
+        "Telegram",
+        "Visual Studio Code",
+        "WhatsApp",
+        "Xcode",
+        "iTerm"
+      ],
+      "other_app_count": 60,
+      "sampled_process_groups": [
+        {
+          "name": "other_system_or_user_processes",
+          "cpu_percent": 119.5,
+          "rss_bytes": 22574809088,
+          "processes": 625
+        },
+        {
+          "name": "WindowServer",
+          "cpu_percent": 44.6,
+          "rss_bytes": 156254208,
+          "processes": 1
+        },
+        {
+          "name": "mds_stores",
+          "cpu_percent": 4.5,
+          "rss_bytes": 232095744,
+          "processes": 1
+        },
+        {
+          "name": "Finder",
+          "cpu_percent": 0.1,
+          "rss_bytes": 97320960,
+          "processes": 1
+        },
+        {
+          "name": "Safari",
+          "cpu_percent": 0.0,
+          "rss_bytes": 11960320,
+          "processes": 2
+        },
+        {
+          "name": "uv",
+          "cpu_percent": 0.0,
+          "rss_bytes": 495484928,
+          "processes": 12
+        },
+        {
+          "name": "Python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 76972032,
+          "processes": 8
+        },
+        {
+          "name": "node",
+          "cpu_percent": 0.0,
+          "rss_bytes": 475643904,
+          "processes": 10
+        },
+        {
+          "name": "ChatGPT",
+          "cpu_percent": 0.0,
+          "rss_bytes": 3055992832,
+          "processes": 35
+        },
+        {
+          "name": "python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 698155008,
+          "processes": 11
+        },
+        {
+          "name": "mdworker_shared",
+          "cpu_percent": 0.0,
+          "rss_bytes": 102187008,
+          "processes": 4
+        }
+      ]
+    },
+    {
+      "checkpoint": "after-natural-reference",
+      "observed_epoch": 1792710154.876375,
+      "power_source": "AC",
+      "battery_percent": 95,
+      "low_power_modes": [
+        0,
+        0
+      ],
+      "load_average": [
+        3.025390625,
+        3.01708984375,
+        3.037109375
+      ],
+      "background_apps": [
+        "Brave Browser",
+        "ChatGPT",
+        "Docker",
+        "FigmaAgent",
+        "Mail",
+        "Microsoft Outlook",
+        "Microsoft Word",
+        "Notes",
+        "Photos",
+        "Preview",
+        "Safari",
+        "T3 Code (Beta)",
+        "Telegram",
+        "Visual Studio Code",
+        "WhatsApp",
+        "Xcode",
+        "iTerm"
+      ],
+      "other_app_count": 60,
+      "sampled_process_groups": [
+        {
+          "name": "other_system_or_user_processes",
+          "cpu_percent": 58.7,
+          "rss_bytes": 22580510720,
+          "processes": 625
+        },
+        {
+          "name": "WindowServer",
+          "cpu_percent": 43.4,
+          "rss_bytes": 156254208,
+          "processes": 1
+        },
+        {
+          "name": "mds_stores",
+          "cpu_percent": 5.1,
+          "rss_bytes": 232112128,
+          "processes": 1
+        },
+        {
+          "name": "ChatGPT",
+          "cpu_percent": 0.1,
+          "rss_bytes": 3039641600,
+          "processes": 35
+        },
+        {
+          "name": "mdworker_shared",
+          "cpu_percent": 0.1,
+          "rss_bytes": 102187008,
+          "processes": 4
+        },
+        {
+          "name": "Finder",
+          "cpu_percent": 0.0,
+          "rss_bytes": 97320960,
+          "processes": 1
+        },
+        {
+          "name": "Safari",
+          "cpu_percent": 0.0,
+          "rss_bytes": 11960320,
+          "processes": 2
+        },
+        {
+          "name": "uv",
+          "cpu_percent": 0.0,
+          "rss_bytes": 484900864,
+          "processes": 12
+        },
+        {
+          "name": "Python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 76972032,
+          "processes": 8
+        },
+        {
+          "name": "node",
+          "cpu_percent": 0.0,
+          "rss_bytes": 470679552,
+          "processes": 10
+        },
+        {
+          "name": "python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 698155008,
+          "processes": 11
+        }
+      ]
+    },
+    {
+      "checkpoint": "before-browser-primary-main",
+      "observed_epoch": 1792710194.175651,
+      "power_source": "AC",
+      "battery_percent": 95,
+      "low_power_modes": [
+        0,
+        0
+      ],
+      "load_average": [
+        3.2265625,
+        3.099609375,
+        3.06689453125
+      ],
+      "background_apps": [
+        "Brave Browser",
+        "ChatGPT",
+        "Docker",
+        "FigmaAgent",
+        "Mail",
+        "Microsoft Outlook",
+        "Microsoft Word",
+        "Notes",
+        "Photos",
+        "Preview",
+        "Safari",
+        "T3 Code (Beta)",
+        "Telegram",
+        "Visual Studio Code",
+        "WhatsApp",
+        "Xcode",
+        "iTerm"
+      ],
+      "other_app_count": 60,
+      "sampled_process_groups": [
+        {
+          "name": "other_system_or_user_processes",
+          "cpu_percent": 58.3,
+          "rss_bytes": 21607448576,
+          "processes": 622
+        },
+        {
+          "name": "WindowServer",
+          "cpu_percent": 52.7,
+          "rss_bytes": 155566080,
+          "processes": 1
+        },
+        {
+          "name": "mds_stores",
+          "cpu_percent": 2.0,
+          "rss_bytes": 215646208,
+          "processes": 1
+        },
+        {
+          "name": "ChatGPT",
+          "cpu_percent": 0.2,
+          "rss_bytes": 2977660928,
+          "processes": 35
+        },
+        {
+          "name": "Finder",
+          "cpu_percent": 0.0,
+          "rss_bytes": 88506368,
+          "processes": 1
+        },
+        {
+          "name": "Safari",
+          "cpu_percent": 0.0,
+          "rss_bytes": 11960320,
+          "processes": 2
+        },
+        {
+          "name": "uv",
+          "cpu_percent": 0.0,
+          "rss_bytes": 405094400,
+          "processes": 12
+        },
+        {
+          "name": "Python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 76972032,
+          "processes": 8
+        },
+        {
+          "name": "node",
+          "cpu_percent": 0.0,
+          "rss_bytes": 434110464,
+          "processes": 10
+        },
+        {
+          "name": "python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 532578304,
+          "processes": 11
+        },
+        {
+          "name": "mdworker_shared",
+          "cpu_percent": 0.0,
+          "rss_bytes": 86458368,
+          "processes": 3
+        }
+      ]
+    },
+    {
+      "checkpoint": "before-browser-primary-reference",
+      "observed_epoch": 1792710155.077857,
+      "power_source": "AC",
+      "battery_percent": 95,
+      "low_power_modes": [
+        0,
+        0
+      ],
+      "load_average": [
+        3.025390625,
+        3.01708984375,
+        3.037109375
+      ],
+      "background_apps": [
+        "Brave Browser",
+        "ChatGPT",
+        "Docker",
+        "FigmaAgent",
+        "Mail",
+        "Microsoft Outlook",
+        "Microsoft Word",
+        "Notes",
+        "Photos",
+        "Preview",
+        "Safari",
+        "T3 Code (Beta)",
+        "Telegram",
+        "Visual Studio Code",
+        "WhatsApp",
+        "Xcode",
+        "iTerm"
+      ],
+      "other_app_count": 60,
+      "sampled_process_groups": [
+        {
+          "name": "other_system_or_user_processes",
+          "cpu_percent": 57.5,
+          "rss_bytes": 22580822016,
+          "processes": 625
+        },
+        {
+          "name": "WindowServer",
+          "cpu_percent": 44.8,
+          "rss_bytes": 156254208,
+          "processes": 1
+        },
+        {
+          "name": "mds_stores",
+          "cpu_percent": 3.0,
+          "rss_bytes": 232112128,
+          "processes": 1
+        },
+        {
+          "name": "node",
+          "cpu_percent": 0.1,
+          "rss_bytes": 470679552,
+          "processes": 10
+        },
+        {
+          "name": "ChatGPT",
+          "cpu_percent": 0.1,
+          "rss_bytes": 3039641600,
+          "processes": 35
+        },
+        {
+          "name": "mdworker_shared",
+          "cpu_percent": 0.1,
+          "rss_bytes": 102187008,
+          "processes": 4
+        },
+        {
+          "name": "Finder",
+          "cpu_percent": 0.0,
+          "rss_bytes": 97320960,
+          "processes": 1
+        },
+        {
+          "name": "Safari",
+          "cpu_percent": 0.0,
+          "rss_bytes": 11960320,
+          "processes": 2
+        },
+        {
+          "name": "uv",
+          "cpu_percent": 0.0,
+          "rss_bytes": 484900864,
+          "processes": 12
+        },
+        {
+          "name": "Python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 76972032,
+          "processes": 8
+        },
+        {
+          "name": "python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 698155008,
+          "processes": 11
+        }
+      ]
+    },
+    {
+      "checkpoint": "before-natural-main",
+      "observed_epoch": 1792710152.8269372,
+      "power_source": "AC",
+      "battery_percent": 95,
+      "low_power_modes": [
+        0,
+        0
+      ],
+      "load_average": [
+        3.025390625,
+        3.01708984375,
+        3.037109375
+      ],
+      "background_apps": [
+        "Brave Browser",
+        "ChatGPT",
+        "Docker",
+        "FigmaAgent",
+        "Mail",
+        "Microsoft Outlook",
+        "Microsoft Word",
+        "Notes",
+        "Photos",
+        "Preview",
+        "Safari",
+        "T3 Code (Beta)",
+        "Telegram",
+        "Visual Studio Code",
+        "WhatsApp",
+        "Xcode",
+        "iTerm"
+      ],
+      "other_app_count": 60,
+      "sampled_process_groups": [
+        {
+          "name": "other_system_or_user_processes",
+          "cpu_percent": 70.8,
+          "rss_bytes": 22641033216,
+          "processes": 630
+        },
+        {
+          "name": "WindowServer",
+          "cpu_percent": 52.3,
+          "rss_bytes": 156254208,
+          "processes": 1
+        },
+        {
+          "name": "uv",
+          "cpu_percent": 4.5,
+          "rss_bytes": 554811392,
+          "processes": 12
+        },
+        {
+          "name": "mds_stores",
+          "cpu_percent": 0.1,
+          "rss_bytes": 232079360,
+          "processes": 1
+        },
+        {
+          "name": "ChatGPT",
+          "cpu_percent": 0.1,
+          "rss_bytes": 3058221056,
+          "processes": 35
+        },
+        {
+          "name": "Finder",
+          "cpu_percent": 0.0,
+          "rss_bytes": 97320960,
+          "processes": 1
+        },
+        {
+          "name": "Safari",
+          "cpu_percent": 0.0,
+          "rss_bytes": 11960320,
+          "processes": 2
+        },
+        {
+          "name": "Python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 76972032,
+          "processes": 8
+        },
+        {
+          "name": "node",
+          "cpu_percent": 0.0,
+          "rss_bytes": 498909184,
+          "processes": 10
+        },
+        {
+          "name": "python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 698155008,
+          "processes": 11
+        },
+        {
+          "name": "mdworker_shared",
+          "cpu_percent": 0.0,
+          "rss_bytes": 102187008,
+          "processes": 4
+        }
+      ]
+    },
+    {
+      "checkpoint": "before-natural-reference",
+      "observed_epoch": 1792710154.065353,
+      "power_source": "AC",
+      "battery_percent": 95,
+      "low_power_modes": [
+        0,
+        0
+      ],
+      "load_average": [
+        3.025390625,
+        3.01708984375,
+        3.037109375
+      ],
+      "background_apps": [
+        "Brave Browser",
+        "ChatGPT",
+        "Docker",
+        "FigmaAgent",
+        "Mail",
+        "Microsoft Outlook",
+        "Microsoft Word",
+        "Notes",
+        "Photos",
+        "Preview",
+        "Safari",
+        "T3 Code (Beta)",
+        "Telegram",
+        "Visual Studio Code",
+        "WhatsApp",
+        "Xcode",
+        "iTerm"
+      ],
+      "other_app_count": 60,
+      "sampled_process_groups": [
+        {
+          "name": "other_system_or_user_processes",
+          "cpu_percent": 114.0,
+          "rss_bytes": 22574956544,
+          "processes": 625
+        },
+        {
+          "name": "WindowServer",
+          "cpu_percent": 44.6,
+          "rss_bytes": 156254208,
+          "processes": 1
+        },
+        {
+          "name": "mds_stores",
+          "cpu_percent": 4.5,
+          "rss_bytes": 232095744,
+          "processes": 1
+        },
+        {
+          "name": "Finder",
+          "cpu_percent": 0.1,
+          "rss_bytes": 97320960,
+          "processes": 1
+        },
+        {
+          "name": "Safari",
+          "cpu_percent": 0.0,
+          "rss_bytes": 11960320,
+          "processes": 2
+        },
+        {
+          "name": "uv",
+          "cpu_percent": 0.0,
+          "rss_bytes": 495484928,
+          "processes": 12
+        },
+        {
+          "name": "Python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 76972032,
+          "processes": 8
+        },
+        {
+          "name": "node",
+          "cpu_percent": 0.0,
+          "rss_bytes": 475643904,
+          "processes": 10
+        },
+        {
+          "name": "ChatGPT",
+          "cpu_percent": 0.0,
+          "rss_bytes": 3055992832,
+          "processes": 35
+        },
+        {
+          "name": "python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 698155008,
+          "processes": 11
+        },
+        {
+          "name": "mdworker_shared",
+          "cpu_percent": 0.0,
+          "rss_bytes": 102187008,
+          "processes": 4
+        }
+      ]
+    },
+    {
+      "checkpoint": "formal-end",
+      "observed_epoch": 1792710228.065438,
+      "power_source": "AC",
+      "battery_percent": 95,
+      "low_power_modes": [
+        0,
+        0
+      ],
+      "load_average": [
+        3.2861328125,
+        3.1201171875,
+        3.0751953125
+      ],
+      "background_apps": [
+        "Brave Browser",
+        "ChatGPT",
+        "Docker",
+        "FigmaAgent",
+        "Mail",
+        "Microsoft Outlook",
+        "Microsoft Word",
+        "Notes",
+        "Photos",
+        "Preview",
+        "Safari",
+        "T3 Code (Beta)",
+        "Telegram",
+        "Visual Studio Code",
+        "WhatsApp",
+        "Xcode",
+        "iTerm"
+      ],
+      "other_app_count": 60,
+      "sampled_process_groups": [
+        {
+          "name": "WindowServer",
+          "cpu_percent": 48.7,
+          "rss_bytes": 155648000,
+          "processes": 1
+        },
+        {
+          "name": "other_system_or_user_processes",
+          "cpu_percent": 47.7,
+          "rss_bytes": 21479882752,
+          "processes": 622
+        },
+        {
+          "name": "mds_stores",
+          "cpu_percent": 1.8,
+          "rss_bytes": 215678976,
+          "processes": 1
+        },
+        {
+          "name": "ChatGPT",
+          "cpu_percent": 0.2,
+          "rss_bytes": 2976858112,
+          "processes": 35
+        },
+        {
+          "name": "Finder",
+          "cpu_percent": 0.0,
+          "rss_bytes": 88506368,
+          "processes": 1
+        },
+        {
+          "name": "Safari",
+          "cpu_percent": 0.0,
+          "rss_bytes": 11960320,
+          "processes": 2
+        },
+        {
+          "name": "uv",
+          "cpu_percent": 0.0,
+          "rss_bytes": 400752640,
+          "processes": 12
+        },
+        {
+          "name": "Python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 76972032,
+          "processes": 8
+        },
+        {
+          "name": "node",
+          "cpu_percent": 0.0,
+          "rss_bytes": 434225152,
+          "processes": 10
+        },
+        {
+          "name": "python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 532578304,
+          "processes": 11
+        },
+        {
+          "name": "mdworker_shared",
+          "cpu_percent": 0.0,
+          "rss_bytes": 113229824,
+          "processes": 4
+        }
+      ]
+    },
+    {
+      "checkpoint": "formal-start",
+      "observed_epoch": 1792710152.8269372,
+      "power_source": "AC",
+      "battery_percent": 95,
+      "low_power_modes": [
+        0,
+        0
+      ],
+      "load_average": [
+        3.025390625,
+        3.01708984375,
+        3.037109375
+      ],
+      "background_apps": [
+        "Brave Browser",
+        "ChatGPT",
+        "Docker",
+        "FigmaAgent",
+        "Mail",
+        "Microsoft Outlook",
+        "Microsoft Word",
+        "Notes",
+        "Photos",
+        "Preview",
+        "Safari",
+        "T3 Code (Beta)",
+        "Telegram",
+        "Visual Studio Code",
+        "WhatsApp",
+        "Xcode",
+        "iTerm"
+      ],
+      "other_app_count": 60,
+      "sampled_process_groups": [
+        {
+          "name": "other_system_or_user_processes",
+          "cpu_percent": 70.8,
+          "rss_bytes": 22612983808,
+          "processes": 627
+        },
+        {
+          "name": "WindowServer",
+          "cpu_percent": 52.3,
+          "rss_bytes": 156254208,
+          "processes": 1
+        },
+        {
+          "name": "uv",
+          "cpu_percent": 4.5,
+          "rss_bytes": 554811392,
+          "processes": 12
+        },
+        {
+          "name": "mds_stores",
+          "cpu_percent": 0.1,
+          "rss_bytes": 232079360,
+          "processes": 1
+        },
+        {
+          "name": "ChatGPT",
+          "cpu_percent": 0.1,
+          "rss_bytes": 3058221056,
+          "processes": 35
+        },
+        {
+          "name": "Finder",
+          "cpu_percent": 0.0,
+          "rss_bytes": 97320960,
+          "processes": 1
+        },
+        {
+          "name": "Safari",
+          "cpu_percent": 0.0,
+          "rss_bytes": 11960320,
+          "processes": 2
+        },
+        {
+          "name": "mdworker_shared",
+          "cpu_percent": 0.0,
+          "rss_bytes": 235995136,
+          "processes": 9
+        },
+        {
+          "name": "Python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 76972032,
+          "processes": 8
+        },
+        {
+          "name": "node",
+          "cpu_percent": 0.0,
+          "rss_bytes": 498909184,
+          "processes": 10
+        },
+        {
+          "name": "python",
+          "cpu_percent": 0.0,
+          "rss_bytes": 698155008,
+          "processes": 11
+        }
+      ]
+    }
+  ],
+  "thresholds": {
+    "median_ratio_strict": 1.1,
+    "p95_ratio_strict": 1.15,
+    "absolute_floor_ms": 5,
+    "useful_gain_percent": 10,
+    "useful_gain_ms": 10,
+    "maximum_browser_confirmations": 1,
+    "natural_confirmation_pairs": 1
+  },
+  "definitions": {
+    "browser": "real_loopback_tcp",
+    "natural": "in_process_asgi_real_pending_turn_and_independent_writer",
+    "cached_chat": "performance_now_before_locator_click_to_visible_enabled_input_plus_exact_two_frames",
+    "first_chart": "first_visible_nonzero_canvas_plus_two_frames_not_animation_completion",
+    "volume": "response_finished_plus_two_frames",
+    "readiness": "body_render_v1_all_affected_panels",
+    "diagnostic_upper_bound": "not_a_primary_metric",
+    "provider_latency": "unmeasured_denied",
+    "physical_phone": "unqualified",
+    "physical_power_loss": "unqualified",
+    "personal_export_guarantee": "none",
+    "new_memory_measurement": "not_collected",
+    "retained_memory": "sampled_simultaneous_process_tree_rss_not_pss_uss_or_true_peak",
+    "retained_ingestion_p95": "n3_maximum_reference_only",
+    "statistic": "nearest_rank_p95_population_variance_no_outlier_removal"
+  },
+  "natural_kernel": {
+    "original_module_sha256": "5f7ae55d7469dbe055d0bc092aaba7226a747b9d42a5d74be8f512b10e77dd74",
+    "natural_prefix_sha256": "467826dbdd257df8f3bed86064f7962e52dbd3e6cb313348e62be6858201f1ef",
+    "selected_function_sha256": "efdb6a30c75e6fb30da55fb1f9ec10b53a5aabeabf977e0a153658d71b9a5e50",
+    "prefix_verbatim": true,
+    "only_post_natural_output_and_assertions_added": true,
+    "exact_hit_and_controlled_barrier_not_executed": true
+  },
+  "natural_confirmation": {
+    "main": {
+      "production_head": "a0ac51b6a24442f669608f153efe5b0c98931051",
+      "source_checkout_head": "8006620ec27f06dd9834b5cfdc268974c2f439fc",
+      "case": "representative",
+      "seed": 137,
+      "corpus_sha256": "e9c36e43e06c47d1a2279e496bb09437f033169377b053522b78328eb5f436cb",
+      "samples": 20,
+      "warmups": 2,
+      "trials": [
+        {
+          "trial": 1,
+          "retained": false,
+          "chat_ms": 23.300000000745058,
+          "writer_ms": 0.7436670130118728,
+          "profile_ms": [
+            3.4127909457311034
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 2,
+          "retained": false,
+          "chat_ms": 16.23937499243766,
+          "writer_ms": 0.6997090531513095,
+          "profile_ms": [
+            3.3059580018743873
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 3,
+          "retained": true,
+          "chat_ms": 16.392541001550853,
+          "writer_ms": 0.7000830955803394,
+          "profile_ms": [
+            3.570833010599017
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 4,
+          "retained": true,
+          "chat_ms": 15.850165975280106,
+          "writer_ms": 0.6487088976427913,
+          "profile_ms": [
+            3.3264580415561795
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 5,
+          "retained": true,
+          "chat_ms": 17.023624968715012,
+          "writer_ms": 0.7671660277992487,
+          "profile_ms": [
+            3.787292051129043
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 6,
+          "retained": true,
+          "chat_ms": 15.841332962736487,
+          "writer_ms": 0.7811249233782291,
+          "profile_ms": [
+            3.4287089947611094
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 7,
+          "retained": true,
+          "chat_ms": 16.30658400245011,
+          "writer_ms": 0.7533750031143427,
+          "profile_ms": [
+            3.434375044889748
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 8,
+          "retained": true,
+          "chat_ms": 15.953709022141993,
+          "writer_ms": 0.6969999521970749,
+          "profile_ms": [
+            3.3085420727729797
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 9,
+          "retained": true,
+          "chat_ms": 16.02991600520909,
+          "writer_ms": 0.605541979894042,
+          "profile_ms": [
+            3.3041670685634017
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 10,
+          "retained": true,
+          "chat_ms": 15.908790985122323,
+          "writer_ms": 0.8364999666810036,
+          "profile_ms": [
+            3.2313340343534946
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 11,
+          "retained": true,
+          "chat_ms": 16.028207959607244,
+          "writer_ms": 0.6946249632164836,
+          "profile_ms": [
+            3.197374986484647
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 12,
+          "retained": true,
+          "chat_ms": 17.1795409405604,
+          "writer_ms": 0.6987079977989197,
+          "profile_ms": [
+            3.702542046085
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 13,
+          "retained": true,
+          "chat_ms": 17.568083945661783,
+          "writer_ms": 0.6766250589862466,
+          "profile_ms": [
+            3.772083087824285
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 14,
+          "retained": true,
+          "chat_ms": 17.102665966376662,
+          "writer_ms": 0.8945409208536148,
+          "profile_ms": [
+            3.6942920414730906
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 15,
+          "retained": true,
+          "chat_ms": 17.468833015300333,
+          "writer_ms": 0.6152499699965119,
+          "profile_ms": [
+            3.433792036958039
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 16,
+          "retained": true,
+          "chat_ms": 19.148541032336652,
+          "writer_ms": 0.6717920769006014,
+          "profile_ms": [
+            3.74233303591609
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 17,
+          "retained": true,
+          "chat_ms": 22.113249986432493,
+          "writer_ms": 0.7847499800845981,
+          "profile_ms": [
+            3.6766669945791364
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 18,
+          "retained": true,
+          "chat_ms": 17.154249944724143,
+          "writer_ms": 0.6746670696884394,
+          "profile_ms": [
+            3.487083944492042
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 19,
+          "retained": true,
+          "chat_ms": 19.20570805668831,
+          "writer_ms": 0.7151670288294554,
+          "profile_ms": [
+            3.5286250058561563
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 20,
+          "retained": true,
+          "chat_ms": 17.7308339625597,
+          "writer_ms": 0.7928329287096858,
+          "profile_ms": [
+            3.7930419202893972
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 21,
+          "retained": true,
+          "chat_ms": 18.274915986694396,
+          "writer_ms": 0.8391669252887368,
+          "profile_ms": [
+            4.243458970449865
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 22,
+          "retained": true,
+          "chat_ms": 17.253250000067055,
+          "writer_ms": 0.7561669917777181,
+          "profile_ms": [
+            3.778457990847528
+          ],
+          "profile_calls": 1
+        }
+      ],
+      "measurements": {
+        "chat_ms": {
+          "samples": 20,
+          "median": 17.128457955550402,
+          "p95": 19.20570805668831,
+          "minimum": 15.841332962736487,
+          "maximum": 22.113249986432493,
+          "stddev": 1.4935479695895675,
+          "variance": 2.2306855374651193
+        },
+        "writer_ms": {
+          "samples": 20,
+          "median": 0.7076250622048974,
+          "p95": 0.8391669252887368,
+          "minimum": 0.605541979894042,
+          "maximum": 0.8945409208536148,
+          "stddev": 0.07466705512371885,
+          "variance": 0.00557516912084847
+        },
+        "profile_ms": {
+          "samples": 20,
+          "median": 3.5497290082275867,
+          "p95": 3.7930419202893972,
+          "minimum": 3.197374986484647,
+          "maximum": 4.243458970449865,
+          "stddev": 0.24760764919294762,
+          "variance": 0.0613095479388578
+        }
+      },
+      "profile_calls_all": 22,
+      "profile_calls_retained": 20,
+      "distinct_questions": 2,
+      "terminal_completed_all": 22,
+      "terminal_completed_retained": 20,
+      "parity_verified": true,
+      "managed_generation_verified": true,
+      "provider_calls": 0,
+      "network_attempts": 0,
+      "privacy_denials": 0,
+      "exit_code": 0
+    },
+    "reference": {
+      "production_head": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+      "source_checkout_head": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+      "case": "representative",
+      "seed": 137,
+      "corpus_sha256": "e9c36e43e06c47d1a2279e496bb09437f033169377b053522b78328eb5f436cb",
+      "samples": 20,
+      "warmups": 2,
+      "trials": [
+        {
+          "trial": 1,
+          "retained": false,
+          "chat_ms": 20.175499957986176,
+          "writer_ms": 4.505707998760045,
+          "profile_ms": [
+            3.5531671019271016
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 2,
+          "retained": false,
+          "chat_ms": 15.530833043158054,
+          "writer_ms": 5.170334014110267,
+          "profile_ms": [
+            3.376959008164704
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 3,
+          "retained": true,
+          "chat_ms": 15.807542018592358,
+          "writer_ms": 4.143957979977131,
+          "profile_ms": [
+            3.5680419532582164
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 4,
+          "retained": true,
+          "chat_ms": 15.512790996581316,
+          "writer_ms": 5.443958914838731,
+          "profile_ms": [
+            3.3453749492764473
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 5,
+          "retained": true,
+          "chat_ms": 15.69645805284381,
+          "writer_ms": 5.119333975017071,
+          "profile_ms": [
+            3.4681250108405948
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 6,
+          "retained": true,
+          "chat_ms": 15.285040950402617,
+          "writer_ms": 4.742750083096325,
+          "profile_ms": [
+            3.3428750466555357
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 7,
+          "retained": true,
+          "chat_ms": 16.306833014823496,
+          "writer_ms": 5.102874943986535,
+          "profile_ms": [
+            3.619958064518869
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 8,
+          "retained": true,
+          "chat_ms": 16.30050002131611,
+          "writer_ms": 5.4694999707862735,
+          "profile_ms": [
+            3.5448329290375113
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 9,
+          "retained": true,
+          "chat_ms": 15.668167034164071,
+          "writer_ms": 5.234917043708265,
+          "profile_ms": [
+            3.2004170352593064
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 10,
+          "retained": true,
+          "chat_ms": 15.202292008325458,
+          "writer_ms": 5.250917049124837,
+          "profile_ms": [
+            3.3172499388456345
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 11,
+          "retained": true,
+          "chat_ms": 15.606292057782412,
+          "writer_ms": 5.1525000017136335,
+          "profile_ms": [
+            3.4478330053389072
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 12,
+          "retained": true,
+          "chat_ms": 15.040541999042034,
+          "writer_ms": 5.1509999902918935,
+          "profile_ms": [
+            3.3506250474601984
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 13,
+          "retained": true,
+          "chat_ms": 15.536083024926484,
+          "writer_ms": 5.336791044101119,
+          "profile_ms": [
+            3.193749929778278
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 14,
+          "retained": true,
+          "chat_ms": 14.929416007362306,
+          "writer_ms": 5.391875049099326,
+          "profile_ms": [
+            3.3217499731108546
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 15,
+          "retained": true,
+          "chat_ms": 15.662000048905611,
+          "writer_ms": 5.115208914503455,
+          "profile_ms": [
+            3.2782090129330754
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 16,
+          "retained": true,
+          "chat_ms": 15.336417010985315,
+          "writer_ms": 5.275542032904923,
+          "profile_ms": [
+            3.368666977621615
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 17,
+          "retained": true,
+          "chat_ms": 15.764750074595213,
+          "writer_ms": 5.065417033620179,
+          "profile_ms": [
+            3.429416916333139
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 18,
+          "retained": true,
+          "chat_ms": 15.743458061479032,
+          "writer_ms": 5.385665921494365,
+          "profile_ms": [
+            3.4513339633122087
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 19,
+          "retained": true,
+          "chat_ms": 16.068249940872192,
+          "writer_ms": 5.1463330164551735,
+          "profile_ms": [
+            3.341624978929758
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 20,
+          "retained": true,
+          "chat_ms": 15.122583019547164,
+          "writer_ms": 5.344083998352289,
+          "profile_ms": [
+            3.381541930139065
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 21,
+          "retained": true,
+          "chat_ms": 16.497125034220517,
+          "writer_ms": 5.175541969947517,
+          "profile_ms": [
+            3.5213339142501354
+          ],
+          "profile_calls": 1
+        },
+        {
+          "trial": 22,
+          "retained": true,
+          "chat_ms": 15.344333951361477,
+          "writer_ms": 5.18929201643914,
+          "profile_ms": [
+            3.341709030792117
+          ],
+          "profile_calls": 1
+        }
+      ],
+      "measurements": {
+        "chat_ms": {
+          "samples": 20,
+          "median": 15.634146053344011,
+          "p95": 16.306833014823496,
+          "minimum": 14.929416007362306,
+          "maximum": 16.497125034220517,
+          "stddev": 0.41882327766997807,
+          "variance": 0.17541293791822354
+        },
+        "writer_ms": {
+          "samples": 20,
+          "median": 5.182416993193328,
+          "p95": 5.443958914838731,
+          "minimum": 4.143957979977131,
+          "maximum": 5.4694999707862735,
+          "stddev": 0.2825903370341289,
+          "variance": 0.07985729858506256
+        },
+        "profile_ms": {
+          "samples": 20,
+          "median": 3.3596460125409067,
+          "p95": 3.5680419532582164,
+          "minimum": 3.193749929778278,
+          "maximum": 3.619958064518869,
+          "stddev": 0.1114383457253947,
+          "variance": 0.012418504898012595
+        }
+      },
+      "profile_calls_all": 22,
+      "profile_calls_retained": 20,
+      "distinct_questions": 2,
+      "terminal_completed_all": 22,
+      "terminal_completed_retained": 20,
+      "parity_verified": true,
+      "managed_generation_verified": true,
+      "provider_calls": 0,
+      "network_attempts": 0,
+      "privacy_denials": 0,
+      "exit_code": 0
+    }
+  },
+  "natural_comparison": {
+    "median": {
+      "reference": 15.634146053344011,
+      "main": 17.128457955550402,
+      "difference_ms": 1.494311902206391,
+      "percent": 9.558001422704955,
+      "regression": false
+    },
+    "p95": {
+      "reference": 16.306833014823496,
+      "main": 19.20570805668831,
+      "difference_ms": 2.8988750418648124,
+      "percent": 17.777057257099713,
+      "regression": false
+    },
+    "no_material_regression": true,
+    "median_useful_gain": false
+  },
+  "browser_primary": {
+    "main": {
+      "production_head": "a0ac51b6a24442f669608f153efe5b0c98931051",
+      "source_checkout_head": "8006620ec27f06dd9834b5cfdc268974c2f439fc",
+      "harness_head": "8006620ec27f06dd9834b5cfdc268974c2f439fc",
+      "harness_sha256": "9ee6b4a46b06ca2e6b74acb0619d4e0b44cc9f7805fb05ecb217de30f7b3ef04",
+      "case": "representative",
+      "seed": 137,
+      "workers": 1,
+      "corpus_sha256": "e9c36e43e06c47d1a2279e496bb09437f033169377b053522b78328eb5f436cb",
+      "samples": 20,
+      "warmups": 2,
+      "trials": [
+        {
+          "ordinal": 1,
+          "retained": false,
+          "metrics": {
+            "cold_chat_ready_ms": 117.30000007152557,
+            "first_chart_canvas_ms": 177.19999992847443,
+            "cached_chat_shell_ms": 62.60000002384186,
+            "cached_dashboard_ms": 132.60000002384186,
+            "volume_response_plus_two_frames_ms": 74.5,
+            "first_chart_locator_upper_bound_ms": 208.89999997615814
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 2,
+          "retained": false,
+          "metrics": {
+            "cold_chat_ready_ms": 65.60000002384186,
+            "first_chart_canvas_ms": 209.69999992847443,
+            "cached_chat_shell_ms": 62.10000002384186,
+            "cached_dashboard_ms": 131.19999992847443,
+            "volume_response_plus_two_frames_ms": 75.10000002384186,
+            "first_chart_locator_upper_bound_ms": 210.0
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 3,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 64.39999997615814,
+            "first_chart_canvas_ms": 174.70000004768372,
+            "cached_chat_shell_ms": 56.299999952316284,
+            "cached_dashboard_ms": 81.19999992847443,
+            "volume_response_plus_two_frames_ms": 72.5,
+            "first_chart_locator_upper_bound_ms": 209.30000007152557
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 4,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 82.19999992847443,
+            "first_chart_canvas_ms": 209.60000002384186,
+            "cached_chat_shell_ms": 63.300000071525574,
+            "cached_dashboard_ms": 132.79999995231628,
+            "volume_response_plus_two_frames_ms": 74.89999997615814,
+            "first_chart_locator_upper_bound_ms": 209.79999995231628
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 5,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 77.0,
+            "first_chart_canvas_ms": 178.5,
+            "cached_chat_shell_ms": 55.5,
+            "cached_dashboard_ms": 148.10000002384186,
+            "volume_response_plus_two_frames_ms": 78.10000002384186,
+            "first_chart_locator_upper_bound_ms": 212.5
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 6,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 78.19999992847443,
+            "first_chart_canvas_ms": 178.39999997615814,
+            "cached_chat_shell_ms": 61.200000047683716,
+            "cached_dashboard_ms": 147.69999992847443,
+            "volume_response_plus_two_frames_ms": 73.89999997615814,
+            "first_chart_locator_upper_bound_ms": 213.5
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 7,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 66.70000004768372,
+            "first_chart_canvas_ms": 195.60000002384186,
+            "cached_chat_shell_ms": 59.200000047683716,
+            "cached_dashboard_ms": 132.5,
+            "volume_response_plus_two_frames_ms": 74.5,
+            "first_chart_locator_upper_bound_ms": 195.80000007152557
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 8,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 82.5,
+            "first_chart_canvas_ms": 195.09999990463257,
+            "cached_chat_shell_ms": 63.300000071525574,
+            "cached_dashboard_ms": 131.30000007152557,
+            "volume_response_plus_two_frames_ms": 88.0,
+            "first_chart_locator_upper_bound_ms": 219.39999997615814
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 9,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 83.09999990463257,
+            "first_chart_canvas_ms": 178.29999995231628,
+            "cached_chat_shell_ms": 69.5,
+            "cached_dashboard_ms": 81.70000004768372,
+            "volume_response_plus_two_frames_ms": 72.89999997615814,
+            "first_chart_locator_upper_bound_ms": 195.29999995231628
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 10,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 65.29999995231628,
+            "first_chart_canvas_ms": 209.30000007152557,
+            "cached_chat_shell_ms": 63.39999997615814,
+            "cached_dashboard_ms": 132.80000007152557,
+            "volume_response_plus_two_frames_ms": 82.0,
+            "first_chart_locator_upper_bound_ms": 209.70000004768372
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 11,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 69.60000002384186,
+            "first_chart_canvas_ms": 177.5,
+            "cached_chat_shell_ms": 69.29999995231628,
+            "cached_dashboard_ms": 64.5,
+            "volume_response_plus_two_frames_ms": 88.0,
+            "first_chart_locator_upper_bound_ms": 193.0
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 12,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 83.79999995231628,
+            "first_chart_canvas_ms": 211.89999997615814,
+            "cached_chat_shell_ms": 54.09999990463257,
+            "cached_dashboard_ms": 82.39999997615814,
+            "volume_response_plus_two_frames_ms": 85.60000002384186,
+            "first_chart_locator_upper_bound_ms": 212.29999995231628
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 13,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 71.80000007152557,
+            "first_chart_canvas_ms": 179.70000004768372,
+            "cached_chat_shell_ms": 55.5,
+            "cached_dashboard_ms": 97.29999995231628,
+            "volume_response_plus_two_frames_ms": 74.0,
+            "first_chart_locator_upper_bound_ms": 196.0
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 14,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 69.89999997615814,
+            "first_chart_canvas_ms": 176.20000004768372,
+            "cached_chat_shell_ms": 59.10000002384186,
+            "cached_dashboard_ms": 132.10000002384186,
+            "volume_response_plus_two_frames_ms": 77.90000009536743,
+            "first_chart_locator_upper_bound_ms": 211.60000002384186
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 15,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 85.0,
+            "first_chart_canvas_ms": 194.5,
+            "cached_chat_shell_ms": 63.5,
+            "cached_dashboard_ms": 131.10000002384186,
+            "volume_response_plus_two_frames_ms": 76.60000002384186,
+            "first_chart_locator_upper_bound_ms": 211.60000002384186
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 16,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 80.39999997615814,
+            "first_chart_canvas_ms": 180.30000007152557,
+            "cached_chat_shell_ms": 64.5,
+            "cached_dashboard_ms": 131.29999995231628,
+            "volume_response_plus_two_frames_ms": 77.79999995231628,
+            "first_chart_locator_upper_bound_ms": 197.10000002384186
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 17,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 67.70000004768372,
+            "first_chart_canvas_ms": 177.5,
+            "cached_chat_shell_ms": 70.70000004768372,
+            "cached_dashboard_ms": 146.89999997615814,
+            "volume_response_plus_two_frames_ms": 73.69999992847443,
+            "first_chart_locator_upper_bound_ms": 211.60000002384186
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 18,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 68.79999995231628,
+            "first_chart_canvas_ms": 211.80000007152557,
+            "cached_chat_shell_ms": 62.799999952316284,
+            "cached_dashboard_ms": 114.89999997615814,
+            "volume_response_plus_two_frames_ms": 77.29999995231628,
+            "first_chart_locator_upper_bound_ms": 212.10000002384186
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 19,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 68.29999995231628,
+            "first_chart_canvas_ms": 195.19999992847443,
+            "cached_chat_shell_ms": 63.39999997615814,
+            "cached_dashboard_ms": 131.60000002384186,
+            "volume_response_plus_two_frames_ms": 78.39999997615814,
+            "first_chart_locator_upper_bound_ms": 212.29999995231628
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 20,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 68.09999990463257,
+            "first_chart_canvas_ms": 195.0,
+            "cached_chat_shell_ms": 59.199999928474426,
+            "cached_dashboard_ms": 98.40000009536743,
+            "volume_response_plus_two_frames_ms": 76.5,
+            "first_chart_locator_upper_bound_ms": 211.89999997615814
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 21,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 83.60000002384186,
+            "first_chart_canvas_ms": 212.10000002384186,
+            "cached_chat_shell_ms": 63.10000002384186,
+            "cached_dashboard_ms": 131.39999997615814,
+            "volume_response_plus_two_frames_ms": 71.70000004768372,
+            "first_chart_locator_upper_bound_ms": 212.29999995231628
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 22,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 81.5,
+            "first_chart_canvas_ms": 179.79999995231628,
+            "cached_chat_shell_ms": 59.200000047683716,
+            "cached_dashboard_ms": 147.70000004768372,
+            "volume_response_plus_two_frames_ms": 74.10000002384186,
+            "first_chart_locator_upper_bound_ms": 196.09999990463257
+          },
+          "errors": {
+            "requests": 39,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 3,
+              "workouts": 3,
+              "volume": 4,
+              "steps": 3,
+              "heart": 3,
+              "sleep": 3,
+              "sleep_stages": 3,
+              "capabilities": 3,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 1,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        }
+      ],
+      "measurements": {
+        "cold_chat_ready_ms": {
+          "samples": 20,
+          "median": 74.40000003576279,
+          "p95": 83.79999995231628,
+          "minimum": 64.39999997615814,
+          "maximum": 85.0,
+          "stddev": 7.195517695821416,
+          "variance": 51.77547491087914
+        },
+        "first_chart_canvas_ms": {
+          "samples": 20,
+          "median": 187.4000000357628,
+          "p95": 211.89999997615814,
+          "minimum": 174.70000004768372,
+          "maximum": 212.10000002384186,
+          "stddev": 13.726743974336065,
+          "variance": 188.42350013697148
+        },
+        "cached_chat_shell_ms": {
+          "samples": 20,
+          "median": 62.94999998807907,
+          "p95": 69.5,
+          "minimum": 54.09999990463257,
+          "maximum": 70.70000004768372,
+          "stddev": 4.550217039107575,
+          "variance": 20.704475102984908
+        },
+        "cached_dashboard_ms": {
+          "samples": 20,
+          "median": 131.35000002384186,
+          "p95": 147.70000004768372,
+          "minimum": 64.5,
+          "maximum": 148.10000002384186,
+          "stddev": 25.293463091272415,
+          "variance": 639.7592751495599
+        },
+        "volume_response_plus_two_frames_ms": {
+          "samples": 20,
+          "median": 76.55000001192093,
+          "p95": 88.0,
+          "minimum": 71.70000004768372,
+          "maximum": 88.0,
+          "stddev": 4.776358449359108,
+          "variance": 22.813600036764146
+        },
+        "first_chart_locator_upper_bound_ms": {
+          "samples": 20,
+          "median": 211.60000002384186,
+          "p95": 213.5,
+          "minimum": 193.0,
+          "maximum": 219.39999997615814,
+          "stddev": 7.8742872694069534,
+          "variance": 62.00440000114441
+        }
+      },
+      "all_trial_errors": {
+        "requests": 858,
+        "transport_failures": 0,
+        "panel_transport_failures": 0,
+        "http_failures": 0,
+        "body_failures": 0,
+        "parse_failures": 0,
+        "aborts": 0,
+        "network_failures": 0,
+        "timeouts": 0,
+        "intentional_cancellations": 0,
+        "incomplete_bodies": 0,
+        "endpoints": {
+          "status": 44,
+          "summary": 66,
+          "workouts": 66,
+          "volume": 88,
+          "steps": 66,
+          "heart": 66,
+          "sleep": 66,
+          "sleep_stages": 66,
+          "capabilities": 66,
+          "other": 264
+        }
+      },
+      "retained_trial_errors": {
+        "requests": 780,
+        "transport_failures": 0,
+        "panel_transport_failures": 0,
+        "http_failures": 0,
+        "body_failures": 0,
+        "parse_failures": 0,
+        "aborts": 0,
+        "network_failures": 0,
+        "timeouts": 0,
+        "intentional_cancellations": 0,
+        "incomplete_bodies": 0,
+        "endpoints": {
+          "status": 40,
+          "summary": 60,
+          "workouts": 60,
+          "volume": 80,
+          "steps": 60,
+          "heart": 60,
+          "sleep": 60,
+          "sleep_stages": 60,
+          "capabilities": 60,
+          "other": 240
+        }
+      },
+      "phase_request_counts": {
+        "mount": 9,
+        "toggle": 1,
+        "scope": 8,
+        "cached_chat": 0,
+        "cached_dashboard": 9
+      },
+      "guards": {
+        "provider_calls": 0,
+        "network_attempts": 0,
+        "page_errors_asserted_zero": true,
+        "external_requests_asserted_zero": true,
+        "readiness_probes_denied": 0
+      },
+      "official_import_parity_verified": true,
+      "browser_exit": 0,
+      "cleanup": true
+    },
+    "reference": {
+      "production_head": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+      "source_checkout_head": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+      "harness_head": "8006620ec27f06dd9834b5cfdc268974c2f439fc",
+      "harness_sha256": "9ee6b4a46b06ca2e6b74acb0619d4e0b44cc9f7805fb05ecb217de30f7b3ef04",
+      "case": "representative",
+      "seed": 137,
+      "workers": 1,
+      "corpus_sha256": "e9c36e43e06c47d1a2279e496bb09437f033169377b053522b78328eb5f436cb",
+      "samples": 20,
+      "warmups": 2,
+      "trials": [
+        {
+          "ordinal": 1,
+          "retained": false,
+          "metrics": {
+            "cold_chat_ready_ms": 141.10000002384186,
+            "first_chart_canvas_ms": 220.29999995231628,
+            "cached_chat_shell_ms": 55.299999952316284,
+            "cached_dashboard_ms": 149.19999992847443,
+            "volume_response_plus_two_frames_ms": 202.10000002384186,
+            "first_chart_locator_upper_bound_ms": 220.5
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 2,
+          "retained": false,
+          "metrics": {
+            "cold_chat_ready_ms": 116.79999995231628,
+            "first_chart_canvas_ms": 211.60000002384186,
+            "cached_chat_shell_ms": 60.299999952316284,
+            "cached_dashboard_ms": 145.79999995231628,
+            "volume_response_plus_two_frames_ms": 204.10000002384186,
+            "first_chart_locator_upper_bound_ms": 211.89999997615814
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 3,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 91.0,
+            "first_chart_canvas_ms": 227.89999997615814,
+            "cached_chat_shell_ms": 58.39999997615814,
+            "cached_dashboard_ms": 147.5,
+            "volume_response_plus_two_frames_ms": 192.20000004768372,
+            "first_chart_locator_upper_bound_ms": 228.10000002384186
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 4,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 113.19999992847443,
+            "first_chart_canvas_ms": 195.30000007152557,
+            "cached_chat_shell_ms": 58.89999997615814,
+            "cached_dashboard_ms": 148.0,
+            "volume_response_plus_two_frames_ms": 219.10000002384186,
+            "first_chart_locator_upper_bound_ms": 195.5
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 5,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 113.80000007152557,
+            "first_chart_canvas_ms": 210.89999997615814,
+            "cached_chat_shell_ms": 58.10000002384186,
+            "cached_dashboard_ms": 147.69999992847443,
+            "volume_response_plus_two_frames_ms": 188.19999992847443,
+            "first_chart_locator_upper_bound_ms": 211.09999990463257
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 6,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 118.39999997615814,
+            "first_chart_canvas_ms": 195.29999995231628,
+            "cached_chat_shell_ms": 61.10000002384186,
+            "cached_dashboard_ms": 145.69999992847443,
+            "volume_response_plus_two_frames_ms": 154.60000002384186,
+            "first_chart_locator_upper_bound_ms": 195.59999990463257
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 7,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 100.80000007152557,
+            "first_chart_canvas_ms": 210.39999997615814,
+            "cached_chat_shell_ms": 54.299999952316284,
+            "cached_dashboard_ms": 146.19999992847443,
+            "volume_response_plus_two_frames_ms": 200.5,
+            "first_chart_locator_upper_bound_ms": 210.60000002384186
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 8,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 109.10000002384186,
+            "first_chart_canvas_ms": 212.10000002384186,
+            "cached_chat_shell_ms": 64.09999990463257,
+            "cached_dashboard_ms": 147.70000004768372,
+            "volume_response_plus_two_frames_ms": 175.70000004768372,
+            "first_chart_locator_upper_bound_ms": 212.29999995231628
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 9,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 116.89999997615814,
+            "first_chart_canvas_ms": 211.70000004768372,
+            "cached_chat_shell_ms": 69.10000002384186,
+            "cached_dashboard_ms": 145.89999997615814,
+            "volume_response_plus_two_frames_ms": 186.70000004768372,
+            "first_chart_locator_upper_bound_ms": 212.0
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 10,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 116.79999995231628,
+            "first_chart_canvas_ms": 194.40000009536743,
+            "cached_chat_shell_ms": 59.199999928474426,
+            "cached_dashboard_ms": 146.19999992847443,
+            "volume_response_plus_two_frames_ms": 122.70000004768372,
+            "first_chart_locator_upper_bound_ms": 194.60000002384186
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 11,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 115.60000002384186,
+            "first_chart_canvas_ms": 210.89999997615814,
+            "cached_chat_shell_ms": 55.300000071525574,
+            "cached_dashboard_ms": 148.29999995231628,
+            "volume_response_plus_two_frames_ms": 196.10000002384186,
+            "first_chart_locator_upper_bound_ms": 211.20000004768372
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 12,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 101.20000004768372,
+            "first_chart_canvas_ms": 210.69999992847443,
+            "cached_chat_shell_ms": 58.10000002384186,
+            "cached_dashboard_ms": 146.70000004768372,
+            "volume_response_plus_two_frames_ms": 181.90000009536743,
+            "first_chart_locator_upper_bound_ms": 210.89999997615814
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 13,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 113.60000002384186,
+            "first_chart_canvas_ms": 196.0,
+            "cached_chat_shell_ms": 68.79999995231628,
+            "cached_dashboard_ms": 148.19999992847443,
+            "volume_response_plus_two_frames_ms": 195.39999997615814,
+            "first_chart_locator_upper_bound_ms": 212.5
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 14,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 116.20000004768372,
+            "first_chart_canvas_ms": 197.29999995231628,
+            "cached_chat_shell_ms": 59.89999997615814,
+            "cached_dashboard_ms": 147.10000002384186,
+            "volume_response_plus_two_frames_ms": 198.30000007152557,
+            "first_chart_locator_upper_bound_ms": 197.60000002384186
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 15,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 116.20000004768372,
+            "first_chart_canvas_ms": 195.10000002384186,
+            "cached_chat_shell_ms": 60.39999997615814,
+            "cached_dashboard_ms": 145.69999992847443,
+            "volume_response_plus_two_frames_ms": 201.0,
+            "first_chart_locator_upper_bound_ms": 195.39999997615814
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 16,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 101.30000007152557,
+            "first_chart_canvas_ms": 194.60000002384186,
+            "cached_chat_shell_ms": 59.5,
+            "cached_dashboard_ms": 148.10000002384186,
+            "volume_response_plus_two_frames_ms": 191.0,
+            "first_chart_locator_upper_bound_ms": 195.0
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 17,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 102.40000009536743,
+            "first_chart_canvas_ms": 195.10000002384186,
+            "cached_chat_shell_ms": 64.59999990463257,
+            "cached_dashboard_ms": 145.80000007152557,
+            "volume_response_plus_two_frames_ms": 207.20000004768372,
+            "first_chart_locator_upper_bound_ms": 195.29999995231628
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 18,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 102.09999990463257,
+            "first_chart_canvas_ms": 211.80000007152557,
+            "cached_chat_shell_ms": 57.799999952316284,
+            "cached_dashboard_ms": 131.39999997615814,
+            "volume_response_plus_two_frames_ms": 189.19999992847443,
+            "first_chart_locator_upper_bound_ms": 212.0
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 19,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 132.79999995231628,
+            "first_chart_canvas_ms": 213.0,
+            "cached_chat_shell_ms": 56.5,
+            "cached_dashboard_ms": 145.09999990463257,
+            "volume_response_plus_two_frames_ms": 196.0,
+            "first_chart_locator_upper_bound_ms": 213.20000004768372
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 20,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 102.5,
+            "first_chart_canvas_ms": 228.60000002384186,
+            "cached_chat_shell_ms": 59.200000047683716,
+            "cached_dashboard_ms": 145.89999997615814,
+            "volume_response_plus_two_frames_ms": 191.69999992847443,
+            "first_chart_locator_upper_bound_ms": 228.89999997615814
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 21,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 115.20000004768372,
+            "first_chart_canvas_ms": 228.20000004768372,
+            "cached_chat_shell_ms": 64.10000002384186,
+            "cached_dashboard_ms": 145.90000009536743,
+            "volume_response_plus_two_frames_ms": 198.19999992847443,
+            "first_chart_locator_upper_bound_ms": 228.5
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        },
+        {
+          "ordinal": 22,
+          "retained": true,
+          "metrics": {
+            "cold_chat_ready_ms": 104.5,
+            "first_chart_canvas_ms": 195.39999997615814,
+            "cached_chat_shell_ms": 57.199999928474426,
+            "cached_dashboard_ms": 145.70000004768372,
+            "volume_response_plus_two_frames_ms": 199.10000002384186,
+            "first_chart_locator_upper_bound_ms": 195.70000004768372
+          },
+          "errors": {
+            "requests": 46,
+            "transport_failures": 0,
+            "panel_transport_failures": 0,
+            "http_failures": 0,
+            "body_failures": 0,
+            "parse_failures": 0,
+            "aborts": 0,
+            "network_failures": 0,
+            "timeouts": 0,
+            "intentional_cancellations": 0,
+            "incomplete_bodies": 0,
+            "endpoints": {
+              "status": 2,
+              "summary": 4,
+              "workouts": 4,
+              "volume": 4,
+              "steps": 4,
+              "heart": 4,
+              "sleep": 4,
+              "sleep_stages": 4,
+              "capabilities": 4,
+              "other": 12
+            }
+          },
+          "phase_requests": {
+            "mount": 9,
+            "toggle": 8,
+            "scope": 8,
+            "cached_chat": 0,
+            "cached_dashboard": 9
+          }
+        }
+      ],
+      "measurements": {
+        "cold_chat_ready_ms": {
+          "samples": 20,
+          "median": 113.39999997615814,
+          "p95": 118.39999997615814,
+          "minimum": 91.0,
+          "maximum": 132.79999995231628,
+          "stddev": 9.118037056216084,
+          "variance": 83.13859975852966
+        },
+        "first_chart_canvas_ms": {
+          "samples": 20,
+          "median": 210.54999995231628,
+          "p95": 228.20000004768372,
+          "minimum": 194.40000009536743,
+          "maximum": 228.60000002384186,
+          "stddev": 11.690563500638495,
+          "variance": 136.669274962461
+        },
+        "cached_chat_shell_ms": {
+          "samples": 20,
+          "median": 59.19999998807907,
+          "p95": 68.79999995231628,
+          "minimum": 54.299999952316284,
+          "maximum": 69.10000002384186,
+          "stddev": 3.9203443649109917,
+          "variance": 15.369099939489367
+        },
+        "cached_dashboard_ms": {
+          "samples": 20,
+          "median": 146.19999992847443,
+          "p95": 148.19999992847443,
+          "minimum": 131.39999997615814,
+          "maximum": 148.29999995231628,
+          "stddev": 3.48272881803615,
+          "variance": 12.12940001997948
+        },
+        "volume_response_plus_two_frames_ms": {
+          "samples": 20,
+          "median": 193.80000001192093,
+          "p95": 207.20000004768372,
+          "minimum": 122.70000004768372,
+          "maximum": 219.10000002384186,
+          "stddev": 19.697344989627844,
+          "variance": 387.9853996404171
+        },
+        "first_chart_locator_upper_bound_ms": {
+          "samples": 20,
+          "median": 210.99999994039536,
+          "p95": 228.5,
+          "minimum": 194.60000002384186,
+          "maximum": 228.89999997615814,
+          "stddev": 11.46982999344104,
+          "variance": 131.55700007843973
+        }
+      },
+      "all_trial_errors": {
+        "requests": 1012,
+        "transport_failures": 0,
+        "panel_transport_failures": 0,
+        "http_failures": 0,
+        "body_failures": 0,
+        "parse_failures": 0,
+        "aborts": 0,
+        "network_failures": 0,
+        "timeouts": 0,
+        "intentional_cancellations": 0,
+        "incomplete_bodies": 0,
+        "endpoints": {
+          "status": 44,
+          "summary": 88,
+          "workouts": 88,
+          "volume": 88,
+          "steps": 88,
+          "heart": 88,
+          "sleep": 88,
+          "sleep_stages": 88,
+          "capabilities": 88,
+          "other": 264
+        }
+      },
+      "retained_trial_errors": {
+        "requests": 920,
+        "transport_failures": 0,
+        "panel_transport_failures": 0,
+        "http_failures": 0,
+        "body_failures": 0,
+        "parse_failures": 0,
+        "aborts": 0,
+        "network_failures": 0,
+        "timeouts": 0,
+        "intentional_cancellations": 0,
+        "incomplete_bodies": 0,
+        "endpoints": {
+          "status": 40,
+          "summary": 80,
+          "workouts": 80,
+          "volume": 80,
+          "steps": 80,
+          "heart": 80,
+          "sleep": 80,
+          "sleep_stages": 80,
+          "capabilities": 80,
+          "other": 240
+        }
+      },
+      "phase_request_counts": {
+        "mount": 9,
+        "toggle": 8,
+        "scope": 8,
+        "cached_chat": 0,
+        "cached_dashboard": 9
+      },
+      "guards": {
+        "provider_calls": 0,
+        "network_attempts": 0,
+        "page_errors_asserted_zero": true,
+        "external_requests_asserted_zero": true,
+        "readiness_probes_denied": 0
+      },
+      "official_import_parity_verified": true,
+      "browser_exit": 0,
+      "cleanup": true
+    }
+  },
+  "browser_primary_comparison": {
+    "cold_chat_ready_ms": {
+      "median": {
+        "reference": 113.39999997615814,
+        "main": 74.40000003576279,
+        "difference_ms": -38.999999940395355,
+        "percent": -34.39153434620365,
+        "regression": false
+      },
+      "p95": {
+        "reference": 118.39999997615814,
+        "main": 83.79999995231628,
+        "difference_ms": -34.60000002384186,
+        "percent": -29.22297299899422,
+        "regression": false
+      },
+      "no_material_regression": true,
+      "median_useful_gain": true
+    },
+    "first_chart_canvas_ms": {
+      "median": {
+        "reference": 210.54999995231628,
+        "main": 187.4000000357628,
+        "difference_ms": -23.149999916553497,
+        "percent": -10.995013023888069,
+        "regression": false
+      },
+      "p95": {
+        "reference": 228.20000004768372,
+        "main": 211.89999997615814,
+        "difference_ms": -16.300000071525574,
+        "percent": -7.142857172707973,
+        "regression": false
+      },
+      "no_material_regression": true,
+      "median_useful_gain": true
+    },
+    "cached_chat_shell_ms": {
+      "median": {
+        "reference": 59.19999998807907,
+        "main": 62.94999998807907,
+        "difference_ms": 3.75,
+        "percent": 6.334459460735011,
+        "regression": false
+      },
+      "p95": {
+        "reference": 68.79999995231628,
+        "main": 69.5,
+        "difference_ms": 0.7000000476837158,
+        "percent": 1.0174419304780087,
+        "regression": false
+      },
+      "no_material_regression": true,
+      "median_useful_gain": false
+    },
+    "cached_dashboard_ms": {
+      "median": {
+        "reference": 146.19999992847443,
+        "main": 131.35000002384186,
+        "difference_ms": -14.849999904632568,
+        "percent": -10.157318681188542,
+        "regression": false
+      },
+      "p95": {
+        "reference": 148.19999992847443,
+        "main": 147.70000004768372,
+        "difference_ms": -0.49999988079071045,
+        "percent": -0.3373818360539978,
+        "regression": false
+      },
+      "no_material_regression": true,
+      "median_useful_gain": true
+    },
+    "volume_response_plus_two_frames_ms": {
+      "median": {
+        "reference": 193.80000001192093,
+        "main": 76.55000001192093,
+        "difference_ms": -117.25,
+        "percent": -60.500515992150554,
+        "regression": false
+      },
+      "p95": {
+        "reference": 207.20000004768372,
+        "main": 88.0,
+        "difference_ms": -119.20000004768372,
+        "percent": -57.52895753873155,
+        "regression": false
+      },
+      "no_material_regression": true,
+      "median_useful_gain": true
+    }
+  },
+  "browser_confirmation": {},
+  "browser_confirmation_comparison": null,
+  "browser_confirmation_pairs_used": 0,
+  "primary_metric_count": 5,
+  "historical": {
+    "main_report_sha256": "235018f9af1f8e27818233445e892345862110339d5ac203224fa7d137d8ef24",
+    "main_numeric_sha256": "f89c33d170d3efc994fe5821fd31b863481ebed8e5454505210383cd4a30aac1",
+    "main_numeric_bytes": 1431881,
+    "original_verdict": "REVISE",
+    "source_cause": "unassigned",
+    "primary_cached_chat_reference": [
+      58.30000001192093,
+      69.89999997615814
+    ],
+    "primary_cached_chat_main": [
+      69.19999998807907,
+      84.5
+    ],
+    "confirmation_cached_chat_reference": [
+      59.30000001192093,
+      70.5
+    ],
+    "confirmation_cached_chat_main": [
+      67.6499999165535,
+      85.20000004768372
+    ],
+    "primary_main_failed_retained": [
+      7
+    ],
+    "confirmation_main_failed_retained": [
+      5,
+      12,
+      20
+    ],
+    "confirmation_main_failed_warmups": [
+      2
+    ],
+    "original_panel_error_reasons": "unknown_not_reclassified",
+    "natural_primary_reference_p95": 18.377457978203893,
+    "natural_primary_main_p95": 33.461041981354356,
+    "natural_confirmation_outcome": "primary_tail_not_confirmed_under_declared_rule",
+    "frozen_baseline_sha256": "e9259eeb5b4b7a4702911ce75287a65e8524fe59cec30c42e3b56625209101fe",
+    "frozen_portfolio_sha256": "696b6360a5cfc6ddc695599f8f1e9b74196a08ff61b3e0aeaeca37d9348f7d45",
+    "frozen_chart_sha256": "8b2c2b1cb5a4c97c6c47a9a893e1c1527b5d203f11778378583701f8a0b94224",
+    "old_trials_unmodified": true,
+    "old_and_new_populations_not_pooled": true
+  },
+  "reuse_proof": {
+    "r3_equivalence_receipt_sha256": "39d880fde3e49f79c92e14307e4aeba0468b1a4d33617ce3b2dd5da5af34dfd0",
+    "source_equivalence_artifact_sha256": "9f46e71ceaf9fdd6c3e2fb5b1630ec3c649650bfccedbb5cb2d824055fb32a81",
+    "raw_method_bindings_reverified": 47,
+    "common_backend_modules": 7,
+    "common_backend_harness_manifest_sha256": "2e60bf1f08bf66520a7a1743c6eb91d3c5db9e29c540cfb3001ed9759b9e4359",
+    "production_inputs_equal": true,
+    "retained_build_output_files": 8,
+    "retained_static_js_bytes": 230763,
+    "retained_gzip_bytes": 71199,
+    "retained_initial_echarts_sources": 0,
+    "new_build_or_graph_workload": false
+  },
+  "provenance": [
+    {
+      "group": "normal_backend_matrices",
+      "status": "reused_by_exact_identity",
+      "main_head": "a0ac51b6a24442f669608f153efe5b0c98931051",
+      "reference_head": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+      "window": "original_actual_main_AC",
+      "method_hashes": {
+        "matrix": "e26fc7813aec16ac3f6231a6e093e30a4355bfcacdd29728afe3e3aa414455c9",
+        "matrix_controller": "cec174497ebe1b10043583f2dcc4dd8ea0033c08130aebb3a218539e99598215",
+        "common_backend_harness": "2e60bf1f08bf66520a7a1743c6eb91d3c5db9e29c540cfb3001ed9759b9e4359"
+      },
+      "counts": {
+        "imports_raw": 96,
+        "imports_retained": 72,
+        "workloads_raw": 528,
+        "workloads_retained": 480
+      },
+      "original_numeric_package_sha256": "f89c33d170d3efc994fe5821fd31b863481ebed8e5454505210383cd4a30aac1",
+      "original_source_labels_preserved": true
+    },
+    {
+      "group": "xml_validation_scan",
+      "status": "reused_by_exact_identity",
+      "main_head": "a0ac51b6a24442f669608f153efe5b0c98931051",
+      "reference_head": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+      "window": "original_actual_main_AC",
+      "method_hashes": {
+        "production_helpers": "5f7ae55d7469dbe055d0bc092aaba7226a747b9d42a5d74be8f512b10e77dd74",
+        "supplement_controller": "c3ad360d8343c109d3952a8cf0fb833165d5623a7e69c4c10aba1286e5d4c85d"
+      },
+      "counts": {
+        "processes_raw": 16,
+        "processes_retained": 12
+      },
+      "original_numeric_package_sha256": "f89c33d170d3efc994fe5821fd31b863481ebed8e5454505210383cd4a30aac1",
+      "original_source_labels_preserved": true
+    },
+    {
+      "group": "numeric_trend",
+      "status": "reused_by_exact_identity",
+      "main_head": "a0ac51b6a24442f669608f153efe5b0c98931051",
+      "reference_head": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+      "window": "original_actual_main_AC",
+      "method_hashes": {
+        "production_helpers": "5f7ae55d7469dbe055d0bc092aaba7226a747b9d42a5d74be8f512b10e77dd74"
+      },
+      "counts": {
+        "processes_raw": 8,
+        "processes_retained": 6,
+        "queries_retained": 120
+      },
+      "original_numeric_package_sha256": "f89c33d170d3efc994fe5821fd31b863481ebed8e5454505210383cd4a30aac1",
+      "original_source_labels_preserved": true
+    },
+    {
+      "group": "writer_barrier_profile_exact",
+      "status": "reused_by_exact_identity",
+      "main_head": "a0ac51b6a24442f669608f153efe5b0c98931051",
+      "reference_head": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+      "window": "original_actual_main_AC",
+      "method_hashes": {
+        "production_helpers": "5f7ae55d7469dbe055d0bc092aaba7226a747b9d42a5d74be8f512b10e77dd74"
+      },
+      "counts": {
+        "exact_raw": 44,
+        "exact_retained": 40,
+        "barrier_raw": 8,
+        "barrier_retained": 6
+      },
+      "original_numeric_package_sha256": "f89c33d170d3efc994fe5821fd31b863481ebed8e5454505210383cd4a30aac1",
+      "original_source_labels_preserved": true
+    },
+    {
+      "group": "retirement_followups",
+      "status": "reused_by_exact_identity",
+      "main_head": "a0ac51b6a24442f669608f153efe5b0c98931051",
+      "reference_head": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+      "window": "original_actual_main_AC",
+      "method_hashes": {
+        "repeated_imports": "8ca4ca45c4767f4a599a3ec6bc723ac94afa1d77b7c2cabfff9f758558e03980",
+        "retirement_inventory": "5c8aab3e2859cefd29848493ec577ab4b7f7c604939eaac088eba61c82ac75bb",
+        "followup_imports": "1f3f4240e8590e2461867b7038fbb9dfb2a5a5e2472e33008a05c305f85ac272",
+        "followup_once": "3b6f599a84d6568f75f6967b7ce338fbf04e4170cd9a58a3f3e78a354080f8b8"
+      },
+      "counts": {
+        "retirement_raw": 12,
+        "retirement_retained": 6,
+        "followup_raw": 32,
+        "followup_retained": 28
+      },
+      "original_numeric_package_sha256": "f89c33d170d3efc994fe5821fd31b863481ebed8e5454505210383cd4a30aac1",
+      "original_source_labels_preserved": true
+    },
+    {
+      "group": "workout_query_confirmation",
+      "status": "reused_by_exact_identity",
+      "main_head": "a0ac51b6a24442f669608f153efe5b0c98931051",
+      "reference_head": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+      "window": "original_actual_main_AC",
+      "method_hashes": {
+        "confirmation_query": "4a38020be461d8408ee985875a5c2332d821c0fb215603403ab4d109428e64dd",
+        "confirmation_controller": "7105ea118fe104b3b43a77f9ef638361da5dfde325d25fb99ca5d5bf0c60b2b7"
+      },
+      "counts": {
+        "workloads_raw": 46,
+        "workloads_retained": 42
+      },
+      "original_numeric_package_sha256": "f89c33d170d3efc994fe5821fd31b863481ebed8e5454505210383cd4a30aac1",
+      "original_source_labels_preserved": true
+    },
+    {
+      "group": "static_graph_build",
+      "status": "reused_by_exact_identity",
+      "main_head": "a0ac51b6a24442f669608f153efe5b0c98931051",
+      "reference_head": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+      "window": "original_actual_main_AC",
+      "method_hashes": {
+        "graph": "704ea0f8c6656fe2bede46963fd98258115b9cf517ef94ecbfea6e8a224afa6f"
+      },
+      "counts": {
+        "snapshots": 2,
+        "files": 8
+      },
+      "original_numeric_package_sha256": "f89c33d170d3efc994fe5821fd31b863481ebed8e5454505210383cd4a30aac1",
+      "original_source_labels_preserved": true
+    },
+    {
+      "group": "old_failed_browser_pairs",
+      "status": "historical_REVISE",
+      "main_head": "a0ac51b6a24442f669608f153efe5b0c98931051",
+      "reference_head": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+      "window": "original_actual_main_AC",
+      "method_hashes": {
+        "browser": "f81a8a3a6bf8c33b6c13b959eb91c91f01f092486c9fffc3aa114998380c6f4b",
+        "confirmation_browser": "645b9f2c8b5d21f102f7fbe4143cfd955e2caa8f5e68f7936a6763e36c8a7d4e"
+      },
+      "counts": {
+        "browser_raw": 88,
+        "browser_retained": 80
+      },
+      "original_numeric_package_sha256": "f89c33d170d3efc994fe5821fd31b863481ebed8e5454505210383cd4a30aac1",
+      "original_source_labels_preserved": true
+    },
+    {
+      "group": "nonqualifying_diagnostics",
+      "status": "nonqualifying",
+      "main_head": "a0ac51b6a24442f669608f153efe5b0c98931051",
+      "reference_head": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+      "window": "diagnostic_parallel_window",
+      "method_hashes": {},
+      "counts": {},
+      "original_numeric_package_sha256": "f89c33d170d3efc994fe5821fd31b863481ebed8e5454505210383cd4a30aac1",
+      "original_source_labels_preserved": true
+    },
+    {
+      "group": "corrected_browser_primary",
+      "status": "fresh_PASS",
+      "main_head": "a0ac51b6a24442f669608f153efe5b0c98931051",
+      "reference_head": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+      "window": "corrected_current_AC",
+      "method_hashes": {
+        "current_protocol": "9ee6b4a46b06ca2e6b74acb0619d4e0b44cc9f7805fb05ecb217de30f7b3ef04"
+      },
+      "counts": {
+        "browser_raw": 44,
+        "browser_retained": 40
+      },
+      "original_numeric_package_sha256": "f89c33d170d3efc994fe5821fd31b863481ebed8e5454505210383cd4a30aac1",
+      "original_source_labels_preserved": true
+    },
+    {
+      "group": "natural_confirmation",
+      "status": "fresh_PASS",
+      "main_head": "a0ac51b6a24442f669608f153efe5b0c98931051",
+      "reference_head": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+      "window": "corrected_current_AC",
+      "method_hashes": {
+        "production_helpers": "5f7ae55d7469dbe055d0bc092aaba7226a747b9d42a5d74be8f512b10e77dd74",
+        "natural_prefix": "467826dbdd257df8f3bed86064f7962e52dbd3e6cb313348e62be6858201f1ef"
+      },
+      "counts": {
+        "natural_raw": 44,
+        "natural_retained": 40
+      },
+      "original_numeric_package_sha256": "f89c33d170d3efc994fe5821fd31b863481ebed8e5454505210383cd4a30aac1",
+      "original_source_labels_preserved": true
+    }
+  ],
+  "commands": [
+    {
+      "label": "natural-main",
+      "start_epoch": 1792710152.931196,
+      "end_epoch": 1792710154.0181,
+      "exit_code": 0,
+      "argv_sha256": "5927e3f473554356e59c1024610187fa29d46a8a0a93fe4eac02c1c942e7768f"
+    },
+    {
+      "label": "natural-reference",
+      "start_epoch": 1792710154.1264498,
+      "end_epoch": 1792710154.995054,
+      "exit_code": 0,
+      "argv_sha256": "67cff4d804f3a8d71943ab682f348fb32c0c6e4fde1a83c59923e9ccb96dd550"
+    },
+    {
+      "label": "browser-primary-reference",
+      "start_epoch": 1792710155.112541,
+      "end_epoch": 1792710194.164482,
+      "exit_code": 0,
+      "argv_sha256": "aa6da5f797962e5d5c24599c34c1a3bce44fc22bfa33672d7c6fe5cc190ee68a"
+    },
+    {
+      "label": "browser-primary-main",
+      "start_epoch": 1792710194.298492,
+      "end_epoch": 1792710227.952092,
+      "exit_code": 0,
+      "argv_sha256": "d645c097054374a9f8c2b6f60c015d1dbb044f110ff0ec535e35a8d8e6b132a8"
+    }
+  ],
+  "premeasurement_setup_errors": 1,
+  "partial_or_failed_qualifying_commands": 0,
+  "raw_artifact_sha256": {
+    "natural_main": "71950a8d733478980f22900c97255d6462bb8e819692cb034017c61836d16a05",
+    "natural_main_setup": "4e82fcd8ebbdfee641013730eea1270f5bdad5adec311adab8e4fd087c2b5e31",
+    "browser_main": "bc32102928893f723a03d4f5e16f8f5bf8b0ec149cd42b98407d6e3d0743f6ff",
+    "browser_main_trials": "d56d6cee0a9f585bc1f2952e645c3b076a595b466662b271b2f342cc9d5e69f3",
+    "browser_main_receipt": "b4e8066490d211bdefc581e45073d64fd1c8312def67763e9b754108dacd6f3d",
+    "natural_reference": "37d13de439f609771941387d82cedef98c27e2c7348c3bb0bb5fcf3d1f8cdec8",
+    "natural_reference_setup": "4e82fcd8ebbdfee641013730eea1270f5bdad5adec311adab8e4fd087c2b5e31",
+    "browser_reference": "8523b4f6062e91972926cb0f3c58e6beac0347b1f5ea63b43a508bf28af3e1c0",
+    "browser_reference_trials": "44a7fb8c5e9c9a8e8a2e6d12fc4d90a89d280311e845cc7eda244443dcd4ebc9",
+    "browser_reference_receipt": "db50e858aa448901b445562149721e6770046d9ff97b6bdd838b36e728be0e9d",
+    "private_commands": "82c33a71a1ed7ebe0f2b2742f080dc0cc906b42ef218a4882f6175248134fbc6",
+    "natural_adapter": "51e22308b41a2a5a3733f904fe81ef01b0dce18ff855909b827cf9cda4e8799b",
+    "measure_controller": "17fb517851ecda0a9300e21c5324f329481fcb09497a4c3beeadf594ebd8e9f2",
+    "window_observer": "65e482414c160fdbd3652e643d7c26320ab4b80b1137943fef416b332f4fb981",
+    "environment_capture": "7e33890c9e9ce23d5317c833921be63045f8426c548f8d433958c3546a10bf44",
+    "kernel_identity": "d7a1a158bb47a870599fcd42c95f889f7c5ea1418b9b93d8f5acf03b98818c1e",
+    "runtime_preflight": "a36efc11b28539c00a85a7b5f2d3d23840e43b0414b34bbf625a5147a4e4a84b",
+    "window_cleanup": "c8fcc830fe4b9591a3464e81fb3a6ac88e50411bff371c20fb3dfaef4a7ab666",
+    "measurement_state": "2f16aa10873fddb29d68989b104fb39a746849becc46540b7443e7ebcbe7321a",
+    "freeze": "b020b3b7ac3cd5f42e37be224610bc89331e1d9c2ef173b3364d66df9e1585ba",
+    "plan": "5381f867b91e88c9f6af7c256311d6a07ffa21d1e523ad5dd0d1af782cc03232",
+    "setup_errors": "94fc02670ede50b91ce281ed8a2ad45956cd9fbc2d2cd9af6748e64bf45a2581"
+  }
+}

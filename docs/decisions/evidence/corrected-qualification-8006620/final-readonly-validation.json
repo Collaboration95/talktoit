@@ -1,0 +1,16 @@
+{
+  "exit_code": 0,
+  "status": "PASS",
+  "readonly_recomputation": true,
+  "source_and_original_archives_unchanged": true,
+  "same_original_representative_corpus": true,
+  "runtime_before_after_equal": true,
+  "assertion_span_covers_all_formal_commands": true,
+  "assertion_and_owner_absent": true,
+  "qualifying_commands": 4,
+  "qualifying_command_failures": 0,
+  "browser_confirmation_pairs": 0,
+  "no_trial_values_changed_after_measurement": true,
+  "publication_metadata_label_fix_only": true,
+  "independent_parent_acceptance_pending": true
+}
