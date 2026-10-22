@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import errno
 import sys
-import types
 from pathlib import Path
 
 import pytest
 
+from app.db.dataset_lifecycle import DatasetLifecycle
 from app.ingest import run
 from app.ingest.compatibility import V2CompatibilityError
 from app.state.app_state import AppStateRepository
@@ -43,7 +43,7 @@ def test_failed_manifest_activation_restores_previous_database(
     def fail_activation(self: AppStateRepository, source: Path, **manifest: object) -> None:
         raise RuntimeError("manifest write failed")
 
-    monkeypatch.setattr(AppStateRepository, "activate_file", fail_activation)
+    monkeypatch.setattr(AppStateRepository, "build_file_manifest", fail_activation)
 
     with pytest.raises(RuntimeError, match="manifest write failed"):
         run.main()
@@ -82,11 +82,39 @@ def test_unexpected_lock_failure_fails_closed(
     def unsupported_flock(*args: object) -> None:
         raise OSError(errno.ENOTSUP, "flock unsupported")
 
-    fake_fcntl = types.SimpleNamespace(flock=unsupported_flock, LOCK_EX=2, LOCK_UN=8)
-    monkeypatch.setattr(run, "_load_fcntl", lambda: fake_fcntl)
+    import fcntl
+
+    monkeypatch.setattr(fcntl, "flock", unsupported_flock)
 
     with pytest.raises(OSError, match="flock unsupported"):
         run.main()
 
     assert not (tmp_path / "health.duckdb").exists()
     assert not list(tmp_path.glob("tti-import-*.duckdb"))
+
+
+def test_database_close_failure_keeps_previous_committed_generation(monkeypatch, tmp_path):
+    _prepare_import(monkeypatch, tmp_path)
+    run.main()
+    previous = DatasetLifecycle().active()
+    assert previous is not None
+    real_connect = run.connect
+
+    class FailingClose:
+        def __init__(self, conn):
+            self.conn = conn
+
+        def __getattr__(self, name):
+            return getattr(self.conn, name)
+
+        def close(self):
+            self.conn.close()
+            raise OSError("synthetic close failure")
+
+    monkeypatch.setattr(run, "connect", lambda *a, **kw: FailingClose(real_connect(*a, **kw)))
+    with pytest.raises(OSError, match="synthetic close failure"):
+        run.main()
+    assert DatasetLifecycle().active() == previous
+    assert AppStateRepository().get_active() == previous.dataset
+    assert previous.database_path.is_file()
+    assert not list((DatasetLifecycle().root / "staging").glob("*/health.duckdb"))

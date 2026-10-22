@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from app.db.data_profile import DataProfile
 from app.llm.local_planner import plan_local_question
 
@@ -161,18 +163,16 @@ def test_returns_an_honest_fallback_for_unsupported_requested_metrics() -> None:
         "tool_name": "get_fallback_answer",
         "arguments": {
             "text": "Ranking workouts by pace is not supported yet. "
-            "I can rank them by distance, duration, heart rate, or energy."
+            "Try: Top 5 longest runs this year.",
+            "reason": "unsupported",
         },
     }
     comparison_question = "Compare resting heart rate this month vs last month"
     comparison = plan_local_question(comparison_question, _profile())
-    assert comparison == {
-        "tool_name": "get_fallback_answer",
-        "arguments": {
-            "text": "Comparing health metrics between periods is not supported yet. "
-            "I can show a trend for that metric instead."
-        },
-    }
+    assert comparison is not None
+    assert comparison["tool_name"] == "get_fallback_answer"
+    assert comparison["arguments"]["reason"] == "clarification_needed"
+    assert "two complete date ranges" in comparison["arguments"]["text"]
 
 
 def test_does_not_treat_a_period_only_workout_request_as_latest() -> None:
@@ -181,6 +181,81 @@ def test_does_not_treat_a_period_only_workout_request_as_latest() -> None:
         "tool_name": "get_fallback_answer",
         "arguments": {
             "text": "I can summarize Running workouts for that period, but I need to know "
-            "whether you want a count, distance, duration, or energy."
+            "whether you want a count, distance, duration, or energy.",
+            "reason": "clarification_needed",
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "clause",
+    [
+        "from June 2026 to July 2026",
+        "between June 2026 and July 2026",
+        "in June 2026 and July 2026",
+        "in June 2026 or July 2026",
+        "in June 2026 and last week",
+        "last week and this week",
+        "this month except last week",
+        "last week from 2026-06-01 to 2026-06-07",
+        "from 2026-06-01 to 2026-06-07 and last week",
+        "from June 2026",
+        "since June 2026",
+        "before June 2026",
+        "in June 2026 through July",
+        "in June 0000",
+    ],
+)
+def test_sleep_requires_one_complete_supported_date_clause(clause):
+    plan = plan_local_question(f"Show daily sleep {clause}", _profile())
+    assert plan is not None
+    assert plan["tool_name"] == "get_fallback_answer"
+    assert plan["arguments"]["reason"] == "clarification_needed"
+    assert "date range" in plan["arguments"]["text"]
+
+
+@pytest.mark.parametrize(
+    "clause,start,end",
+    [
+        ("from 2026-06-01 to 2026-07-31", "2026-06-01", "2026-07-31"),
+        ("from 2026-06-01 through 2026-06-07", "2026-06-01", "2026-06-07"),
+        ("between 2026-06-01 to 2026-06-07", "2026-06-01", "2026-06-07"),
+        ("from 1\u20137 June 2026", "2026-06-01", "2026-06-07"),
+        ("from June 1\u20137, 2026", "2026-06-01", "2026-06-07"),
+        ("in June 2026", "2026-06-01", "2026-06-30"),
+        ("for June 2026", "2026-06-01", "2026-06-30"),
+        ("during June 2026", "2026-06-01", "2026-06-30"),
+        ("June 2026", "2026-06-01", "2026-06-30"),
+        ("last week", "2026-06-08", "2026-06-14"),
+        ("this week", "2026-06-15", "2026-06-17"),
+        ("last month", "2026-05-01", "2026-05-31"),
+        ("this month", "2026-06-01", "2026-06-17"),
+        ("last year", "2025-01-01", "2025-12-31"),
+        ("this year", "2026-01-01", "2026-06-17"),
+        ("year to date", "2026-01-01", "2026-06-17"),
+    ],
+)
+def test_sleep_retains_supported_explicit_relative_and_month_scopes(clause, start, end):
+    plan = plan_local_question(f"Show daily sleep {clause}.", _profile())
+    assert plan == {
+        "tool_name": "get_sleep_trend",
+        "arguments": {"start_date": start, "end_date": end, "granularity": "day"},
+    }
+
+
+@pytest.mark.parametrize(
+    "granularity,expected", [("daily", "day"), ("weekly", "week"), ("monthly", "month")]
+)
+def test_sleep_coverage_wording_keeps_its_measurement(granularity, expected):
+    plan = plan_local_question(
+        f"Show {granularity} sleep interval coverage including awake and in-bed records last week",
+        _profile(),
+    )
+    assert plan == {
+        "tool_name": "get_sleep_trend",
+        "arguments": {
+            "start_date": "2026-06-08",
+            "end_date": "2026-06-14",
+            "granularity": expected,
         },
     }

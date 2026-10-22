@@ -17,9 +17,11 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.ingest.coordinator import ingest_v2 as ingest
+from app.llm.cache_keys import snapshot_plan
 from app.llm.orchestrator import ChatOrchestrator
 from app.main import create_app
 from app.state.app_state import AppStateRepository
+from tests.dataset_support import fixture_connection
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "sample.xml"
 
@@ -272,7 +274,7 @@ async def test_get_comparison(
         "Test narrative.",
     )
     orchestrator = ChatOrchestrator(client=client, conn=db)  # type: ignore[arg-type]
-    response = await orchestrator.answer("Compare my two selected periods")
+    response = await orchestrator.answer("Compare my selected workout periods")
 
     assert response.template_id == "comparison"
     assert "metrics" in response.data
@@ -331,7 +333,7 @@ async def test_chat_endpoint_integration(
     # Override the DB dependency with the seeded in-memory DB
     from app.api.chat import _get_conn
 
-    app.dependency_overrides[_get_conn] = lambda: (yield db)
+    app.dependency_overrides[_get_conn] = lambda: (yield from fixture_connection(db))
 
     # Override the app-owned gateway with the deterministic provider stub.
     from app.api.chat import _get_gateway
@@ -382,7 +384,7 @@ async def test_chat_endpoint_persists_executed_remote_plan(
     from app.api.chat import _get_conn, _get_gateway
     from app.llm.provider_gateway import ProviderGateway
 
-    app.dependency_overrides[_get_conn] = lambda: (yield db)
+    app.dependency_overrides[_get_conn] = lambda: (yield from fixture_connection(db))
     app.dependency_overrides[_get_gateway] = lambda: ProviderGateway(
         stub_client, mode="remote_planning_and_narration"
     )
@@ -402,10 +404,12 @@ async def test_chat_endpoint_persists_executed_remote_plan(
     assert response.status_code == 200
     assert response.json()["metadata"]["turn_id"]
     turns = repository.get_turns(conversation_id)
-    assert json.loads(turns[-1]["canonical_plan_json"]) == {
-        "tool_name": "get_last_workout",
-        "arguments": {"activity_type": "Running"},
-    }
+    assert json.loads(turns[-1]["canonical_plan_json"]) == snapshot_plan(
+        {
+            "tool_name": "get_last_workout",
+            "arguments": {"activity_type": "Running"},
+        }
+    )
 
 
 async def test_scoped_daily_followup_preserves_selected_trend_metric(
@@ -443,14 +447,14 @@ async def test_scoped_daily_followup_preserves_selected_trend_metric(
         parent_turn_id,
         response_json='{"template_id":"trend_chart"}',
         cache_outcome="miss",
-        canonical_plan=parent_plan,
+        canonical_plan=snapshot_plan(parent_plan),
     )
     stub_client = _make_stub_client("get_fallback_answer", {"text": "unused"}, "unused")
     app = create_app()
     from app.api.chat import _get_conn, _get_gateway
     from app.llm.provider_gateway import ProviderGateway
 
-    app.dependency_overrides[_get_conn] = lambda: (yield db)
+    app.dependency_overrides[_get_conn] = lambda: (yield from fixture_connection(db))
     app.dependency_overrides[_get_gateway] = lambda: ProviderGateway(
         stub_client, mode="remote_planning_and_narration"
     )

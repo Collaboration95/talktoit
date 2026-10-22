@@ -17,8 +17,9 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.ingest.coordinator import ingest_v2
-from app.main import app
+from app.main import create_app
 from app.state.app_state import AppStateRepository
+from tests.dataset_support import fixture_connection
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 EXPORT_XML = FIXTURES / "sample.xml"
@@ -46,6 +47,7 @@ async def test_workout_detail_resolves_route_from_recorded_export_root(
     monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
     export_dir = _materialize_export(tmp_path)
 
+    app = create_app()
     db = duckdb.connect(":memory:")
     try:
         ingest_v2(str(export_dir / "export.xml"), db)
@@ -64,7 +66,7 @@ async def test_workout_detail_resolves_route_from_recorded_export_root(
         from app.api.dashboard import _get_conn
 
         def override() -> Generator[duckdb.DuckDBPyConnection, None, None]:
-            yield db
+            yield from fixture_connection(db)
 
         app.dependency_overrides[_get_conn] = override
         try:

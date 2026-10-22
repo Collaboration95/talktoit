@@ -5,9 +5,18 @@ import {
   formatDateTime,
   formatDurationMinutes,
   formatMetricValue,
+  isValidDateOnly,
+  shiftDateOnly,
 } from '@/lib/format'
 
 describe('format helpers', () => {
+  it('validates calendar dates and shifts data days across leap and year boundaries', () => {
+    expect(isValidDateOnly('2024-02-29')).toBe(true)
+    expect(isValidDateOnly('2023-02-29')).toBe(false)
+    expect(isValidDateOnly('2024-02-30')).toBe(false)
+    expect(shiftDateOnly('2024-03-01', -1)).toBe('2024-02-29')
+    expect(shiftDateOnly('2024-01-03', -6)).toBe('2023-12-28')
+  })
   it('rounds duration to whole minutes', () => {
     expect(formatDurationMinutes(61.051)).toBe('61 min')
   })
@@ -77,4 +86,11 @@ describe('trend bucket labels', () => {
     expect(formatChartBucketFullDate('')).toBe('')
     expect(formatChartBucketFullDate('2026-13-40')).toBe('2026-13-40')
   })
+})
+
+it('formats sleep coverage hours as whole measured minutes', () => {
+  expect(formatMetricValue(2.5, 'hours')).toBe('150 min')
+  expect(formatMetricValue(1 / 60, 'hours')).toBe('1 min')
+  expect(formatMetricValue(0, 'hours')).toBe('0 min')
+  expect(formatMetricValue(null, 'hours')).toBeNull()
 })

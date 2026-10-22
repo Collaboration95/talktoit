@@ -14,7 +14,9 @@ from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Literal
 
-NARRATION_FACTS_VERSION = "v2"
+from app.presentation import format_date
+
+NARRATION_FACTS_VERSION = "v3"
 
 TemplateId = Literal[
     "workout_card", "ranked_list", "trend_chart", "period_summary", "comparison", "fallback"
@@ -198,16 +200,28 @@ def _comparison_facts(payload: dict[str, Any]) -> dict[str, object]:
             direction = _text(raw_metric.get("direction"))
             if label is None or unit is None or direction not in {"up", "down", "flat"}:
                 continue
-            metrics.append(
-                {
-                    "label": label,
-                    "this_value": _number(raw_metric.get("this_value"), unit),
-                    "last_value": _number(raw_metric.get("last_value"), unit),
-                    "delta": _number(raw_metric.get("delta"), unit),
-                    "unit": unit,
-                    "direction": direction,
-                }
-            )
+            row: dict[str, object] = {
+                "label": label,
+                "this_value": _number(raw_metric.get("this_value"), unit),
+                "last_value": _number(raw_metric.get("last_value"), unit),
+                "delta": _number(raw_metric.get("delta"), unit),
+                "unit": unit,
+                "direction": direction,
+            }
+            for key in (
+                "this_observed_days",
+                "this_requested_days",
+                "last_observed_days",
+                "last_requested_days",
+            ):
+                value = raw_metric.get(key)
+                if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                    row[key] = value
+            if raw_metric.get("direction_tone") == "neutral":
+                row["direction_tone"] = "neutral"
+            if raw_metric.get("value_basis") in ("observed_day_mean", "observation_mean"):
+                row["value_basis"] = raw_metric["value_basis"]
+            metrics.append(row)
     facts["metrics"] = metrics
     return facts
 
@@ -239,7 +253,7 @@ def deterministic_narrative(template_id: str, facts: dict[str, object]) -> str:
         distance = facts.get("distance")
         parts = [f"Your {activity} workout"]
         if isinstance(date_value, str):
-            parts.append(f"was on {date_value}")
+            parts.append(f"was on {format_date(date_value)}")
         if isinstance(duration, dict) and duration.get("value") is not None:
             parts.append(f"lasted {duration['value']} {duration['unit']}")
         if isinstance(distance, dict) and distance.get("value") is not None:
@@ -254,6 +268,11 @@ def deterministic_narrative(template_id: str, facts: dict[str, object]) -> str:
                 f"is {first.get('label')} at {first.get('value')} {first.get('unit')}."
             )
         return "No ranked results matched the requested scope."
+    if template_id == "trend_chart" and facts.get("metric_label") == "Sleep":
+        return (
+            "Measured sleep interval coverage includes awake and in-bed records; "
+            "it does not measure time asleep. Missing buckets have no matching records."
+        )
     if template_id == "trend_chart":
         granularity = facts.get("granularity", "time-bucketed")
         metric_label = facts.get("metric_label", "metric")

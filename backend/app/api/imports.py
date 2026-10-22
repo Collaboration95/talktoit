@@ -15,10 +15,8 @@ import os
 import signal
 import subprocess
 import sys
-import tempfile
 import threading
 import time
-import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,7 +25,16 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
-from app.db.connection import resolve_db_path
+from app.db.dataset_lifecycle import DatasetLifecycle
+from app.state.app_state import AppStateRepository
+from app.state.import_artifacts import (
+    ImportOperation,
+    JobRecord,
+    cleanup_artifact,
+    load_jobs,
+    recover_imports,
+    safe_report,
+)
 
 router = APIRouter(prefix="/api/imports", tags=["imports"])
 
@@ -35,6 +42,7 @@ ImportState = Literal["queued", "running", "succeeded", "failed"]
 MAX_IMPORT_BYTES = int(os.environ.get("TTI_IMPORT_MAX_BYTES", str(2 * 1024**3)))
 IMPORT_TIMEOUT_SECONDS = float(os.environ.get("TTI_IMPORT_TIMEOUT_SECONDS", str(60 * 60)))
 MAX_RETAINED_JOBS = 100
+_UPLOAD_OPERATIONS: dict[str, ImportOperation] = {}
 _IMPORT_PROCESSES: dict[str, subprocess.Popen[str]] = {}
 # Upload paths whose import was cancelled before its subprocess was registered.
 # The registration path checks this set so a cancellation cannot race the Popen
@@ -102,38 +110,55 @@ class ImportJobManager:
         # Guarded by _lock: cancel() runs on a worker thread while _run() runs
         # on the event loop.
         self._lock = threading.Lock()
-        self._loop: asyncio.AbstractEventLoop | None = None
+        self._operations: dict[str, ImportOperation] = {}
+
+    def refresh(self) -> None:
+        """Load persisted jobs without overwriting this manager's live state."""
+        for stored in load_jobs():
+            if stored.id not in self._operations:
+                self.jobs[stored.id] = _ImportJob(**stored.model_dump())
+
+    def _persist(self, job: _ImportJob) -> None:
+        operation = self._operations.get(job.id)
+        if operation is not None:
+            operation.save_job(JobRecord(**job.public().model_dump()))
 
     def list(self) -> list[ImportJob]:
         """Return recent jobs, newest first."""
+        self.refresh()
         jobs = sorted(self.jobs.values(), key=lambda job: job.created_at, reverse=True)
         return [job.public() for job in jobs[:20]]
 
     def get(self, job_id: str) -> ImportJob | None:
         """Return one job when it exists."""
+        self.refresh()
         job = self.jobs.get(job_id)
         return job.public() if job else None
 
     def start(self, filename: str, upload_path: Path) -> ImportJob:
         """Queue one upload and start its background import task."""
-        if self._active_job_id is not None:
-            active = self.jobs.get(self._active_job_id)
-            if active and active.state in {"queued", "running"}:
-                upload_path.unlink(missing_ok=True)
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Another health import is already running.",
-                )
+        self.refresh()
+        if any(job.state in {"queued", "running"} for job in self.jobs.values()):
+            operation = _UPLOAD_OPERATIONS.pop(str(upload_path), None)
+            if operation is not None:
+                cleanup_artifact(operation, upload_path)
+                operation.close()
+            raise HTTPException(status_code=409, detail="Another health import is already running.")
 
+        operation = _UPLOAD_OPERATIONS.get(str(upload_path))
+        if operation is None:
+            raise ValueError("Import uploads require an owned operation")
         now = datetime.now(UTC).isoformat()
         job = _ImportJob(
-            id=uuid.uuid4().hex,
+            id=operation.id,
             filename=filename,
             state="queued",
             progress=0,
             created_at=now,
         )
         self.jobs[job.id] = job
+        self._operations[job.id] = operation
+        self._persist(job)
         if len(self.jobs) > MAX_RETAINED_JOBS:
             finished = sorted(
                 (item for item in self.jobs.values() if item.state in {"succeeded", "failed"}),
@@ -143,7 +168,6 @@ class ImportJobManager:
                 self.jobs.pop(stale.id, None)
         self._active_job_id = job.id
         self._uploads_by_job[job.id] = upload_path
-        self._loop = asyncio.get_running_loop()
         task = asyncio.create_task(self._run(job, upload_path))
         self._tasks.add(task)
         self._tasks_by_job[job.id] = task
@@ -152,80 +176,81 @@ class ImportJobManager:
         return job.public()
 
     async def _run(self, job: _ImportJob, upload_path: Path) -> None:
-        """Execute the existing importer off the event loop."""
+        """Observe real transitions; never estimate import phases or percentages."""
         with self._lock:
             job.state = "running"
-            job.progress = 10
+            job.progress = 0
             job.started_at = datetime.now(UTC).isoformat()
+            self._persist(job)
+        worker = asyncio.create_task(asyncio.to_thread(_run_import, upload_path))
         try:
-            report = await asyncio.to_thread(_run_import, upload_path)
+            report = await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            job.cancelled = True
+            await asyncio.to_thread(_terminate_import_process, upload_path)
+            try:
+                await worker
+            except Exception:
+                _logger.debug("Import worker stopped after interruption")
+            job.state = "failed"
+            job.error = "The import was interrupted. Choose your export to try again."
         except Exception:
-            with self._lock:
-                # A cancellation owns the terminal state; never overwrite it.
-                if not job.cancelled:
-                    # The importer preserves the last active database on
-                    # failure. Keep the browser-facing error stable and never
-                    # expose subprocess text.
-                    job.state = "failed"
-                    job.error = "The import failed; your previous dataset was kept."
+            job.state = "failed"
+            job.error = (
+                "The import was cancelled."
+                if job.cancelled
+                else ("The import did not finish. Choose your export to try again.")
+            )
         else:
-            with self._lock:
-                if not job.cancelled:
-                    job.report = report
-                    job.state = "succeeded"
+            job.report = safe_report(report)
+            job.state = "failed" if job.cancelled else "succeeded"
+            job.error = "The import was cancelled." if job.cancelled else None
         finally:
+            job.progress = 100 if job.state == "succeeded" else 0
+            job.completed_at = datetime.now(UTC).isoformat()
+            self._persist(job)
+            operation = self._operations.pop(job.id)
+            _UPLOAD_OPERATIONS.pop(str(upload_path), None)
+            operation.close()
+            # Recovery validates the committed pointer before owner-checked
+            # cleanup, including cancellation or failure after pointer commit.
+            try:
+                recovered = await asyncio.to_thread(recover_imports)
+            except RuntimeError:
+                _logger.warning("import.recovery.required")
+                recovered = []
+            for stored in recovered:
+                if stored.id == job.id:
+                    self.jobs[job.id] = _ImportJob(**stored.model_dump())
             with self._lock:
-                job.progress = 100
-                job.completed_at = datetime.now(UTC).isoformat()
-                # Only release the slot this job owns: a cancelled job may
-                # already have been replaced by a newer import.
                 if self._active_job_id == job.id:
                     self._active_job_id = None
                 self._uploads_by_job.pop(job.id, None)
-            upload_path.unlink(missing_ok=True)
 
     def cancel(self, job_id: str) -> bool:
-        """Cancel a queued/running job and release the active slot."""
+        """Request cancellation; retain live files and slot until worker exit."""
         with self._lock:
             job = self.jobs.get(job_id)
             if job is None or job.state not in {"queued", "running"}:
                 return False
             job.cancelled = True
-            job.state = "failed"
-            job.progress = 100
-            job.error = "The import was cancelled."
-            job.completed_at = datetime.now(UTC).isoformat()
-            task = self._tasks_by_job.get(job_id)
-            upload_path = self._uploads_by_job.pop(job_id, None)
-            if self._active_job_id == job_id:
-                self._active_job_id = None
-        # Signal the process group first so an in-flight subprocess stops even
-        # if the waiting worker has not yet been cancelled.
+            upload_path = self._uploads_by_job.get(job_id)
         if upload_path is not None:
             _terminate_import_process(upload_path)
-            # The worker may never run (cancelled before it started); remove the
-            # upload here so a cancellation can never leave it behind.
-            upload_path.unlink(missing_ok=True)
-        if task is not None:
-            self._cancel_task(task)
         return True
-
-    def _cancel_task(self, task: asyncio.Task[None]) -> None:
-        """Cancel a task on its own loop; Task.cancel is not thread-safe."""
-        loop = self._loop
-        if loop is not None and not loop.is_closed():
-            try:
-                loop.call_soon_threadsafe(task.cancel)
-                return
-            except RuntimeError:
-                _logger.debug("Import loop was closed before cancellation")
-        task.cancel()
 
 
 def _run_import(upload_path: Path) -> dict[str, object]:
     """Run the canonical V2 CLI importer and parse its safe JSON report."""
     backend_root = Path(__file__).resolve().parents[2]
     command = [sys.executable, "-m", "app.ingest.run", "--report-json", str(upload_path)]
+    operation = _UPLOAD_OPERATIONS.get(str(upload_path))
+    environment = os.environ.copy()
+    inherited: tuple[int, ...] = ()
+    if operation is not None:
+        environment["TTI_IMPORT_OPERATION"] = operation.id
+        environment["TTI_IMPORT_OPERATION_FD"] = str(operation.fd)
+        inherited = (operation.fd,)
     process = subprocess.Popen(  # noqa: S603
         command,
         cwd=backend_root,
@@ -233,6 +258,8 @@ def _run_import(upload_path: Path) -> dict[str, object]:
         stderr=subprocess.PIPE,
         text=True,
         start_new_session=True,
+        env=environment,
+        pass_fds=inherited,
     )
     process_key = str(upload_path)
     try:
@@ -309,10 +336,10 @@ async def _write_upload(request: Request, filename: str) -> tuple[Path, int]:
     if not filename.lower().endswith(".xml"):
         raise HTTPException(status_code=422, detail="Choose an Apple Health .xml export.")
 
-    directory = resolve_db_path().parent
-    directory.mkdir(parents=True, exist_ok=True)
-    fd, name = tempfile.mkstemp(prefix="tti-upload-", suffix=".xml", dir=directory)
-    path = Path(name)
+    operation = ImportOperation.create(DatasetLifecycle())
+    path = operation.upload_path
+    _UPLOAD_OPERATIONS[str(path)] = operation
+    fd = os.open(path, os.O_WRONLY | os.O_NOFOLLOW)
     total = 0
     try:
         with os.fdopen(fd, "wb") as output:
@@ -328,8 +355,10 @@ async def _write_upload(request: Request, filename: str) -> tuple[Path, int]:
                 output.write(chunk)
         if total == 0:
             raise HTTPException(status_code=422, detail="The export file is empty.")
-    except Exception:
-        path.unlink(missing_ok=True)
+    except BaseException:
+        _UPLOAD_OPERATIONS.pop(str(path), None)
+        cleanup_artifact(operation, path)
+        operation.close()
         raise
     return path, total
 
@@ -340,9 +369,16 @@ async def create_import(
     filename: str = Query(default="export.xml", min_length=1, max_length=255),
 ) -> ImportJob:
     """Accept an XML export and queue a safe local import."""
-    safe_filename = Path(filename).name
+    safe_filename = Path(filename.replace("\\", "/")).name
     upload_path, _size = await _write_upload(request, safe_filename)
-    return import_jobs.start(safe_filename, upload_path)
+    try:
+        return import_jobs.start(safe_filename, upload_path)
+    except BaseException:
+        operation = _UPLOAD_OPERATIONS.pop(str(upload_path), None)
+        if operation is not None:
+            cleanup_artifact(operation, upload_path)
+            operation.close()
+        raise
 
 
 @router.get("", response_model=list[ImportJob])
@@ -369,6 +405,12 @@ async def cancel_import(job_id: str) -> ImportJob:
     if job is None:
         raise HTTPException(status_code=404, detail="Import job not found")
     return job
+
+
+def recover_import_jobs(repository: AppStateRepository | None = None) -> None:
+    """Startup hook: reconcile under writer lock before serving job list/get."""
+    recover_imports(repository=repository)
+    import_jobs.refresh()
 
 
 import_jobs = ImportJobManager()

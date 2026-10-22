@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { TrendLine } from '@/charts/trend-line'
+import { LazyTrendLine as TrendLine } from '@/charts/lazy-trend-line'
 import { GaugeRings } from '@/charts/gauge-rings'
 import { WorkoutDetail } from '@/components/workout-detail'
 import type {
@@ -25,9 +25,16 @@ import { decodeDashboardQuery, encodeDashboardQuery } from '@/lib/dashboard-quer
 import type { DashboardQuery } from '@/lib/dashboard-query'
 import { createSavedView, listSavedViews } from '@/api/saved-views'
 import type { SavedView } from '@/api/saved-views'
-import { formatDateOnly, formatNumber } from '@/lib/format'
+import {
+  formatDateOnly,
+  formatDateRange,
+  formatNumber,
+  isValidDateOnly,
+  shiftDateOnly,
+} from '@/lib/format'
 import { useBackendHealth } from '@/lib/use-backend-health'
 import { BackendDownBanner } from '@/components/backend-down-banner'
+import { DashboardPeriodControls } from '@/components/dashboard-period-controls'
 
 type DashboardViewMode =
   | { view: 'list' }
@@ -65,7 +72,10 @@ function createLoadingPanels(value: boolean): Record<PanelKey, boolean> {
 interface DashboardState {
   summary: ActivityRingDay[]
   workouts: WorkoutSummary[]
+  workoutTypes: string[]
+  workoutSources: string[]
   volume: TrainingVolumeResponse | null
+  volumeRequestKey: string | null
   steps: TrendResponse | null
   heart: TrendResponse | null
   sleep: TrendResponse | null
@@ -210,6 +220,10 @@ const WorkoutRow = memo(function WorkoutRow({
 
 function WorkoutsPanel({
   workouts,
+  availableTypes,
+  availableSources,
+  loading,
+  failed,
   nextWorkoutCursor,
   scope,
   onScopeChange,
@@ -217,6 +231,10 @@ function WorkoutsPanel({
   onSelect,
 }: {
   workouts: WorkoutSummary[]
+  availableTypes: string[]
+  availableSources: string[]
+  loading: boolean
+  failed: boolean
   nextWorkoutCursor: string | null
   scope: DashboardScope
   onScopeChange: (scope: DashboardScope) => void
@@ -225,14 +243,14 @@ function WorkoutsPanel({
 }) {
   const workoutTypes = useMemo(
     () =>
-      [...new Set(workouts.map((workout) => workout.activity_type))].sort((a, b) =>
-        displayActivityType(a).localeCompare(displayActivityType(b)),
+      [...new Set([...availableTypes, ...(scope.activityType ? [scope.activityType] : [])])].sort(
+        (a, b) => displayActivityType(a).localeCompare(displayActivityType(b)),
       ),
-    [workouts],
+    [availableTypes, scope.activityType],
   )
   const sources = useMemo(
-    () => [...new Set(workouts.map((workout) => workout.source_name))].sort(),
-    [workouts],
+    () => [...new Set([...availableSources, ...(scope.source ? [scope.source] : [])])].sort(),
+    [availableSources, scope.source],
   )
   // Single-pass per-type counts (O(N)) instead of filtering per type per render.
   const workoutCounts = useMemo(() => {
@@ -242,8 +260,6 @@ function WorkoutsPanel({
     }
     return counts
   }, [workouts])
-  if (workouts.length === 0) return <NoData />
-
   return (
     <div>
       <div className="mb-4 flex flex-wrap gap-2" aria-label="Filter workouts by type">
@@ -312,27 +328,42 @@ function WorkoutsPanel({
           </select>
         </label>
       </div>
-      <div className="overflow-x-auto rounded-lg border border-gray-100">
-        <table className="w-full min-w-[680px] text-sm">
-          <thead>
-            <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-              <th className="px-3 py-3">Date</th>
-              <th className="px-3 py-3">Workout</th>
-              <th className="px-3 py-3">Source</th>
-              <th className="px-3 py-3 text-right">Duration</th>
-              <th className="px-3 py-3 text-right">Avg HR</th>
-              <th className="px-3 py-3 text-right">Distance</th>
-              <th className="px-3 py-3 text-right">Energy</th>
-            </tr>
-          </thead>
-          <tbody>
-            {workouts.map((w) => (
-              <WorkoutRow key={w.id} workout={w} onSelect={onSelect} />
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {nextWorkoutCursor ? (
+      <p className="mb-3 text-xs text-gray-500">
+        Counts reflect loaded rows. Filter choices include previously loaded workouts.
+      </p>
+      {loading ? (
+        <PanelSkeleton panel="workouts" />
+      ) : failed ? (
+        <p className="py-4 text-sm text-red-600">
+          Could not load workouts. Retry or Reset the filters.
+        </p>
+      ) : workouts.length === 0 ? (
+        <p className="py-4 text-sm text-gray-500">
+          No workouts match this scope. Change filters or Reset.
+        </p>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-gray-100">
+          <table className="w-full min-w-[680px] text-sm">
+            <thead>
+              <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+                <th className="px-3 py-3">Date</th>
+                <th className="px-3 py-3">Workout</th>
+                <th className="px-3 py-3">Source</th>
+                <th className="px-3 py-3 text-right">Duration</th>
+                <th className="px-3 py-3 text-right">Avg HR</th>
+                <th className="px-3 py-3 text-right">Distance</th>
+                <th className="px-3 py-3 text-right">Energy</th>
+              </tr>
+            </thead>
+            <tbody>
+              {workouts.map((w) => (
+                <WorkoutRow key={w.id} workout={w} onSelect={onSelect} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {!loading && !failed && nextWorkoutCursor ? (
         <button
           type="button"
           className="mt-3 rounded border border-blue-600 px-3 py-1.5 text-sm font-medium text-blue-700"
@@ -359,15 +390,7 @@ function TrendPanel({ trend, title }: { trend: TrendResponse | null; title: stri
   )
 }
 
-function TrainingVolumePanel({
-  volume,
-  granularity,
-  onGranularityChange,
-}: {
-  volume: TrainingVolumeResponse | null
-  granularity: 'week' | 'month'
-  onGranularityChange: (value: 'week' | 'month') => void
-}) {
+function TrainingVolumePanel({ volume }: { volume: TrainingVolumeResponse | null }) {
   if (!volume || volume.series.length === 0) return <NoData />
   const totals = volume.totals
   const durationSeries = volume.series.map((item) => ({
@@ -376,26 +399,6 @@ function TrainingVolumePanel({
   }))
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 text-xs text-gray-500">
-        <span>Aggregate by</span>
-        <div
-          className="flex rounded border border-gray-200 bg-white"
-          role="group"
-          aria-label="Training volume granularity"
-        >
-          {(['week', 'month'] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={granularity === option}
-              onClick={() => onGranularityChange(option)}
-              className={`px-2 py-1 capitalize ${granularity === option ? 'bg-blue-50 font-medium text-blue-700' : 'text-gray-600'}`}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-      </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <SummaryMetric label="Sessions" value={formatNumber(totals.sessions)} />
         <SummaryMetric
@@ -498,7 +501,10 @@ export function DashboardView() {
   const [state, setState] = useState<DashboardState>({
     summary: [],
     workouts: [],
+    workoutTypes: [],
+    workoutSources: [],
     volume: null,
+    volumeRequestKey: null,
     steps: null,
     heart: null,
     sleep: null,
@@ -534,7 +540,14 @@ export function DashboardView() {
   const [savedViewTitle, setSavedViewTitle] = useState('')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
+  const [volumeReloadToken, setVolumeReloadToken] = useState(0)
   const [volumeGranularity, setVolumeGranularity] = useState<'week' | 'month'>('week')
+  const volumeRequestKey = JSON.stringify([
+    scope,
+    volumeGranularity,
+    reloadToken,
+    volumeReloadToken,
+  ])
   const scopeGeneration = useRef(0)
   const paginationController = useRef<AbortController | null>(null)
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
@@ -554,14 +567,81 @@ export function DashboardView() {
 
   useEffect(() => {
     const controller = new AbortController()
+    setState((current) => ({
+      ...current,
+      datasetStatus: null,
+      loadingPanels: { ...current.loadingPanels, datasetStatus: true },
+    }))
+    void fetchDatasetStatus(controller.signal).then(
+      (datasetStatus) => {
+        if (controller.signal.aborted) return
+        setState((current) => ({
+          ...current,
+          datasetStatus,
+          loadingPanels: { ...current.loadingPanels, datasetStatus: false },
+          failedPanels: current.failedPanels.filter(
+            (panel) => panel !== PANEL_LABELS.datasetStatus,
+          ),
+        }))
+      },
+      (error: unknown) => {
+        if (controller.signal.aborted || isAbortError(error)) return
+        setState((current) => ({
+          ...current,
+          loadingPanels: { ...current.loadingPanels, datasetStatus: false },
+          failedPanels: [...current.failedPanels, PANEL_LABELS.datasetStatus],
+        }))
+      },
+    )
+    return () => controller.abort()
+  }, [reloadToken])
+
+  useEffect(() => {
+    const restore = () => {
+      const query = decodeDashboardQuery(window.location.search)
+      scopeGeneration.current += 1
+      paginationController.current?.abort()
+      const { tab: _tab, selectedWorkout, selectedWorkoutFingerprint, ...nextScope } = query
+      setScope(nextScope)
+      setLoadMoreError(null)
+      setMode(
+        selectedWorkout
+          ? {
+              view: 'detail',
+              workoutId: selectedWorkout,
+              ...(selectedWorkoutFingerprint ? { fingerprint: selectedWorkoutFingerprint } : {}),
+            }
+          : { view: 'list' },
+      )
+    }
+    window.addEventListener('popstate', restore)
+    return () => window.removeEventListener('popstate', restore)
+  }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
     let active = true
     const generation = scopeGeneration.current + 1
     scopeGeneration.current = generation
 
     setState((current) => ({
       ...current,
-      loadingPanels: createLoadingPanels(true),
-      failedPanels: [],
+      summary: [],
+      workouts: [],
+      nextWorkoutCursor: null,
+      steps: null,
+      heart: null,
+      sleep: null,
+      sleepStages: null,
+      capabilities: [],
+      loadingPanels: {
+        ...createLoadingPanels(true),
+        datasetStatus: current.loadingPanels.datasetStatus,
+        volume: current.loadingPanels.volume,
+      },
+      failedPanels: current.failedPanels.filter(
+        (panel) => panel === PANEL_LABELS.datasetStatus || panel === PANEL_LABELS.volume,
+      ),
     }))
 
     const isCurrent = () => active && scopeGeneration.current === generation
@@ -597,19 +677,22 @@ export function DashboardView() {
     loadPanel('summary', fetchSummary(scope, controller.signal), (_current, value) => ({
       summary: value,
     }))
-    loadPanel(
-      'workouts',
-      fetchWorkouts(scope, undefined, controller.signal),
-      (_current, value) => ({
-        workouts: value.workouts,
-        nextWorkoutCursor: value.next_cursor,
-      }),
-    )
-    loadPanel(
-      'volume',
-      fetchTrainingVolume(scope, volumeGranularity, controller.signal),
-      (_current, value) => ({ volume: value }),
-    )
+    loadPanel('workouts', fetchWorkouts(scope, undefined, controller.signal), (current, value) => ({
+      workouts: value.workouts,
+      workoutTypes: [
+        ...new Set([
+          ...current.workoutTypes,
+          ...value.workouts.map((workout) => workout.activity_type),
+        ]),
+      ],
+      workoutSources: [
+        ...new Set([
+          ...current.workoutSources,
+          ...value.workouts.map((workout) => workout.source_name),
+        ]),
+      ],
+      nextWorkoutCursor: value.next_cursor,
+    }))
     loadPanel('steps', fetchTrend('steps', 'day', scope, controller.signal), (_current, value) => ({
       steps: value,
     }))
@@ -629,17 +712,56 @@ export function DashboardView() {
     loadPanel('capabilities', fetchCapabilities(scope, controller.signal), (_current, value) => ({
       capabilities: value,
     }))
-    loadPanel('datasetStatus', fetchDatasetStatus(controller.signal), (_current, value) => ({
-      datasetStatus: value,
-    }))
-
     return () => {
       active = false
       controller.abort()
       paginationController.current?.abort()
       paginationController.current = null
     }
-  }, [scope, reloadToken, volumeGranularity])
+  }, [scope, reloadToken])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const generation = scopeGeneration.current
+    const isCurrent = () => !controller.signal.aborted && scopeGeneration.current === generation
+    setState((current) => ({
+      ...current,
+      volume: null,
+      volumeRequestKey,
+      loadingPanels: { ...current.loadingPanels, volume: true },
+      failedPanels: current.failedPanels.filter((panel) => panel !== PANEL_LABELS.volume),
+    }))
+    void fetchTrainingVolume(scope, volumeGranularity, controller.signal).then(
+      (volume) => {
+        if (!isCurrent()) return
+        setState((current) =>
+          isCurrent()
+            ? {
+                ...current,
+                volume,
+                loadingPanels: { ...current.loadingPanels, volume: false },
+                failedPanels: current.failedPanels.filter((panel) => panel !== PANEL_LABELS.volume),
+              }
+            : current,
+        )
+      },
+      (error: unknown) => {
+        if (!isCurrent() || isAbortError(error)) return
+        setState((current) =>
+          isCurrent()
+            ? {
+                ...current,
+                loadingPanels: { ...current.loadingPanels, volume: false },
+                failedPanels: current.failedPanels.includes(PANEL_LABELS.volume)
+                  ? current.failedPanels
+                  : [...current.failedPanels, PANEL_LABELS.volume],
+              }
+            : current,
+        )
+      },
+    )
+    return () => controller.abort()
+  }, [scope, reloadToken, volumeGranularity, volumeReloadToken, volumeRequestKey])
 
   const loadMoreWorkouts = () => {
     if (!state.nextWorkoutCursor) return
@@ -654,6 +776,18 @@ export function DashboardView() {
         setState((current) => ({
           ...current,
           workouts: [...current.workouts, ...page.workouts],
+          workoutTypes: [
+            ...new Set([
+              ...current.workoutTypes,
+              ...page.workouts.map((workout) => workout.activity_type),
+            ]),
+          ],
+          workoutSources: [
+            ...new Set([
+              ...current.workoutSources,
+              ...page.workouts.map((workout) => workout.source_name),
+            ]),
+          ],
           nextWorkoutCursor: page.next_cursor,
         }))
       })
@@ -669,6 +803,9 @@ export function DashboardView() {
   }
 
   const updateWorkoutScope = (nextScope: DashboardScope) => {
+    scopeGeneration.current += 1
+    paginationController.current?.abort()
+    setLoadMoreError(null)
     const normalized: DashboardScope = {
       ...(nextScope.start ? { start: nextScope.start } : {}),
       ...(nextScope.end ? { end: nextScope.end } : {}),
@@ -720,13 +857,17 @@ export function DashboardView() {
     setMode({ view: 'list' })
   }
 
-  const applySavedView = (query: DashboardQuery) => {
+  const applySavedView = (savedQuery: DashboardQuery) => {
+    const query = decodeDashboardQuery(encodeDashboardQuery(savedQuery))
+    scopeGeneration.current += 1
+    paginationController.current?.abort()
+    setLoadMoreError(null)
     const nextScope: DashboardScope = {
       ...(query.start && query.end ? { start: query.start, end: query.end } : {}),
       ...(query.activityType ? { activityType: query.activityType } : {}),
       ...(query.source ? { source: query.source } : {}),
     }
-    const nextQuery = { ...query, tab: query.tab }
+    const nextQuery = { ...query, tab: 'workouts' as const }
     window.history.pushState({}, '', `?${encodeDashboardQuery(nextQuery)}`)
     setMode(
       nextQuery.selectedWorkout
@@ -743,14 +884,14 @@ export function DashboardView() {
   }
 
   const saveCurrentView = () => {
-    if (!scope.start || !scope.end) return
     const title = savedViewTitle.trim()
     if (!title) {
       setSaveError('Enter a name for this view.')
       return
     }
     setSaveError(null)
-    createSavedView(title, { tab: 'overview', ...scope })
+    // An absent period restores the existing per-panel defaults on the active dataset.
+    createSavedView(title, { tab: 'workouts', ...scope })
       .then(() => {
         setSavedViewTitle('')
         reloadSavedViews()
@@ -759,6 +900,21 @@ export function DashboardView() {
         setSaveError(error instanceof Error ? error.message : 'Could not save this view.'),
       )
   }
+
+  const unavailablePanels = state.failedPanels.filter((panel) => panel !== PANEL_LABELS.volume)
+  const dataset = state.datasetStatus?.readiness === 'ready' ? state.datasetStatus.dataset : null
+  const coverage =
+    isValidDateOnly(dataset?.coverage_start) &&
+    isValidDateOnly(dataset?.coverage_end) &&
+    dataset.coverage_start <= dataset.coverage_end
+      ? { start: dataset.coverage_start, end: dataset.coverage_end }
+      : null
+  const explicitPeriod = scope.start && scope.end ? formatDateRange(scope.start, scope.end) : null
+  const periodLabel = (days: number) =>
+    explicitPeriod ??
+    (coverage
+      ? formatDateRange(shiftDateOnly(coverage.end, 1 - days), coverage.end)
+      : 'Coverage unavailable')
 
   // Workout detail view (R1-09)
   if (mode.view === 'detail') {
@@ -776,20 +932,36 @@ export function DashboardView() {
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 space-y-4">
       {backendDown ? <BackendDownBanner /> : null}
-      {scope.start && scope.end ? (
-        <p className="text-sm text-gray-500" aria-label="Active dashboard scope">
-          Showing {scope.start} to {scope.end}
-        </p>
-      ) : null}
-      {state.datasetStatus?.dataset ? (
+      <DashboardPeriodControls
+        scope={scope}
+        coverage={coverage}
+        loading={state.loadingPanels.datasetStatus}
+        onChange={updateWorkoutScope}
+      />
+      <p className="text-sm text-gray-500" aria-label="Active dashboard scope">
+        {explicitPeriod
+          ? `Showing ${explicitPeriod}`
+          : 'Default panel periods (latest imported data; see each panel).'}
+      </p>
+      {coverage ? (
         <p className="text-xs text-gray-500" aria-label="Imported data coverage">
-          Imported coverage: {state.datasetStatus.dataset.coverage_start ?? 'unknown'} to{' '}
-          {state.datasetStatus.dataset.coverage_end ?? 'unknown'}
+          Imported coverage: {formatDateRange(coverage.start, coverage.end)}
         </p>
       ) : null}
-      {state.failedPanels.length > 0 ? (
+      <p className="text-xs text-gray-500">
+        Periods apply to all panels. Activity and source filters apply to workouts and training
+        volume; other panels include all activities and sources.
+      </p>
+      <button
+        type="button"
+        onClick={() => updateWorkoutScope({})}
+        className="rounded border border-gray-300 px-3 py-1 text-sm"
+      >
+        Reset
+      </button>
+      {unavailablePanels.length > 0 ? (
         <div className="flex items-center gap-3 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          <span>Could not load: {state.failedPanels.join(', ')}.</span>
+          <span>Could not load: {unavailablePanels.join(', ')}.</span>
           <button
             type="button"
             className="font-medium text-blue-700 underline"
@@ -800,7 +972,7 @@ export function DashboardView() {
         </div>
       ) : null}
       <SavedViewsPanel views={savedViews} onApply={applySavedView} />
-      {scope.start && scope.end ? (
+      {explicitPeriod || coverage ? (
         <div className="flex gap-2" aria-label="Save current dashboard view">
           <input
             value={savedViewTitle}
@@ -820,7 +992,7 @@ export function DashboardView() {
         </div>
       ) : null}
 
-      <Section title="Activity Rings (Latest available day)">
+      <Section title={`Activity Rings (Latest available day in ${periodLabel(7)})`}>
         {state.loadingPanels.summary && state.summary.length === 0 ? (
           <PanelSkeleton panel="summary" />
         ) : (
@@ -828,35 +1000,63 @@ export function DashboardView() {
         )}
       </Section>
 
-      <Section title="Recent Workouts (Latest 30 data days)">
-        {state.loadingPanels.workouts && state.workouts.length === 0 ? (
-          <PanelSkeleton panel="workouts" />
-        ) : (
-          <WorkoutsPanel
-            workouts={state.workouts}
-            nextWorkoutCursor={state.nextWorkoutCursor}
-            scope={scope}
-            onScopeChange={updateWorkoutScope}
-            onSelect={selectWorkout}
-            onLoadMore={loadMoreWorkouts}
-          />
-        )}
+      <Section title={`Recent Workouts (${periodLabel(30)})`}>
+        <WorkoutsPanel
+          workouts={state.workouts}
+          availableTypes={state.workoutTypes}
+          availableSources={state.workoutSources}
+          loading={state.loadingPanels.workouts}
+          failed={state.failedPanels.includes(PANEL_LABELS.workouts)}
+          nextWorkoutCursor={state.nextWorkoutCursor}
+          scope={scope}
+          onScopeChange={updateWorkoutScope}
+          onSelect={selectWorkout}
+          onLoadMore={loadMoreWorkouts}
+        />
         {loadMoreError ? <p className="mt-2 text-sm text-red-600">{loadMoreError}</p> : null}
       </Section>
 
-      <Section title="Training Volume (Latest 90 data days)">
-        {state.loadingPanels.volume && state.volume === null ? (
+      <Section title={`Training Volume (${periodLabel(90)})`}>
+        <div className="flex items-center justify-between gap-3 text-xs text-gray-500">
+          <span>Aggregate by</span>
+          <div
+            className="flex rounded border border-gray-200 bg-white"
+            role="group"
+            aria-label="Training volume granularity"
+          >
+            {(['week', 'month'] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={volumeGranularity === option}
+                onClick={() => setVolumeGranularity(option)}
+                className={`px-2 py-1 capitalize ${volumeGranularity === option ? 'bg-blue-50 font-medium text-blue-700' : 'text-gray-600'}`}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        </div>
+        {/* Mask old data in the scope/toggle commit, before the request effect clears it. */}
+        {state.volumeRequestKey !== volumeRequestKey || state.loadingPanels.volume ? (
           <PanelSkeleton panel="volume" />
+        ) : state.failedPanels.includes(PANEL_LABELS.volume) ? (
+          <div className="py-4 text-sm text-amber-800">
+            <p role="alert">Could not load training volume.</p>
+            <button
+              type="button"
+              className="mt-2 font-medium text-blue-700 underline"
+              onClick={() => setVolumeReloadToken((value) => value + 1)}
+            >
+              Retry training volume
+            </button>
+          </div>
         ) : (
-          <TrainingVolumePanel
-            volume={state.volume}
-            granularity={volumeGranularity}
-            onGranularityChange={setVolumeGranularity}
-          />
+          <TrainingVolumePanel volume={state.volume} />
         )}
       </Section>
 
-      <Section title="Daily Steps (Latest 30 data days)">
+      <Section title={`Daily Steps (${periodLabel(30)})`}>
         {state.loadingPanels.steps && state.steps === null ? (
           <PanelSkeleton panel="steps" />
         ) : (
@@ -864,7 +1064,7 @@ export function DashboardView() {
         )}
       </Section>
 
-      <Section title="Resting Heart Rate (Latest 90 data days)">
+      <Section title={`Resting Heart Rate (${periodLabel(90)})`}>
         {state.loadingPanels.heart && state.heart === null ? (
           <PanelSkeleton panel="heart" />
         ) : (
@@ -872,15 +1072,16 @@ export function DashboardView() {
         )}
       </Section>
 
-      <Section title="Sleep Duration (Latest 30 data days)">
+      <Section title={`Sleep Interval Coverage (${periodLabel(30)})`}>
+        <p className="mb-2 text-xs text-gray-500">Includes awake and in-bed records.</p>
         {state.loadingPanels.sleep && state.sleep === null ? (
           <PanelSkeleton panel="sleep" />
         ) : (
-          <TrendPanel trend={state.sleep} title="Sleep" />
+          <TrendPanel trend={state.sleep} title="Sleep interval coverage" />
         )}
       </Section>
 
-      <Section title="Measured Sleep Stages">
+      <Section title={`Measured Sleep Stages (${periodLabel(30)})`}>
         {state.loadingPanels.sleepStages && state.sleepStages === null ? (
           <PanelSkeleton panel="sleepStages" />
         ) : (
@@ -888,7 +1089,7 @@ export function DashboardView() {
         )}
       </Section>
 
-      <Section title="Data Sources">
+      <Section title={`Data Sources (${explicitPeriod ?? 'All imported data'})`}>
         {state.loadingPanels.capabilities && state.capabilities.length === 0 ? (
           <PanelSkeleton panel="capabilities" />
         ) : (

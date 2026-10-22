@@ -11,10 +11,17 @@ import os
 import threading
 import weakref
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import duckdb
+
+from app.state.app_state import AppStateRepository, DatasetVersion
+
+if TYPE_CHECKING:
+    from app.db.dataset_lifecycle import Generation
 
 _DATABASE_LIFECYCLE_LOCK = threading.RLock()
 _logger = logging.getLogger(__name__)
@@ -24,6 +31,149 @@ _OPEN_CONNECTIONS: weakref.WeakKeyDictionary[duckdb.DuckDBPyConnection, Path] = 
 # Connections currently being used by a request. A database replacement or
 # deletion must never close one of these out from under its caller.
 _ACTIVE_LEASES: dict[duckdb.DuckDBPyConnection, int] = {}
+_SNAPSHOTS: weakref.WeakKeyDictionary[duckdb.DuckDBPyConnection, DatasetSnapshot] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+@dataclass(frozen=True)
+class DatasetSnapshot:
+    """One request's leased DB, immutable manifest, and allowed route root."""
+
+    connection: duckdb.DuckDBPyConnection
+    generation: Generation | None
+    manifest: DatasetVersion | None = None
+    root: Path | None = None
+    source_path: Path | None = None
+
+    @property
+    def dataset(self) -> DatasetVersion | None:
+        """Return this connection's identity, including explicit no-active-data."""
+        return self.generation.dataset if self.generation else self.manifest
+
+    @property
+    def export_root(self) -> Path | None:
+        """Return only the root belonging to this leased connection."""
+        return self.generation.export_root if self.generation else self.root
+
+    @property
+    def database_path(self) -> Path | None:
+        """Return the leased file privately, or None for empty data."""
+        return self.generation.database_path if self.generation else self.source_path
+
+
+@contextmanager
+def dataset_snapshot(
+    db_path: str | Path | None = None,
+    *,
+    allow_legacy: bool = False,
+) -> Generator[DatasetSnapshot, None, None]:
+    """Acquire a request's complete tuple, preserving arbitrary CLI isolation."""
+    from app.db.dataset_lifecycle import DatasetLifecycle
+
+    configured = resolve_db_path().resolve()
+    requested = resolve_db_path(db_path).resolve()
+    lifecycle = DatasetLifecycle(configured)
+    external = requested != configured
+    generation = None
+    source_path = None
+    try:
+        with (
+            ExitStack() as handles,
+            lifecycle.lease() if not external else _no_generation() as generation,
+        ):
+            if external:
+                conn = _open_snapshot_connection(requested)
+                source_path = requested
+            elif generation:
+                conn = _open_snapshot_connection(generation.database_path)
+            elif (
+                allow_legacy
+                and not lifecycle.has_pointer()
+                and requested.exists()
+                and handles.enter_context(lifecycle.legacy_lease())
+            ):
+                conn = _open_snapshot_connection(requested)
+                source_path = requested
+            else:
+                conn = _open_snapshot_connection(None)
+            snapshot = DatasetSnapshot(conn, generation, source_path=source_path)
+            with _DATABASE_LIFECYCLE_LOCK:
+                _SNAPSHOTS[conn] = snapshot
+            try:
+                with lease_connection(conn):
+                    yield snapshot
+            finally:
+                with _DATABASE_LIFECYCLE_LOCK:
+                    _SNAPSHOTS.pop(conn, None)
+                conn.close()
+    finally:
+        # Never wait on the writer lock while holding a generation lease or a
+        # connection-manager lock. Imports keep the newest rollback generation.
+        if generation is not None:
+            lifecycle.retire_generation(generation.dataset.id, timeout=0)
+
+
+def _open_snapshot_connection(path: Path | None) -> duckdb.DuckDBPyConnection:
+    from app.db.dataset_lifecycle import DatasetRecoveryError
+    from app.db.schema import reset_schema
+
+    conn = None
+    try:
+        if path is not None:
+            return connect(path, read_only=True)
+        conn = duckdb.connect(":memory:")
+        reset_schema(conn)
+        return conn
+    except (OSError, duckdb.Error) as exc:
+        if conn is not None:
+            conn.close()
+        raise DatasetRecoveryError() from exc
+
+
+@contextmanager
+def _no_generation() -> Generator[None, None, None]:
+    yield None
+
+
+def snapshot_for_connection(conn: duckdb.DuckDBPyConnection) -> DatasetSnapshot | None:
+    """Return registered request metadata without re-reading mutable state."""
+    with _DATABASE_LIFECYCLE_LOCK:
+        return _SNAPSHOTS.get(conn)
+
+
+@contextmanager
+def bind_dataset_snapshot(snapshot: DatasetSnapshot) -> Generator[DatasetSnapshot, None, None]:
+    """Bind an explicitly supplied in-memory tuple for embedded/test consumers.
+
+    Filesystem consumers must use dataset_snapshot() to acquire OS leases.
+    This adapter never infers an identity or root from mutable app state.
+    """
+    conn = snapshot.connection
+    with _DATABASE_LIFECYCLE_LOCK:
+        previous = _SNAPSHOTS.get(conn)
+        _SNAPSHOTS[conn] = snapshot
+    try:
+        with lease_connection(conn):
+            yield snapshot
+    finally:
+        with _DATABASE_LIFECYCLE_LOCK:
+            if previous is None:
+                _SNAPSHOTS.pop(conn, None)
+            else:
+                _SNAPSHOTS[conn] = previous
+
+
+def connection_dataset(
+    conn: duckdb.DuckDBPyConnection,
+    repository: AppStateRepository,
+) -> DatasetVersion | None:
+    """Read identity from a bound tuple; never borrow a SQLite projection."""
+    with _DATABASE_LIFECYCLE_LOCK:
+        snapshot = _SNAPSHOTS.get(conn)
+        if snapshot is not None:
+            return snapshot.dataset
+    return None
 
 
 def resolve_db_path(db_path: str | Path | None = None) -> Path:
@@ -51,7 +201,11 @@ def connect(
     Returns:
         An open DuckDB connection (read/write, auto-commit).
     """
-    path = resolve_db_path(db_path)
+    configured = resolve_db_path(db_path)
+    path = resolve_effective_db_path(db_path)
+    # Published generations are immutable, including for legacy callers that
+    # requested a writable default connection to run migrations.
+    read_only = read_only or path != configured
     if not read_only:
         path.parent.mkdir(parents=True, exist_ok=True)
     with _DATABASE_LIFECYCLE_LOCK:
@@ -60,9 +214,28 @@ def connect(
     return conn
 
 
+def resolve_effective_db_path(db_path: str | Path | None = None) -> Path:
+    """Resolve managed defaults through the pointer; leave explicit overrides alone."""
+    path = resolve_db_path(db_path)
+    if path.resolve() != resolve_db_path().resolve():
+        return path
+    from app.db.dataset_lifecycle import DatasetLifecycle, DatasetRecoveryError
+
+    lifecycle = DatasetLifecycle(path)
+    if not lifecycle.root.exists():
+        return path
+    active = lifecycle.active()
+    if active is not None:
+        return active.database_path
+    if (lifecycle.root / "active.json").exists():
+        # A versioned inactive tombstone must never fall back to a legacy DB.
+        raise DatasetRecoveryError()
+    return path
+
+
 def health_database_size_bytes() -> int | None:
     """Return the on-disk health database size, or None when no import exists."""
-    path = resolve_db_path()
+    path = resolve_effective_db_path()
     return path.stat().st_size if path.exists() else None
 
 
@@ -112,19 +285,8 @@ def lease_connection(
                 _ACTIVE_LEASES.pop(conn, None)
 
 
-def delete_health_database() -> int:
-    """Delete the imported health database file after an explicit scoped request.
+def delete_health_database(repository: AppStateRepository | None = None) -> int:
+    """Commit a no-active tombstone and safely remove unleased managed health DBs."""
+    from app.db.dataset_lifecycle import DatasetLifecycle
 
-    Returns the number of files removed (0 or 1). Callers must require explicit
-    confirmation; cache, history, saved views, and diagnostics are untouched.
-    """
-    path = resolve_db_path()
-    with _DATABASE_LIFECYCLE_LOCK:
-        if not path.exists():
-            return 0
-        close_open_connections(path)
-        try:
-            path.unlink()
-        except OSError as exc:
-            raise RuntimeError(f"Could not remove health database: {exc}") from exc
-        return 1
+    return DatasetLifecycle().delete(repository or AppStateRepository())

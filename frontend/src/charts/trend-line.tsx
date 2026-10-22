@@ -8,7 +8,7 @@ import {
   formatNumber,
 } from '@/lib/format'
 
-interface TrendLineProps {
+export interface TrendLineProps {
   series: TrendPoint[]
   metricLabel: string
   metricUnit: string
@@ -51,7 +51,8 @@ export const TrendLine = memo(function TrendLine({
         type: 'value',
         name: metricUnit,
         axisLabel: {
-          formatter: (value: number) => formatNumber(value, metricUnit === 'km' ? 1 : 0),
+          formatter: (value: number) =>
+            formatNumber(value, metricUnit === 'km' || metricUnit === 'hours' ? 1 : 0),
         },
       },
       series: [

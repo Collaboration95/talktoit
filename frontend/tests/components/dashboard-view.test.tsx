@@ -1,9 +1,11 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { Profiler } from 'react'
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { DashboardView } from '@/components/dashboard-view'
-import type { TrendResponse } from '@/api/dashboard'
+import type { TrendResponse, TrainingVolumeResponse } from '@/api/dashboard'
+import * as dashboardApi from '@/api/dashboard'
 
 const server = setupServer(
   http.get('/health', () => HttpResponse.json({ status: 'ok' })),
@@ -181,6 +183,294 @@ function setupHandlers() {
 }
 
 describe('DashboardView', () => {
+  it('anchors visible presets to imported coverage and scopes every panel consistently', async () => {
+    setupHandlers()
+    const requests: URL[] = []
+    server.events.on('request:start', ({ request }) => {
+      if (new URL(request.url).pathname.startsWith('/api/dashboard/'))
+        requests.push(new URL(request.url))
+    })
+    const user = userEvent.setup()
+    render(<DashboardView />)
+    const preset = await screen.findByRole('button', { name: 'Latest 7 data days' })
+    await waitFor(() => expect(preset).toBeEnabled())
+    requests.length = 0
+    await user.click(preset)
+    await waitFor(() => expect(requests.length).toBe(8))
+    for (const request of requests) {
+      expect(request.searchParams.get('start')).toBe('2024-12-25')
+      expect(request.searchParams.get('end')).toBe('2024-12-31')
+    }
+    expect(screen.getByLabelText('Active dashboard scope')).toHaveTextContent(
+      '25 Dec 2024 to 31 Dec 2024',
+    )
+    expect(
+      screen.getByRole('heading', { name: 'Training Volume (25 Dec 2024 to 31 Dec 2024)' }),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Latest 30 data days' }))
+    expect(window.location.search).toContain('start=2024-12-02')
+    await user.click(screen.getByRole('button', { name: 'All available data' }))
+    expect(window.location.search).toContain('start=2024-01-01')
+    expect(window.location.search).toContain('end=2024-12-31')
+    server.events.removeAllListeners('request:start')
+  })
+
+  it('validates custom periods without requesting drafts and restores URL scope on navigation', async () => {
+    setupHandlers()
+    let requests = 0
+    server.use(
+      http.get('/api/dashboard/workouts', () => {
+        requests++
+        return HttpResponse.json({ workouts: [], next_cursor: null })
+      }),
+    )
+    const user = userEvent.setup()
+    render(<DashboardView />)
+    const start = await screen.findByLabelText('Period start')
+    const end = screen.getByLabelText('Period end')
+    await waitFor(() => expect(start).toBeEnabled())
+    await waitFor(() => expect(requests).toBe(1))
+    fireEvent.change(start, { target: { value: '2024-02-30' } })
+    fireEvent.change(end, { target: { value: '2024-03-31' } })
+    await user.click(screen.getByRole('button', { name: 'Apply custom period' }))
+    expect(screen.getByRole('alert')).toHaveTextContent(/valid calendar dates/i)
+    expect(requests).toBe(1)
+    fireEvent.change(start, { target: { value: '2024-04-01' } })
+    await user.click(screen.getByRole('button', { name: 'Apply custom period' }))
+    expect(screen.getByRole('alert')).toHaveTextContent(/start.*end/i)
+    expect(requests).toBe(1)
+    fireEvent.change(start, { target: { value: '2024-02-01' } })
+    fireEvent.change(end, { target: { value: '2024-02-29' } })
+    await user.click(screen.getByRole('button', { name: 'Apply custom period' }))
+    await waitFor(() => expect(requests).toBe(2))
+    const february = window.location.search
+    await user.click(screen.getByRole('button', { name: 'Latest 7 data days' }))
+    await act(async () => {
+      window.history.replaceState({}, '', february)
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    expect(start).toHaveValue('2024-02-01')
+    expect(end).toHaveValue('2024-02-29')
+    expect(screen.getByLabelText('Active dashboard scope')).toHaveTextContent(
+      '1 Feb 2024 to 29 Feb 2024',
+    )
+  })
+
+  it('disables coverage presets when import coverage is missing or unavailable', async () => {
+    setupHandlers()
+    server.use(
+      http.get('/api/status', () =>
+        HttpResponse.json({ readiness: 'no_active_import', dataset: null }),
+      ),
+    )
+    render(<DashboardView />)
+    await waitFor(() =>
+      expect(screen.getByText(/import data to choose a period/i)).toBeInTheDocument(),
+    )
+    expect(screen.getByRole('button', { name: 'Latest 7 data days' })).toBeDisabled()
+    expect(screen.queryByLabelText('Imported data coverage')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save view' })).not.toBeInTheDocument()
+  })
+
+  it('saves the ordinary default dashboard and restores its default scope', async () => {
+    setupHandlers()
+    let saved: { title: string; query: Record<string, string> } | undefined
+    server.use(
+      http.post('/api/saved-views', async ({ request }) => {
+        saved = (await request.json()) as typeof saved
+        return HttpResponse.json({ id: 'sv_default' })
+      }),
+      http.get('/api/saved-views', () =>
+        HttpResponse.json(saved ? [{ id: 'sv_default', ...saved }] : []),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<DashboardView />)
+    await user.type(await screen.findByLabelText('Saved view name'), 'My default dashboard')
+    await user.click(screen.getByRole('button', { name: 'Save view' }))
+    await screen.findByRole('button', { name: 'My default dashboard' })
+    expect(saved?.query).toEqual({ tab: 'workouts' })
+    await user.click(screen.getByRole('button', { name: 'Latest 7 data days' }))
+    await user.click(screen.getByRole('button', { name: 'My default dashboard' }))
+    expect(window.location.search).not.toContain('start=')
+    expect(window.location.search).toContain('tab=workouts')
+    expect(screen.getByLabelText('Active dashboard scope')).toHaveTextContent(
+      /default panel periods/i,
+    )
+  })
+
+  it('round-trips an explicit saved period through application and URL navigation', async () => {
+    setupHandlers()
+    server.use(
+      http.get('/api/saved-views', () =>
+        HttpResponse.json([
+          {
+            id: 'sv_leap',
+            title: 'Leap February',
+            query: {
+              tab: 'overview',
+              start: '2024-02-01',
+              end: '2024-02-29',
+              source: 'Apple Watch',
+            },
+          },
+        ]),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<DashboardView />)
+    await user.click(await screen.findByRole('button', { name: 'Leap February' }))
+    expect(window.location.search).toContain('tab=workouts')
+    const savedUrl = window.location.search
+    await user.click(screen.getByRole('button', { name: 'Reset' }))
+    await act(async () => {
+      window.history.replaceState({}, '', savedUrl)
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    expect(screen.getByLabelText('Period start')).toHaveValue('2024-02-01')
+    expect(screen.getByLabelText('Filter workouts by source')).toHaveValue('Apple Watch')
+    expect(
+      screen.getByRole('heading', { name: 'Daily Steps (1 Feb 2024 to 29 Feb 2024)' }),
+    ).toBeInTheDocument()
+  })
+
+  it('does not invent imported coverage when the status request fails', async () => {
+    setupHandlers()
+    server.use(http.get('/api/status', () => HttpResponse.json({}, { status: 500 })))
+    render(<DashboardView />)
+    expect(await screen.findByText(/Could not load: import status/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Latest 7 data days' })).toBeDisabled()
+    expect(screen.queryByLabelText('Imported data coverage')).not.toBeInTheDocument()
+  })
+
+  it('clears a coverage error after a successful retry', async () => {
+    setupHandlers()
+    let failing = true
+    server.use(
+      http.get('/api/status', () =>
+        failing
+          ? HttpResponse.json({}, { status: 500 })
+          : HttpResponse.json({
+              readiness: 'ready',
+              dataset: { coverage_start: '2024-01-01', coverage_end: '2024-12-31' },
+            }),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<DashboardView />)
+    await screen.findByText(/Could not load: import status/)
+    failing = false
+    await user.click(screen.getByRole('button', { name: 'Retry unavailable panels' }))
+    await screen.findByLabelText('Imported data coverage')
+    expect(screen.queryByText(/Could not load: import status/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Latest 7 data days' })).toBeEnabled()
+  })
+
+  it('retains controls and selected filters across zero results, loading, failure and Reset', async () => {
+    setupHandlers()
+    let fail = false
+    let release: (() => void) | undefined
+    let block = false
+    const all = [
+      {
+        id: 1,
+        activity_type: 'Running',
+        source_name: 'Apple Watch',
+        date: '2024-12-30T07:00:00+08:00',
+        duration_minutes: 30,
+        avg_heart_rate: 140,
+        distance_meters: 5000,
+        energy_burned_kj: 1500,
+        fingerprint: '0123456789abcdef',
+      },
+      {
+        id: 2,
+        activity_type: 'Cycling',
+        source_name: 'Strava',
+        date: '2024-12-29T07:00:00+08:00',
+        duration_minutes: 60,
+        avg_heart_rate: 130,
+        distance_meters: 20000,
+        energy_burned_kj: 2000,
+        fingerprint: 'ffffffffffffffff',
+      },
+    ]
+    server.use(
+      http.get('/api/dashboard/workouts', async ({ request }) => {
+        if (block)
+          await new Promise<void>((resolve) => {
+            release = resolve
+          })
+        if (fail) return HttpResponse.json({}, { status: 500 })
+        const params = new URL(request.url).searchParams
+        const workouts = all.filter(
+          (row) =>
+            (!params.get('source') || row.source_name === params.get('source')) &&
+            (!params.get('activity_type') || row.activity_type === params.get('activity_type')) &&
+            (!params.get('end') || row.date.slice(0, 10) <= params.get('end')!),
+        )
+        return HttpResponse.json({ workouts, next_cursor: null })
+      }),
+    )
+    const user = userEvent.setup()
+    render(<DashboardView />)
+    await user.click(await screen.findByRole('button', { name: /Running 1/ }))
+    const source = screen.getByLabelText('Filter workouts by source')
+    await user.selectOptions(source, 'Strava')
+    expect(await screen.findByText(/no workouts match/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Running 0/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.getByRole('button', { name: /Cycling 0/ })).toBeInTheDocument()
+    expect(source).toHaveValue('Strava')
+    expect(screen.getByText(/counts.*loaded rows/i)).toBeInTheDocument()
+    block = true
+    await user.click(screen.getByRole('button', { name: 'Latest 7 data days' }))
+    expect(await screen.findByTestId('panel-loading-workouts')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeEnabled()
+    expect(source).toBeEnabled()
+    await waitFor(() => expect(release).toBeDefined())
+    fail = true
+    await act(async () => release?.())
+    expect(await screen.findByText(/could not load workouts/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeEnabled()
+    block = false
+    fail = false
+    await user.click(screen.getByRole('button', { name: 'Reset' }))
+    await screen.findByRole('button', { name: /All 2/ })
+    for (const key of ['start', 'end', 'source', 'activity_type'])
+      expect(new URLSearchParams(window.location.search).has(key)).toBe(false)
+  })
+
+  it('ignores a pending pagination response after Reset changes the generation', async () => {
+    setupHandlers()
+    let release: (() => void) | undefined
+    server.use(
+      http.get('/api/dashboard/workouts', ({ request }) => {
+        if (new URL(request.url).searchParams.has('cursor'))
+          return new Promise((resolve) => {
+            release = () =>
+              resolve(
+                HttpResponse.json({
+                  workouts: [{ id: 99, activity_type: 'Stale row' }],
+                  next_cursor: null,
+                }),
+              )
+          })
+        return HttpResponse.json({ workouts: [], next_cursor: 'next' })
+      }),
+    )
+    const user = userEvent.setup()
+    window.history.replaceState({}, '', '?tab=workouts&source=Strava')
+    render(<DashboardView />)
+    await user.click(await screen.findByRole('button', { name: 'Load more workouts' }))
+    await waitFor(() => expect(release).toBeDefined())
+    await user.click(screen.getByRole('button', { name: 'Reset' }))
+    await act(async () => release?.())
+    expect(screen.queryByText('Stale row')).not.toBeInTheDocument()
+  })
+
   it('shows loading state initially', async () => {
     // Block requests so loading persists
     server.use(
@@ -222,7 +512,9 @@ describe('DashboardView', () => {
   it('renders training volume totals and activity breakdown', async () => {
     setupHandlers()
     render(<DashboardView />)
-    expect(await screen.findByText('Training Volume (Latest 90 data days)')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Training Volume (3 Oct 2024 to 31 Dec 2024)'),
+    ).toBeInTheDocument()
     expect((await screen.findAllByText('0.8 h')).length).toBeGreaterThan(0)
     expect(screen.getByText('Training volume by activity')).toBeInTheDocument()
   })
@@ -367,7 +659,7 @@ describe('DashboardView', () => {
     setupHandlers()
     render(<DashboardView />)
     expect(await screen.findByLabelText('Imported data coverage')).toHaveTextContent(
-      '2024-01-01 to 2024-12-31',
+      '1 Jan 2024 to 31 Dec 2024',
     )
   })
 
@@ -419,7 +711,7 @@ describe('DashboardView', () => {
     setupHandlers()
     render(<DashboardView />)
     await waitFor(() => {
-      expect(screen.getByText('Showing 2024-01-01 to 2024-01-31')).toBeInTheDocument()
+      expect(screen.getByText('Showing 1 Jan 2024 to 31 Jan 2024')).toBeInTheDocument()
     })
     window.history.replaceState({}, '', '/')
   })
@@ -467,9 +759,9 @@ describe('DashboardView', () => {
     const user = userEvent.setup()
     render(<DashboardView />)
     await user.click(await screen.findByRole('button', { name: 'February' }))
-    expect(await screen.findByText('Showing 2024-02-01 to 2024-02-29')).toBeInTheDocument()
+    expect(await screen.findByText('Showing 1 Feb 2024 to 29 Feb 2024')).toBeInTheDocument()
     await act(async () => releaseOldSummary?.())
-    expect(screen.getByText('Showing 2024-02-01 to 2024-02-29')).toBeInTheDocument()
+    expect(screen.getByText('Showing 1 Feb 2024 to 29 Feb 2024')).toBeInTheDocument()
     window.history.replaceState({}, '', '/')
   })
 
@@ -535,7 +827,7 @@ describe('DashboardView', () => {
     const user = userEvent.setup()
     render(<DashboardView />)
     await user.click(await screen.findByRole('button', { name: /back to list/i }))
-    expect(await screen.findByText('Showing 2024-01-01 to 2024-01-31')).toBeInTheDocument()
+    expect(await screen.findByText('Showing 1 Jan 2024 to 31 Jan 2024')).toBeInTheDocument()
     expect(window.location.search).not.toContain('workout=1')
     window.history.replaceState({}, '', '/')
   })
@@ -553,8 +845,13 @@ describe('DashboardView', () => {
 
   it('removes a cleared source filter from the shared URL', async () => {
     setupHandlers()
+    let releaseWorkouts: (() => void) | undefined
+    const workoutsReady = new Promise<void>((resolve) => {
+      releaseWorkouts = resolve
+    })
     server.use(
-      http.get('/api/dashboard/workouts', ({ request }) => {
+      http.get('/api/dashboard/workouts', async ({ request }) => {
+        await workoutsReady
         const source = new URL(request.url).searchParams.get('source')
         const all = [
           {
@@ -587,11 +884,18 @@ describe('DashboardView', () => {
     const user = userEvent.setup()
     render(<DashboardView />)
     const select = await screen.findByLabelText('Filter workouts by source')
+    expect(screen.getByTestId('panel-loading-workouts')).toBeInTheDocument()
+    expect(select).toBeEnabled()
+    expect(within(select).queryByRole('option', { name: 'Strava' })).not.toBeInTheDocument()
+    releaseWorkouts?.()
+    await within(select).findByRole('option', { name: 'Strava' })
     await user.selectOptions(select, 'Strava')
     await waitFor(() => expect(window.location.search).toContain('source=Strava'))
+    expect(await screen.findByText('60 min')).toBeInTheDocument()
     // Reset to "All sources" — the stale source param must leave the URL.
     await user.selectOptions(select, '')
     await waitFor(() => expect(window.location.search).not.toContain('source='))
+    expect(await screen.findByText('46 min')).toBeInTheDocument()
     expect(screen.getAllByText('Running').length).toBeGreaterThanOrEqual(1)
     window.history.replaceState({}, '', '/')
   })
@@ -645,14 +949,19 @@ describe('DashboardView', () => {
     const user = userEvent.setup()
     const firstView = render(<DashboardView />)
     const select = await screen.findByLabelText('Filter workouts by source')
+    await within(select).findByRole('option', { name: 'Strava' })
     await user.selectOptions(select, 'Strava')
     await waitFor(() => expect(window.location.search).toContain('source=Strava'))
+    expect(await screen.findByText('60 min')).toBeInTheDocument()
     await user.selectOptions(select, '')
     await waitFor(() => expect(window.location.search).not.toContain('source='))
+    expect(await screen.findByText('46 min')).toBeInTheDocument()
     firstView.unmount()
     // Simulate the Chat → Dashboard round trip: the view re-initializes from the URL.
     render(<DashboardView />)
     const restoredSelect = await screen.findByLabelText('Filter workouts by source')
+    await within(restoredSelect).findByRole('option', { name: 'Strava' })
+    expect(await screen.findByText('46 min')).toBeInTheDocument()
     await waitFor(() => expect((restoredSelect as HTMLSelectElement).value).toBe(''))
     expect(screen.getAllByText('Running').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('Cycling').length).toBeGreaterThanOrEqual(1)
@@ -687,4 +996,274 @@ describe('App tab navigation', () => {
     await user.click(screen.getByRole('button', { name: /chat/i }))
     await waitFor(() => expect(window.location.search).toContain('tab=chat'))
   })
+})
+
+it('labels sleep interval coverage separately from measured asleep stages', async () => {
+  setupHandlers()
+  render(<DashboardView />)
+  expect(
+    await screen.findByRole('heading', { name: /Sleep Interval Coverage/ }),
+  ).toBeInTheDocument()
+  expect(screen.getByText(/Includes awake and in-bed records/)).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: /Measured Sleep Stages/ })).toBeInTheDocument()
+})
+
+// #186: count real API-client requests; delayed replies deliberately ignore cancellation.
+describe('independent training volume lifecycle', () => {
+  const volume = (granularity = 'week', sessions = 11) => ({
+    granularity,
+    totals: { sessions, duration_minutes: 60, distance_meters: 1000, energy_kj: 100 },
+    series: [
+      {
+        bucket: granularity === 'month' ? '2024-12' : '2024-W52',
+        sessions,
+        duration_minutes: 60,
+        distance_meters: 1000,
+        energy_kj: 100,
+      },
+    ],
+    by_activity: [],
+  })
+  const track = () => {
+    const requests: URL[] = []
+    const listener = ({ request }: { request: Request }) => {
+      const url = new URL(request.url)
+      if (url.pathname.startsWith('/api/dashboard/') || url.pathname === '/api/status')
+        requests.push(url)
+    }
+    server.events.on('request:start', listener)
+    return { requests, stop: () => server.events.removeListener('request:start', listener) }
+  }
+  const settled = async () => {
+    await screen.findByText('46 min')
+    await waitFor(() => expect(screen.queryAllByTestId(/^panel-loading-/)).toHaveLength(0))
+  }
+
+  it('fetches exactly one volume per toggle and preserves all other panels and pending pagination', async () => {
+    setupHandlers()
+    let releasePage: (() => void) | undefined
+    server.use(
+      http.get('/api/dashboard/volume', ({ request }) =>
+        HttpResponse.json(volume(new URL(request.url).searchParams.get('granularity')!)),
+      ),
+    )
+    // Keep a loaded workout so pagination is reachable.
+    server.use(
+      http.get('/api/dashboard/workouts', ({ request }) => {
+        if (new URL(request.url).searchParams.has('cursor'))
+          return new Promise<Response>((resolve) => {
+            releasePage = () =>
+              resolve(
+                HttpResponse.json({
+                  workouts: [
+                    {
+                      id: 2,
+                      activity_type: 'Walking',
+                      date: '2024-12-29',
+                      duration_minutes: 22,
+                      avg_heart_rate: null,
+                      distance_meters: null,
+                      energy_burned_kj: null,
+                      source_name: 'Watch',
+                      fingerprint: 'fedcba9876543210',
+                    },
+                  ],
+                  next_cursor: null,
+                }),
+              )
+          })
+        return HttpResponse.json({
+          workouts: [
+            {
+              id: 1,
+              activity_type: 'Running',
+              date: '2024-12-30',
+              duration_minutes: 45.5,
+              avg_heart_rate: null,
+              distance_meters: null,
+              energy_burned_kj: null,
+              source_name: 'Watch',
+              fingerprint: '0123456789abcdef',
+            },
+          ],
+          next_cursor: 'page-two',
+        })
+      }),
+    )
+    const tracking = track()
+    try {
+      const user = userEvent.setup()
+      render(<DashboardView />)
+      await settled()
+      await user.click(screen.getByRole('button', { name: 'Load more workouts' }))
+      await waitFor(() => expect(releasePage).toBeDefined())
+      tracking.requests.length = 0
+      for (const granularity of ['month', 'week']) {
+        await user.click(screen.getByRole('button', { name: granularity, exact: true }))
+        await waitFor(() =>
+          expect(screen.queryByTestId('panel-loading-volume')).not.toBeInTheDocument(),
+        )
+        expect(screen.getByText('46 min')).toBeInTheDocument()
+      }
+      expect(tracking.requests.map((url) => url.pathname)).toEqual([
+        '/api/dashboard/volume',
+        '/api/dashboard/volume',
+      ])
+      expect(tracking.requests.map((url) => url.searchParams.get('granularity'))).toEqual([
+        'month',
+        'week',
+      ])
+      await act(async () => releasePage!())
+      expect(await screen.findByText('22 min')).toBeInTheDocument()
+    } finally {
+      tracking.stop()
+    }
+  })
+
+  it('isolates loading, failure and retry to volume and keeps controls available', async () => {
+    setupHandlers()
+    let release: (() => void) | undefined
+    let fail = true
+    server.use(
+      http.get('/api/dashboard/volume', ({ request }) => {
+        const granularity = new URL(request.url).searchParams.get('granularity')!
+        if (granularity === 'week') return HttpResponse.json(volume())
+        if (fail)
+          return new Promise<Response>((resolve) => {
+            release = () => resolve(HttpResponse.json({}, { status: 503 }))
+          })
+        return HttpResponse.json(volume('month', 22))
+      }),
+    )
+    const tracking = track()
+    try {
+      const user = userEvent.setup()
+      render(<DashboardView />)
+      await settled()
+      tracking.requests.length = 0
+      await user.click(screen.getByRole('button', { name: 'month', exact: true }))
+      expect(screen.getByTestId('panel-loading-volume')).toBeInTheDocument()
+      expect(screen.getByText('46 min')).toBeInTheDocument()
+      expect(screen.getByLabelText('Filter workouts by source')).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'week', exact: true })).toBeEnabled()
+      await waitFor(() => expect(release).toBeDefined())
+      await act(async () => release!())
+      expect(await screen.findByText('Could not load training volume.')).toBeInTheDocument()
+      expect(screen.queryByText('No data')).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'Retry unavailable panels' }),
+      ).not.toBeInTheDocument()
+      fail = false
+      await user.click(screen.getByRole('button', { name: 'Retry training volume' }))
+      await waitFor(() =>
+        expect(screen.queryByText('Could not load training volume.')).not.toBeInTheDocument(),
+      )
+      expect(screen.getByText('46 min')).toBeInTheDocument()
+      expect(tracking.requests.map((url) => url.pathname)).toEqual([
+        '/api/dashboard/volume',
+        '/api/dashboard/volume',
+      ])
+    } finally {
+      tracking.stop()
+    }
+  })
+
+  it('discards old volume success and failure across toggles, scope generations and unmount', async () => {
+    setupHandlers()
+    const pending: { url: URL; release: (failed?: boolean) => void; signal: AbortSignal }[] = []
+    // This adapter ignores abort so generation guards, rather than fetch cancellation,
+    // must reject its late success/failure.
+    const request = vi.spyOn(dashboardApi, 'fetchTrainingVolume').mockImplementation(
+      (scope, granularity, signal) =>
+        new Promise<TrainingVolumeResponse>((resolve, reject) => {
+          const url = new URL('/api/dashboard/volume', window.location.origin)
+          url.searchParams.set('granularity', granularity)
+          if (scope.start) url.searchParams.set('start', scope.start)
+          pending.push({
+            url,
+            signal: signal!,
+            release: (failed = false) =>
+              failed
+                ? reject(new Error('old volume failure'))
+                : resolve(volume(granularity, scope.start ? 33 : 99) as TrainingVolumeResponse),
+          })
+        }),
+    )
+    try {
+      const user = userEvent.setup()
+      const view = render(<DashboardView />)
+      await waitFor(() => expect(pending).toHaveLength(1))
+      // Controls must remain usable even before volume's first response.
+      await user.click(screen.getByRole('button', { name: 'month', exact: true }))
+      await waitFor(() => expect(pending).toHaveLength(2))
+      await user.click(screen.getByRole('button', { name: 'Latest 7 data days' }))
+      await waitFor(() => expect(pending).toHaveLength(3))
+      expect(pending[2]!.url.searchParams.get('start')).toBe('2024-12-25')
+      expect(pending[2]!.url.searchParams.get('granularity')).toBe('month')
+      expect(pending[0]!.signal.aborted).toBe(true)
+      expect(pending[1]!.signal.aborted).toBe(true)
+      await act(async () => pending[2]!.release())
+      expect(await screen.findByText('33')).toBeInTheDocument()
+      await act(async () => {
+        pending[0]!.release()
+        pending[1]!.release(true)
+      })
+      expect(screen.getByText('33')).toBeInTheDocument()
+      expect(screen.queryByText('99')).not.toBeInTheDocument()
+      expect(screen.queryByText('Could not load training volume.')).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'week', exact: true }))
+      await waitFor(() => expect(pending).toHaveLength(4))
+      view.unmount()
+      expect(pending[3]!.signal.aborted).toBe(true)
+      await act(async () => pending[3]!.release(true))
+    } finally {
+      request.mockRestore()
+    }
+  })
+})
+
+it('never commits previous volume under a newly selected granularity before effects run', async () => {
+  setupHandlers()
+  server.use(
+    http.get('/api/dashboard/volume', ({ request }) => {
+      if (new URL(request.url).searchParams.get('granularity') === 'month')
+        return new Promise(() => {})
+      return HttpResponse.json({
+        granularity: 'week',
+        totals: { sessions: 91, duration_minutes: 60, distance_meters: 1000, energy_kj: 100 },
+        series: [
+          {
+            bucket: '2024-W52',
+            sessions: 91,
+            duration_minutes: 60,
+            distance_meters: 1000,
+            energy_kj: 100,
+          },
+        ],
+        by_activity: [],
+      })
+    }),
+  )
+  const staleCommits: boolean[] = []
+  const user = userEvent.setup()
+  render(
+    <Profiler
+      id="volume-visibility"
+      onRender={() => {
+        // Commit-time DOM inspection precedes passive effects, where requests start.
+        if (
+          screen
+            .queryByRole('button', { name: 'month', exact: true })
+            ?.getAttribute('aria-pressed') === 'true'
+        )
+          staleCommits.push(screen.queryByText('91') !== null)
+      }}
+    >
+      <DashboardView />
+    </Profiler>,
+  )
+  await screen.findByText('91')
+  await user.click(screen.getByRole('button', { name: 'month', exact: true }))
+  expect(staleCommits.length).toBeGreaterThan(0)
+  expect(staleCommits).not.toContain(true)
 })

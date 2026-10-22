@@ -16,8 +16,6 @@ import logging
 import mmap
 import os
 import re
-import shutil
-import tempfile
 import time
 from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -26,6 +24,7 @@ from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from app.db.dataset_lifecycle import DatasetLifecycle
 from app.ingest.bytescan import WorkerResult, parse_byte_range
 from app.ingest.compatibility import (
     V2CompatibilityError,
@@ -33,6 +32,7 @@ from app.ingest.compatibility import (
     require_well_formed_export,
 )
 from app.ingest.reconcile import load_shards_into_duckdb
+from app.state.import_artifacts import ImportOperation, cleanup_artifact, current_operation
 
 if TYPE_CHECKING:
     import duckdb
@@ -230,8 +230,9 @@ def ingest(
     Args:
         xml_path: Path to the XML file
         n_workers: Number of workers (default: from env or the local auto policy)
-        shard_dir: Directory for Parquet shards (default: temporary directory)
-        cleanup: Whether to clean up the shard directory after ingestion (default: True)
+        shard_dir: Parent root for a unique owned run child (default: temporary root)
+        cleanup: Remove owned shards on parse failure (default: True). Successful
+            parsing retains shards for reconciliation; ingest_v2 removes them after loading.
 
     Returns:
         Dictionary with aggregated counts from all workers
@@ -244,22 +245,49 @@ def ingest(
     # process overhead; explicit CLI/environment overrides remain authoritative.
     n_workers = resolve_worker_count(xml_path.stat().st_size, n_workers)
 
-    # Determine shard directory - use temporary directory by default to avoid conflicts
-    if shard_dir is None:
-        shard_dir_str = os.environ.get("TTI_INGEST_SHARDS")
-        if shard_dir_str:
-            shard_dir = Path(shard_dir_str).resolve()
-        else:
-            # Create a unique temporary directory for this ingestion run
-            shard_dir = Path(tempfile.mkdtemp(prefix="tti_shards_"))
-    else:
-        shard_dir = Path(shard_dir).resolve()
+    # Configured locations are caller-owned roots, never disposable contents.
+    configured_root = shard_dir if shard_dir is not None else os.environ.get("TTI_INGEST_SHARDS")
+    root = Path(configured_root).resolve() if configured_root is not None else None
+    if root is not None:
+        root.mkdir(parents=True, exist_ok=True)
+    operation = current_operation()
+    owns_operation = operation is None
+    if operation is None:
+        operation = ImportOperation.create(DatasetLifecycle())
+    if root is None:
+        root = operation.lifecycle.root / "shards"
+    shard_dir = operation.new_directory("shards", root)
+    identity = (operation.lifecycle.target, operation.id)
+    try:
+        with operation.current():
+            result = _parse_to_shards(xml_path, n_workers, shard_dir)
+    except BaseException:
+        if cleanup:
+            _cleanup_owned_shards(shard_dir, identity)
+        if owns_operation:
+            operation.close()
+        raise
+    result["_shard_identity"] = identity
+    if owns_operation:
+        result["_shard_handle"] = operation
+    return result
 
-    # Clean and create shard directory
-    if shard_dir.exists():
-        shutil.rmtree(shard_dir, ignore_errors=True)
-    shard_dir.mkdir(parents=True, exist_ok=True)
 
+def _cleanup_owned_shards(shard_dir: Path, identity: tuple[Path, str]) -> None:
+    """Clean only a recorded allocation; never infer authority from a basename."""
+    operation = None
+    try:
+        operation = ImportOperation.attach(DatasetLifecycle(identity[0]), identity[1])
+        cleanup_artifact(operation, shard_dir)
+    except (OSError, ValueError, RuntimeError):
+        logger.warning("ingest.cleanup.ownership_changed")
+    finally:
+        if operation is not None:
+            operation.close()
+
+
+def _parse_to_shards(xml_path: Path, n_workers: int, shard_dir: Path) -> dict[str, Any]:
+    """Parse into an already allocated run directory; the caller owns cleanup."""
     logger.info("ingest.open", extra={"payload": {"mode": "mmap"}})
     file_size = xml_path.stat().st_size
     logger.info("ingest.open.file", extra={"payload": {"size_bytes": file_size}})
@@ -283,34 +311,19 @@ def ingest(
             # restricted runtimes (including sandboxed CI) expose no named
             # semaphores; correctness is preserved with a visible serial
             # fallback rather than failing an otherwise valid import.
-            try:
-                if not ranges:
-                    logger.info("ingest.worker.empty")
-                    results: list[WorkerResult] = []
-                elif len(ranges) <= 1:
-                    logger.info("ingest.worker.single")
-                    results = _run_worker_ranges_serial(xml_path, ranges, shard_dir)
-                elif not _multiprocessing_available():
-                    logger.warning("Multiprocessing is unavailable; processing the import serially")
-                    results = _run_worker_ranges_serial(xml_path, ranges, shard_dir)
-                else:
-                    logger.info(
-                        "ingest.worker.parallel", extra={"payload": {"workers": len(ranges)}}
-                    )
-                    results = _run_worker_ranges_parallel(xml_path, ranges, shard_dir)
-            except Exception:
-                # Never leave a partially-written shard set that a later caller
-                # could mistake for a complete import.
-                if cleanup:
-                    shutil.rmtree(shard_dir, ignore_errors=True)
-                raise
-
-            try:
-                _assert_top_level_counts(results, expected_top_level_counts)
-            except Exception:
-                if cleanup:
-                    shutil.rmtree(shard_dir, ignore_errors=True)
-                raise
+            if not ranges:
+                logger.info("ingest.worker.empty")
+                results: list[WorkerResult] = []
+            elif len(ranges) <= 1:
+                logger.info("ingest.worker.single")
+                results = _run_worker_ranges_serial(xml_path, ranges, shard_dir)
+            elif not _multiprocessing_available():
+                logger.warning("Multiprocessing is unavailable; processing the import serially")
+                results = _run_worker_ranges_serial(xml_path, ranges, shard_dir)
+            else:
+                logger.info("ingest.worker.parallel", extra={"payload": {"workers": len(ranges)}})
+                results = _run_worker_ranges_parallel(xml_path, ranges, shard_dir)
+            _assert_top_level_counts(results, expected_top_level_counts)
 
     # Aggregate results
     total_records = sum(r.records_count for r in results)
@@ -370,13 +383,44 @@ def _validate_worker_results(
     return [by_worker[index] for index in range(expected_worker_count)]
 
 
+def _worker_ownership() -> tuple[str, str] | None:
+    operation = current_operation()
+    return (str(operation.lifecycle.target), operation.id) if operation else None
+
+
+def _parse_owned_range(
+    *,
+    ownership: tuple[str, str] | None,
+    xml_path: str,
+    start_byte: int,
+    end_byte: int,
+    worker_idx: int,
+    shard_dir: str,
+) -> WorkerResult:
+    operation = None
+    try:
+        if ownership is not None:
+            operation = ImportOperation.attach(DatasetLifecycle(Path(ownership[0])), ownership[1])
+        return parse_byte_range(
+            xml_path=xml_path,
+            start_byte=start_byte,
+            end_byte=end_byte,
+            worker_idx=worker_idx,
+            shard_dir=shard_dir,
+        )
+    finally:
+        if operation is not None:
+            operation.close()
+
+
 def _run_worker_ranges_serial(
     xml_path: Path, ranges: list[tuple[int, int]], shard_dir: Path
 ) -> list[WorkerResult]:
     """Run ranges in worker order for the one-process fallback path."""
     results: list[WorkerResult] = []
     for worker_idx, (start, end) in enumerate(ranges):
-        result = parse_byte_range(
+        result = _parse_owned_range(
+            ownership=_worker_ownership(),
             xml_path=str(xml_path),
             start_byte=start,
             end_byte=end,
@@ -412,7 +456,8 @@ def _run_worker_ranges_parallel(
     try:
         for worker_idx, (start, end) in enumerate(ranges):
             future = executor.submit(
-                parse_byte_range,
+                _parse_owned_range,
+                ownership=_worker_ownership(),
                 xml_path=str(xml_path),
                 start_byte=start,
                 end_byte=end,
@@ -527,13 +572,6 @@ def ingest_v2(
         load_time = time.time() - load_start
 
         logger.info("ingest.load.complete", extra={"payload": {"seconds": round(load_time, 3)}})
-
-        # Cleanup temporary shard directory after successful load
-        if shard_dir and Path(shard_dir).exists():
-            # Check if it's a temporary directory (starts with tti_shards_)
-            if Path(shard_dir).name.startswith("tti_shards_"):
-                logger.info("ingest.cleanup.shards")
-                shutil.rmtree(shard_dir, ignore_errors=True)
     except Exception as e:
         logger.error("ingest.load.failed")
         if isinstance(e, FileNotFoundError) and "No parquet files found" in str(e):
@@ -541,6 +579,12 @@ def ingest_v2(
                 "V2 compatibility gate failed: scanner produced no canonical rows"
             ) from e
         raise
+
+    finally:
+        _cleanup_owned_shards(Path(shard_dir), result["_shard_identity"])
+        handle = result.get("_shard_handle")
+        if isinstance(handle, ImportOperation):
+            handle.close()
 
     total_time = time.time() - overall_start
     logger.info("ingest.complete", extra={"payload": {"total_seconds": round(total_time, 3)}})

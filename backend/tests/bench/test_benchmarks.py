@@ -167,22 +167,33 @@ def test_chat_request_sqlite_connection_budget(seeded_db, isolated_state, monkey
     conversation_id = repository.create_conversation("Bench", active.id)
     request = ChatRequest(question="show my last run", conversation_id=conversation_id)
 
+    hits: list[bool] = []
+
     def _run_request() -> None:
         diagnostics = DiagnosticsRepository()
         with diagnostics.buffer() as buffer:
             prepared = _prepare_chat(request, seeded_db, repository, buffer)
+            from app.db.queries import get_last_workout
+
+            hits.append(prepared.cache_hit)
+            card = get_last_workout(seeded_db, activity_type="Running")
+            assert card is not None
             response = prepared.response or ChatResponse(
-                template_id="fallback",
-                data={"question": request.question, "table": None, "text": "local"},
-                narrative="local",
+                template_id="workout_card",
+                data=card.model_dump(mode="json"),
+                narrative="Synthetic local result.",
                 metadata=ResponseMetadata(provenance="deterministic_local"),
             )
             _finalize_chat(prepared, request, response, time.perf_counter(), buffer)
 
-    _run_request()  # warm the exact cache; both connection phases are measured below
-    before = calls["n"]
-    _run_request()  # cache hit: prepare, finalize, and one diagnostics flush
-    budget = calls["n"] - before
+    from app.db.connection import DatasetSnapshot, bind_dataset_snapshot
+
+    with bind_dataset_snapshot(DatasetSnapshot(seeded_db, None, manifest=active)):
+        _run_request()  # Seed a real cacheable envelope under this embedded identity.
+        before = calls["n"]
+        _run_request()
+        budget = calls["n"] - before
+    assert hits == [False, True]
 
     # One prepare session connection, one finalize session connection, and one
     # diagnostics flush connection — never one per accessor.

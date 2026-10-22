@@ -7,6 +7,7 @@ import { ChatView } from '@/components/chat-view'
 const server = setupServer(
   http.get('/health', () => HttpResponse.json({ status: 'ok' })),
   http.get('/api/conversations', () => HttpResponse.json([])),
+  http.get('/api/settings', () => HttpResponse.json({ dataset: null })),
   http.post('/api/conversations', () => HttpResponse.json({ id: 'cv_test' })),
 )
 beforeAll(() => server.listen())
@@ -202,7 +203,11 @@ describe('ChatView', () => {
   it('shows the safe unknown-template fallback for a live answer', async () => {
     server.use(
       http.post('/api/chat', () =>
-        HttpResponse.json({ template_id: 'future_template', data: {}, narrative: 'Future answer.' }),
+        HttpResponse.json({
+          template_id: 'future_template',
+          data: {},
+          narrative: 'Future answer.',
+        }),
       ),
     )
     const user = userEvent.setup()
@@ -243,10 +248,15 @@ describe('ChatView', () => {
   })
 
   it('seed prompt submits directly and shows the query', async () => {
-    server.use(http.post('/api/chat', () => HttpResponse.json(WORKOUT_ENVELOPE)))
+    server.use(
+      http.post('/api/chat', () => HttpResponse.json(WORKOUT_ENVELOPE)),
+      http.get('/api/settings', () =>
+        HttpResponse.json({ dataset: { counts: { workouts: 3 } }, quality: { metric_states: {} } }),
+      ),
+    )
     const user = userEvent.setup()
     render(<ChatView />)
-    await user.click(screen.getByRole('button', { name: /last long run/i }))
+    await user.click(await screen.findByRole('button', { name: /last workout/i }))
     await waitFor(() => {
       expect(screen.getByText('Running')).toBeInTheDocument()
     })
@@ -324,25 +334,27 @@ describe('ChatView', () => {
     expect(laterRequest).not.toHaveProperty('parent_turn_id')
   })
 
-  it('shows a dismissible degraded-answer notice for fallback responses', async () => {
-    const FALLBACK_ENVELOPE = {
-      template_id: 'fallback',
-      data: { question: 'blah', table: null, text: 'Try again.' },
-      narrative: 'Try again.',
-      metadata: {
-        api_version: 'v1' as const,
-        provenance: 'fallback' as const,
-        dataset_version_id: 'ds_fixture',
-      },
-    }
-    server.use(http.post('/api/chat', () => HttpResponse.json(FALLBACK_ENVELOPE)))
+  it('renders fallback guidance without blaming the local model', async () => {
+    server.use(
+      http.post('/api/chat', () =>
+        HttpResponse.json({
+          template_id: 'fallback',
+          data: {
+            question: 'pace',
+            table: null,
+            text: 'Pace ranking is unsupported.',
+            reason: 'unsupported',
+          },
+          narrative: '',
+        }),
+      ),
+    )
     const user = userEvent.setup()
     render(<ChatView />)
-    await user.type(screen.getByRole('textbox'), 'blah')
-    await user.click(screen.getByRole('button', { name: /ask/i }))
-    await screen.findByText(/showing a basic summary of your data/i)
-    await user.click(screen.getByRole('button', { name: /dismiss/i }))
-    expect(screen.queryByText(/showing a basic summary of your data/i)).not.toBeInTheDocument()
+    await user.type(screen.getByRole('textbox'), 'pace')
+    await user.click(screen.getByRole('button', { name: /^ask$/i }))
+    expect(await screen.findByRole('heading', { name: 'Not supported yet' })).toBeInTheDocument()
+    expect(screen.queryByText(/start it in Settings/i)).not.toBeInTheDocument()
   })
 
   it('shows no degraded-answer notice for full answers', async () => {
@@ -464,4 +476,128 @@ describe('ChatView', () => {
       await screen.findByText('Could not load conversations: List unavailable'),
     ).toBeInTheDocument()
   })
+})
+
+it('formats provenance coverage with the shared readable date range', async () => {
+  server.use(
+    http.post('/api/chat', () =>
+      HttpResponse.json({
+        ...WORKOUT_ENVELOPE,
+        metadata: {
+          ...WORKOUT_ENVELOPE.metadata,
+          coverage_start: '2026-06-01',
+          coverage_end: '2026-06-10',
+        },
+      }),
+    ),
+  )
+  const user = userEvent.setup()
+  render(<ChatView />)
+  await user.type(screen.getByRole('textbox'), 'last run')
+  await user.click(screen.getByRole('button', { name: /ask/i }))
+  expect(await screen.findByText(/data coverage 1 Jun 2026 to 10 Jun 2026/)).toBeInTheDocument()
+  expect(screen.queryByText(/data coverage 2026-/)).not.toBeInTheDocument()
+})
+
+const ANALYTICS_ENVELOPES = [
+  {
+    template_id: 'trend_chart',
+    data: {
+      title: 'Sleep interval coverage',
+      metric_label: 'Sleep',
+      metric_unit: 'hours',
+      granularity: 'day',
+      series: [{ bucket: '2026-06-01', value: 2.5 }],
+    },
+    narrative: 'Coverage includes awake and in-bed records.',
+  },
+  {
+    template_id: 'comparison',
+    data: {
+      title: 'Measured metric comparison',
+      this_period_label: '1–7 Jun 2026',
+      last_period_label: '25–27 May 2026',
+      metrics: [
+        {
+          label: 'Steps per observed day',
+          unit: 'steps/day',
+          this_value: 8000,
+          last_value: null,
+          delta: null,
+          direction: 'flat',
+          direction_tone: 'neutral',
+          this_observed_days: 4,
+          this_requested_days: 7,
+          last_observed_days: 0,
+          last_requested_days: 3,
+        },
+      ],
+    },
+    narrative: 'Compare imported measurements.',
+  },
+]
+
+it.each(ANALYTICS_ENVELOPES)(
+  'keeps the analytics question visible through loading and success ($template_id)',
+  async (envelope) => {
+    let release: () => void = () => {}
+    server.use(
+      http.post('/api/chat', async () => {
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+        return HttpResponse.json(envelope)
+      }),
+    )
+    const user = userEvent.setup()
+    render(<ChatView />)
+    const question =
+      envelope.template_id === 'trend_chart'
+        ? 'Show daily sleep last week'
+        : 'Compare steps from 1–7 June 2026 with 8–14 June 2026'
+    await user.type(screen.getByRole('textbox'), question)
+    await user.click(screen.getByRole('button', { name: /ask/i }))
+    await screen.findByText(/thinking about/i)
+    expect(screen.getByText(question)).toBeInTheDocument()
+    release()
+    expect(await screen.findByText(envelope.narrative)).toBeInTheDocument()
+    expect(screen.getByText(question)).toBeInTheDocument()
+  },
+)
+
+it.each([
+  {
+    template_id: 'fallback',
+    data: {
+      text: 'No matching sleep records. Try a wider date range.',
+      reason: 'no_matching_data',
+    },
+    narrative: '',
+  },
+  { template_id: 'future_analytics', data: {}, narrative: '' },
+])(
+  'keeps the sleep question visible for empty and unknown answers ($template_id)',
+  async (envelope) => {
+    server.use(http.post('/api/chat', () => HttpResponse.json(envelope)))
+    const user = userEvent.setup()
+    render(<ChatView />)
+    await user.type(screen.getByRole('textbox'), 'Show sleep last week')
+    await user.click(screen.getByRole('button', { name: /ask/i }))
+    await screen.findByText(
+      envelope.template_id === 'fallback' ? /No matching sleep records/ : /Unknown template/,
+    )
+    expect(screen.getByText('Show sleep last week')).toBeInTheDocument()
+  },
+)
+
+it('retains the metric question with an actionable error', async () => {
+  server.use(
+    http.post('/api/chat', () => HttpResponse.json({ detail: 'Synthetic error' }, { status: 500 })),
+  )
+  const user = userEvent.setup()
+  render(<ChatView />)
+  await user.type(screen.getByRole('textbox'), 'Compare steps this week')
+  await user.click(screen.getByRole('button', { name: /ask/i }))
+  await screen.findByRole('button', { name: /retry/i })
+  expect(screen.getByText('Compare steps this week')).toBeInTheDocument()
 })

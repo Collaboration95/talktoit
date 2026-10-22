@@ -12,10 +12,12 @@ therefore convert local dates to UTC bounds before querying.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
+from app.analytics.metric_catalog import METRIC_CATALOG
 from app.db.aggregations import (
     DEFAULT_TZ,
     METRIC_AGGREGATION,
@@ -255,6 +257,19 @@ WHERE type = ?
   AND start_date < ?
   AND value IS NOT NULL
 ORDER BY start_date
+"""
+
+_SQL_NUMERIC_TREND = """
+WITH observations AS (
+    SELECT date_trunc(?, timezone(?, timezone('UTC', start_date)))::DATE AS bucket,
+           value
+    FROM records
+    WHERE type = ? AND start_date >= ? AND start_date < ? AND value IS NOT NULL
+)
+SELECT bucket, CASE WHEN ? = 'sum' THEN SUM(value) ELSE AVG(value) END
+FROM observations
+GROUP BY bucket
+ORDER BY bucket
 """
 
 _SQL_WORKOUTS_STATS = f"""
@@ -711,22 +726,13 @@ def get_trend(
     agg = aggregation or METRIC_AGGREGATION.get(metric_id, "avg")
     utc_start, utc_end = _utc_bounds(start, end, tz)
 
-    rows = conn.execute(_SQL_TREND, [metric_id, utc_start, utc_end]).fetchall()
-
-    # Group by bucket in Python
-    bucket_values: dict[str, list[float]] = {}
-    for start_date_utc, value in rows:
-        local_dt = _to_local_dt(start_date_utc, tz)
-        key = bucket_key(local_dt.date(), granularity)
-        bucket_values.setdefault(key, []).append(float(value))
-
-    # Aggregate
-    aggregated: dict[str, float] = {}
-    for key, vals in bucket_values.items():
-        if agg == "sum":
-            aggregated[key] = sum(vals)
-        else:
-            aggregated[key] = sum(vals) / len(vals)
+    # UTC-naive timestamps must first acquire UTC before local bucketing.
+    # Only bucket rows cross the DuckDB boundary; labels and gap filling retain
+    # the same shared Python helpers (including ISO week-year labels).
+    rows = conn.execute(
+        _SQL_NUMERIC_TREND, [granularity, tz, metric_id, utc_start, utc_end, agg]
+    ).fetchall()
+    aggregated = {bucket_key(bucket, granularity): float(value) for bucket, value in rows}
 
     # Fill all buckets, None for missing
     all_buckets = generate_buckets(start, end, granularity)
@@ -864,6 +870,7 @@ def get_comparison(
     activity_type: str | None = None,
     title: str | None = None,
     tz: str = DEFAULT_TZ,
+    metric_ids: Sequence[str] | None = None,
 ) -> ComparisonData:
     """Compare training metrics between two consecutive periods.
 
@@ -877,11 +884,16 @@ def get_comparison(
         last_label: Human-readable label for the prior period.
         activity_type: When set, restricts comparison to this activity type.
         title: Override the auto-generated comparison title.
+        metric_ids: Supported numeric metrics; omit to retain the workout comparison.
         tz: IANA timezone for UTC bounds conversion.
 
     Returns:
         A :class:`ComparisonData` with four :class:`ComparisonMetric` rows.
     """
+    if metric_ids is not None:
+        return _metric_comparison(
+            conn, metric_ids, this_start, this_end, last_start, last_end, this_label, last_label, tz
+        )
     this_utc_start, this_utc_end = _utc_bounds(this_start, this_end, tz)
     last_utc_start, last_utc_end = _utc_bounds(last_start, last_end, tz)
 
@@ -958,3 +970,121 @@ def get_fallback(
         A :class:`FallbackData` payload.
     """
     return FallbackData(question=question, table=table, text=text)
+
+
+SQL_SLEEP_ROWS = """
+SELECT start_date, end_date, text_value
+FROM records
+WHERE type = 'HKCategoryTypeIdentifierSleepAnalysis'
+  AND source_name != 'AutoSleep'
+  AND start_date >= ? AND start_date < ?
+ORDER BY start_date
+"""
+
+
+def union_interval_hours(intervals: list[tuple[datetime, datetime]]) -> float:
+    """Union overlapping or touching intervals without clipping or splitting them."""
+    merged: list[list[datetime]] = []
+    for start, end in sorted(intervals):
+        if not merged or start > merged[-1][1]:
+            merged.append([start, end])
+        elif end > merged[-1][1]:
+            merged[-1][1] = end
+    return sum((end - start).total_seconds() / 3600 for start, end in merged)
+
+
+def get_sleep_trend(
+    conn: duckdb.DuckDBPyConnection,
+    start: date,
+    end: date,
+    granularity: Literal["day", "week", "month"],
+) -> TrendChartData:
+    """Measure all category-interval coverage using the dashboard start-bucket rules.
+
+    Awake and InBed participate; this is not time asleep. Whole overnight
+    intervals stay in their SGT start bucket. SQL deliberately excludes NULL
+    sources along with the exact AutoSleep source. Empty buckets remain null.
+    """
+    if start > end:
+        raise ValueError("sleep period start must not be after its end")
+    bounds = utc_bounds(start, end, DEFAULT_TZ)
+    rows = conn.execute(SQL_SLEEP_ROWS, list(bounds)).fetchall()
+    intervals: dict[str, list[tuple[datetime, datetime]]] = {}
+    for start_dt, end_dt, _label in rows:
+        local_start = to_local_dt(start_dt, DEFAULT_TZ)
+        key = bucket_key(local_start.date(), granularity)
+        bucket = intervals.setdefault(key, [])
+        if end_dt is not None:
+            bucket.append((local_start, to_local_dt(end_dt, DEFAULT_TZ)))
+    values = {key: union_interval_hours(items) for key, items in intervals.items()}
+    return TrendChartData(
+        title="Sleep interval coverage",
+        metric_label="Sleep",
+        metric_unit="hours",
+        granularity=granularity,
+        series=[
+            TrendPoint(bucket=b, value=values.get(b))
+            for b in generate_buckets(start, end, granularity)
+        ],
+    )
+
+
+def _metric_period_value(
+    conn: duckdb.DuckDBPyConnection, metric_id: str, start: date, end: date, tz: str
+) -> tuple[float | None, int]:
+    definition = METRIC_CATALOG[metric_id]
+    bounds = utc_bounds(start, end, tz)
+    rows = conn.execute(_SQL_TREND, [definition.apple_types[0], *bounds]).fetchall()
+    daily: dict[date, list[float]] = {}
+    for start_dt, value in rows:
+        daily.setdefault(to_local_dt(start_dt, tz).date(), []).append(float(value))
+    if not daily:
+        return None, 0
+    if metric_id == "steps":
+        return sum(sum(items) for items in daily.values()) / len(daily), len(daily)
+    values = [value for items in daily.values() for value in items]
+    return sum(values) / len(values), len(daily)
+
+
+def _metric_comparison(
+    conn: duckdb.DuckDBPyConnection,
+    metric_ids: Sequence[str],
+    this_start: date,
+    this_end: date,
+    last_start: date,
+    last_end: date,
+    this_label: str,
+    last_label: str,
+    tz: str,
+) -> ComparisonData:
+    if not metric_ids or set(metric_ids) - {"steps", "resting_hr", "hrv"}:
+        raise ValueError("Only steps, resting_hr and hrv comparisons are supported")
+    if this_start > this_end or last_start > last_end:
+        raise ValueError("comparison period start must not be after its end")
+    metrics: list[ComparisonMetric] = []
+    for metric_id in dict.fromkeys(metric_ids):
+        definition = METRIC_CATALOG[metric_id]
+        current, current_days = _metric_period_value(conn, metric_id, this_start, this_end, tz)
+        prior, prior_days = _metric_period_value(conn, metric_id, last_start, last_end, tz)
+        metrics.append(
+            ComparisonMetric(
+                label="Steps per observed day" if metric_id == "steps" else definition.label,
+                this_value=current,
+                last_value=prior,
+                delta=compute_delta(current, prior),
+                unit="steps/day" if metric_id == "steps" else definition.unit,
+                direction=compute_direction(current, prior),
+                this_observed_days=current_days,
+                this_requested_days=(this_end - this_start).days + 1,
+                last_observed_days=prior_days,
+                last_requested_days=(last_end - last_start).days + 1,
+                value_basis="observed_day_mean" if metric_id == "steps" else "observation_mean",
+                direction_tone="neutral",
+            )
+        )
+    return ComparisonData(
+        title="Measured metric comparison",
+        this_period_label=this_label,
+        last_period_label=last_label,
+        metrics=metrics,
+    )

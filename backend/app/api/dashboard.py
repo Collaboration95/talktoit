@@ -24,13 +24,12 @@ from app.analytics.registry import (
 from app.api.deps import get_app_state_repository
 from app.db.aggregations import (
     DEFAULT_TZ,
-    bucket_key,
-    generate_buckets,
     minutes_from_duration,
     to_local_dt,
     utc_bounds,
 )
-from app.db.connection import connect, lease_connection, resolve_db_path
+from app.db.async_worker import db_worker_endpoint
+from app.db.connection import dataset_snapshot, resolve_db_path, snapshot_for_connection
 from app.db.dashboard_cache import (
     CapabilitiesGlobal,
     DashboardContext,
@@ -39,11 +38,17 @@ from app.db.dashboard_cache import (
     resolve_dashboard_context,
 )
 from app.db.data_profile import DataProfile
+from app.db.dataset_lifecycle import DatasetBusyError, DatasetRecoveryError
 from app.db.migrate import table_has_column
 from app.db.queries import (
     SQL_DISTANCE_BY_WORKOUT,
     SQL_ENERGY_BY_WORKOUT,
+    SQL_SLEEP_ROWS,
+    get_sleep_trend,
     get_training_volume,
+)
+from app.db.queries import (
+    union_interval_hours as _union_interval_hours,
 )
 from app.ingest.gpx import parse_gpx_route
 from app.models.dashboard import (
@@ -113,14 +118,7 @@ LIMIT ?
 # The sleep trend and the sleep-stage panel read the same rows through this one
 # query, so their source policy cannot drift: measured sleep intervals only,
 # excluding AutoSleep's metadata-only summary records.
-_SQL_SLEEP_ROWS = """
-SELECT start_date, end_date, text_value
-FROM records
-WHERE type = 'HKCategoryTypeIdentifierSleepAnalysis'
-  AND source_name != 'AutoSleep'
-  AND start_date >= ? AND start_date < ?
-ORDER BY start_date
-"""
+_SQL_SLEEP_ROWS = SQL_SLEEP_ROWS
 
 _SQL_CAPABILITIES_RECORD_HEALTH = """
 SELECT type, COUNT(*) AS row_count, COUNT(value) AS numeric_count, COUNT(text_value) AS text_count
@@ -225,14 +223,11 @@ LIMIT 1
 
 def _get_conn() -> Generator[duckdb.DuckDBPyConnection, None, None]:
     """FastAPI dependency — open a DB connection for the request lifetime."""
-    conn = connect(read_only=True)
     try:
-        # Leased for the request so a concurrent import/deletion never closes
-        # the connection while this handler is still reading from it.
-        with lease_connection(conn):
-            yield conn
-    finally:
-        conn.close()
+        with dataset_snapshot() as snapshot:
+            yield snapshot.connection
+    except (DatasetBusyError, DatasetRecoveryError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -368,7 +363,7 @@ def _resource_metadata(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/summary", response_model=ActivitySummaryResponse)
+@db_worker_endpoint(router.get("/summary", response_model=ActivitySummaryResponse))
 def get_summary(
     start: date | None = None,
     end: date | None = None,
@@ -402,7 +397,7 @@ def get_summary(
     )
 
 
-@router.get("/workouts", response_model=WorkoutsResponse)
+@db_worker_endpoint(router.get("/workouts", response_model=WorkoutsResponse))
 def get_workouts(
     start: date | None = None,
     end: date | None = None,
@@ -480,7 +475,7 @@ def get_workouts(
     )
 
 
-@router.get("/volume", response_model=TrainingVolumeResponse)
+@db_worker_endpoint(router.get("/volume", response_model=TrainingVolumeResponse))
 def get_volume(
     granularity: Literal["week", "month"] = Query(default="week"),
     start: date | None = None,
@@ -536,7 +531,7 @@ def get_volume(
     )
 
 
-@router.get("/steps", response_model=TrendResponse)
+@db_worker_endpoint(router.get("/steps", response_model=TrendResponse))
 def get_steps(
     granularity: str = Query(default="day", pattern="^(day|week|month)$"),
     start: date | None = None,
@@ -562,7 +557,7 @@ def get_steps(
     return response
 
 
-@router.get("/heart", response_model=TrendResponse)
+@db_worker_endpoint(router.get("/heart", response_model=TrendResponse))
 def get_heart(
     granularity: str = Query(default="week", pattern="^(day|week|month)$"),
     start: date | None = None,
@@ -588,7 +583,7 @@ def get_heart(
     return response
 
 
-@router.get("/sleep", response_model=TrendResponse)
+@db_worker_endpoint(router.get("/sleep", response_model=TrendResponse))
 def get_sleep(
     granularity: str = Query(default="day", pattern="^(day|week|month)$"),
     start: date | None = None,
@@ -596,39 +591,13 @@ def get_sleep(
     conn: duckdb.DuckDBPyConnection = Depends(_get_conn),  # noqa: B008
     repo: AppStateRepository | None = Depends(get_app_state_repository),  # noqa: B008
 ) -> TrendResponse:
-    """Return daily sleep duration trend (default: latest 30 local-data days)."""
+    """Return measured sleep interval coverage (default: latest 30 local-data days)."""
     started_at = time.perf_counter()
     context = resolve_dashboard_context(conn, repo)
     start_date, end_date = _resolve_window(context.profile, start, end, days=30)
 
-    utc_start, utc_end = utc_bounds(start_date, end_date, DEFAULT_TZ)
-    rows = conn.execute(_SQL_SLEEP_ROWS, [utc_start, utc_end]).fetchall()
-
-    # Apple Health commonly stores overlapping in-bed, awake, and stage
-    # intervals.  The raw category value is not persisted, so sum-of-rows
-    # double-counts sleep. Merge intervals instead to report elapsed time.
-    bucket_intervals: dict[str, list[tuple[datetime, datetime]]] = {}
-    for start_dt_utc, end_dt_utc, _text_value in rows:
-        local_start = to_local_dt(start_dt_utc, DEFAULT_TZ)
-        local_end = to_local_dt(end_dt_utc, DEFAULT_TZ)
-        key = bucket_key(local_start.date(), granularity)  # type: ignore[arg-type]
-        bucket_intervals.setdefault(key, []).append((local_start, local_end))
-
-    bucket_sums: dict[str, float] = {}
-    for key, intervals in bucket_intervals.items():
-        merged: list[list[datetime]] = []
-        for interval_start, interval_end in sorted(intervals):
-            if not merged or interval_start > merged[-1][1]:
-                merged.append([interval_start, interval_end])
-            elif interval_end > merged[-1][1]:
-                merged[-1][1] = interval_end
-        bucket_sums[key] = sum(
-            (interval_end - interval_start).total_seconds() / 3600.0
-            for interval_start, interval_end in merged
-        )
-
-    all_buckets = generate_buckets(start_date, end_date, granularity)  # type: ignore[arg-type]
-    series = [TrendPoint(bucket=b, value=bucket_sums.get(b)) for b in all_buckets]
+    chart = get_sleep_trend(conn, start_date, end_date, granularity)  # type: ignore[arg-type]
+    series = [TrendPoint(bucket=p.bucket, value=p.value) for p in chart.series]
 
     return TrendResponse(
         metric_label="Sleep",
@@ -636,12 +605,17 @@ def get_sleep(
         granularity=granularity,
         series=series,
         resource=_resource_metadata(
-            context, start_date, end_date, started_at, bool(bucket_sums), "sleep"
+            context,
+            start_date,
+            end_date,
+            started_at,
+            any(p.value is not None for p in series),
+            "sleep",
         ),
     )
 
 
-@router.get("/sleep/stages", response_model=SleepStagesResponse)
+@db_worker_endpoint(router.get("/sleep/stages", response_model=SleepStagesResponse))
 def get_sleep_stages(
     start: date | None = None,
     end: date | None = None,
@@ -714,7 +688,7 @@ def get_sleep_stages(
     )
 
 
-@router.get("/capabilities", response_model=CapabilitiesResponse)
+@db_worker_endpoint(router.get("/capabilities", response_model=CapabilitiesResponse))
 def get_capabilities(
     start: date | None = None,
     end: date | None = None,
@@ -865,23 +839,12 @@ def _build_trend(
     )
 
 
-def _union_interval_hours(intervals: list[tuple[datetime, datetime]]) -> float:
-    """Return elapsed hours for intervals after merging compatible overlaps."""
-    merged: list[list[datetime]] = []
-    for interval_start, interval_end in sorted(intervals):
-        if not merged or interval_start > merged[-1][1]:
-            merged.append([interval_start, interval_end])
-        elif interval_end > merged[-1][1]:
-            merged[-1][1] = interval_end
-    return sum((end - start).total_seconds() / 3600.0 for start, end in merged)
-
-
 # ---------------------------------------------------------------------------
 # Workout detail (R1-01)
 # ---------------------------------------------------------------------------
 
 
-@router.get("/workouts/{workout_id}", response_model=WorkoutDetail)
+@db_worker_endpoint(router.get("/workouts/{workout_id}", response_model=WorkoutDetail))
 def get_workout_detail(
     workout_id: int = Path(ge=1),
     fingerprint: str | None = Query(default=None, pattern="^[a-f0-9]{16}$"),
@@ -929,8 +892,13 @@ def get_workout_detail(
     route = WorkoutRouteState(state="missing", message="No route is available for this workout.")
     route_path_row = conn.execute(_SQL_WORKOUT_ROUTE_PATH, [workout_id]).fetchone()
     if route_path_row is not None and route_path_row[0] is not None:
-        export_root = _resolve_export_root(repo)
-        gps_route = parse_gpx_route(route_path_row[0], allowed_root=export_root)
+        snapshot = snapshot_for_connection(conn)
+        export_root = snapshot.export_root if snapshot else None
+        gps_route = (
+            parse_gpx_route(route_path_row[0], allowed_root=export_root)
+            if export_root is not None
+            else None
+        )
         if gps_route is None:
             route = WorkoutRouteState(state="invalid", message="The saved route could not be read.")
         else:

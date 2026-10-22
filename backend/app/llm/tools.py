@@ -20,10 +20,11 @@ from app.analytics.registry import (
     execute_metric_trend,
     execute_period_summary,
     execute_ranked_workouts,
+    execute_sleep_trend,
 )
 from app.db import queries
 from app.db.data_profile import resolve_activity_type
-from app.models.templates import FallbackData
+from app.models.templates import FallbackData, FallbackReason
 
 
 class _StrictToolInput(BaseModel):
@@ -75,6 +76,17 @@ class _TrendToolInput(_StrictToolInput):
         return self
 
 
+class _SleepTrendToolInput(_StrictToolInput):
+    start_date: date
+    end_date: date
+    granularity: Literal["day", "week", "month"]
+
+    @model_validator(mode="after")
+    def ordered_dates(self) -> _SleepTrendToolInput:
+        _validate_date_range(self.start_date, self.end_date)
+        return self
+
+
 class _PeriodSummaryToolInput(_StrictToolInput):
     start_date: date
     end_date: date
@@ -96,6 +108,10 @@ class _ComparisonToolInput(_StrictToolInput):
     last_label: str = Field(min_length=1, max_length=160)
     activity_type: str | None = Field(default=None, min_length=1, max_length=160)
 
+    metric_ids: list[Literal["steps", "resting_hr", "hrv"]] | None = Field(
+        default=None, min_length=1
+    )
+
     @model_validator(mode="after")
     def ordered_dates(self) -> _ComparisonToolInput:
         if self.this_start > self.this_end or self.last_start > self.last_end:
@@ -107,6 +123,7 @@ class _FallbackToolInput(_StrictToolInput):
     """Validated, bounded fallback text returned by a provider."""
 
     text: str = Field(default="", max_length=500)
+    reason: FallbackReason | None = None
 
 
 if TYPE_CHECKING:
@@ -234,6 +251,11 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "metric_ids": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {"type": "string", "enum": ["steps", "resting_hr", "hrv"]},
+                    },
                     "this_start": {
                         "type": "string",
                         "description": "ISO date YYYY-MM-DD — start of current period",
@@ -298,6 +320,7 @@ TOOL_TEMPLATE_IDS: dict[str, str] = {
     "get_last_workout": "workout_card",
     "get_top_workouts": "ranked_list",
     "get_trend": "trend_chart",
+    "get_sleep_trend": "trend_chart",
     "get_period_summary": "period_summary",
     "get_comparison": "comparison",
     "get_fallback_answer": "fallback",
@@ -344,7 +367,11 @@ def _tool_get_last_workout(
         fallback = FallbackData(
             question=question,
             table=None,
-            text=f"No {activity_type or 'workouts'} found.",
+            text=(
+                f"No matching {activity_type or 'workouts'} found. "
+                "Try a wider date range or another workout type."
+            ),
+            reason="no_matching_data",
         )
         return ("fallback", fallback.model_dump(mode="json"))
     return ("workout_card", result.model_dump(mode="json"))
@@ -459,6 +486,7 @@ def _tool_get_comparison(
             "this_label": this_label,
             "last_label": last_label,
             "activity_type": activity_type,
+            "metric_ids": args.get("metric_ids"),
         },
     )
     return ("comparison", result.model_dump(mode="json"))
@@ -479,6 +507,7 @@ def _tool_get_fallback_answer(
     """
     parsed = _FallbackToolInput.model_validate(args)
     result = queries.get_fallback(question, text=parsed.text.strip())
+    result.reason = parsed.reason
     return ("fallback", result.model_dump(mode="json"))
 
 
@@ -553,6 +582,13 @@ def dispatch_tool(
         return _tool_get_last_workout(args, conn, question)
     if tool_name == "get_top_workouts":
         return _tool_get_top_workouts(args, conn)
+    if tool_name == "get_sleep_trend":
+        parsed = _SleepTrendToolInput.model_validate(args)
+        result = execute_sleep_trend(
+            conn,
+            {"start": parsed.start_date, "end": parsed.end_date, "granularity": parsed.granularity},
+        )
+        return "trend_chart", result.model_dump(mode="json")
     if tool_name == "get_trend":
         return _tool_get_trend(args, conn)
     if tool_name == "get_period_summary":

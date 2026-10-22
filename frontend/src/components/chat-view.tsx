@@ -1,3 +1,4 @@
+import { formatDateRange, isValidDateOnly } from '@/lib/format'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { askQuestion, ChatApiError } from '@/api/chat'
 import { decodeChatEnvelope, recoveryChatEnvelope } from '@/api/decode-chat-envelope'
@@ -17,36 +18,13 @@ import { ChatInput } from '@/components/chat-input'
 import { SeedPrompts } from '@/components/seed-prompts'
 import { useBackendHealth } from '@/lib/use-backend-health'
 import { BackendDownBanner } from '@/components/backend-down-banner'
+import { fetchSettings } from '@/api/settings'
+import type { Settings } from '@/api/settings'
 
 type ChatTurn =
   | { id: string; status: 'loading'; question: string }
   | { id: string; status: 'success'; question: string; envelope: ChatEnvelope; expanded: boolean }
   | { id: string; status: 'error'; question: string; message: string }
-
-/** Notice shown above degraded fallback answers (GH-47).
-
-The fallback envelope means the full answer was unavailable — most often
-because the local language model is stopped. The copy stays factual and
-names the remedy without leaking prompts, SQL, or internals. */
-function FallbackNotice() {
-  const [dismissed, setDismissed] = useState(false)
-  if (dismissed) return null
-  return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-      <p>
-        Showing a basic summary of your data. If the local language model is stopped, start it in
-        Settings for richer answers.
-      </p>
-      <button
-        type="button"
-        className="mt-1 text-xs text-amber-700 underline"
-        onClick={() => setDismissed(true)}
-      >
-        Dismiss
-      </button>
-    </div>
-  )
-}
 
 /** Return a safe, human-readable message for a failed local request. */
 function messageOf(error: unknown, fallback: string): string {
@@ -54,7 +32,26 @@ function messageOf(error: unknown, fallback: string): string {
 }
 
 /** Top-level chat page component: input → loading → template result. */
-export function ChatView() {
+export function ChatView({ onOpenSettings }: { onOpenSettings?: () => void } = {}) {
+  const [capabilities, setCapabilities] = useState<Settings | null>(null)
+  const [capabilityError, setCapabilityError] = useState(false)
+  const [capabilityRetry, setCapabilityRetry] = useState(0)
+  useEffect(() => {
+    const controller = new AbortController()
+    let current = true
+    setCapabilityError(false)
+    fetchSettings(controller.signal)
+      .then((data) => {
+        if (current) setCapabilities(data)
+      })
+      .catch(() => {
+        if (current) setCapabilityError(true)
+      })
+    return () => {
+      current = false
+      controller.abort()
+    }
+  }, [capabilityRetry])
   const [turns, setTurns] = useState<ChatTurn[]>([])
   const [conversationId, setConversationId] = useState<string>()
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -423,7 +420,45 @@ export function ChatView() {
               onCancel={cancelActiveRequest}
               isLoading={isLoading}
             />
-            <SeedPrompts onSelect={handleQuestion} disabled={isLoading} />
+            {capabilityError ? (
+              <div className="text-sm text-gray-600">
+                <p>Could not load available questions. You can still type a specific question.</p>
+                <button type="button" onClick={() => setCapabilityRetry((value) => value + 1)}>
+                  Retry available questions
+                </button>
+              </div>
+            ) : capabilities ? (
+              capabilities.dataset ? (
+                <SeedPrompts
+                  onSelect={handleQuestion}
+                  disabled={isLoading}
+                  metricStates={capabilities.quality.metric_states}
+                  workoutCount={capabilities.dataset.counts['workouts'] ?? 0}
+                />
+              ) : (
+                <div className="rounded-lg bg-blue-50 p-4 text-sm text-gray-700">
+                  <p>
+                    Import Apple Health data to get started. On iPhone, open Health → profile →
+                    Export All Health Data. Transfer and unpack the ZIP on this computer, then
+                    select export.xml in Settings. Imports and supported questions stay local by
+                    default; no model is required.
+                  </p>
+                  {onOpenSettings ? (
+                    <button type="button" className="mt-2 text-blue-600" onClick={onOpenSettings}>
+                      Open Settings to import
+                    </button>
+                  ) : (
+                    <a className="text-blue-600" href="?tab=settings">
+                      Open Settings to import
+                    </a>
+                  )}
+                </div>
+              )
+            ) : (
+              <p role="status" className="text-xs text-gray-500">
+                Loading available questions…
+              </p>
+            )}
           </>
         ) : null}
       </div>
@@ -442,9 +477,6 @@ export function ChatView() {
             </div>
             {turn.status === 'loading' ? (
               <p className="text-sm text-gray-500">Thinking about: {turn.question}</p>
-            ) : null}
-            {turn.status === 'success' && turn.envelope.template_id === 'fallback' ? (
-              <FallbackNotice />
             ) : null}
             {turn.status === 'success' ? (
               <button
@@ -467,8 +499,9 @@ export function ChatView() {
                     : turn.envelope.metadata?.provenance === 'deterministic_local'
                       ? 'Deterministic local answer'
                       : 'Generated answer'}
-                  {turn.envelope.metadata?.coverage_start && turn.envelope.metadata?.coverage_end
-                    ? ` · data coverage ${turn.envelope.metadata.coverage_start} to ${turn.envelope.metadata.coverage_end}`
+                  {isValidDateOnly(turn.envelope.metadata?.coverage_start) &&
+                  isValidDateOnly(turn.envelope.metadata?.coverage_end)
+                    ? ` · data coverage ${formatDateRange(turn.envelope.metadata.coverage_start, turn.envelope.metadata.coverage_end)}`
                     : ''}
                   {turn.envelope.metadata?.dataset_version_id
                     ? ` · dataset ${turn.envelope.metadata.dataset_version_id}`

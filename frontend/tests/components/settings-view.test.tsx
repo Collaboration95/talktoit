@@ -5,7 +5,7 @@ import { setupServer } from 'msw/node'
 import { SettingsView } from '@/components/settings-view'
 import type { Settings } from '@/api/settings'
 
-const server = setupServer()
+const server = setupServer(http.get('/api/imports', () => HttpResponse.json([])))
 beforeAll(() => server.listen())
 afterEach(() => server.resetHandlers())
 afterAll(() => server.close())
@@ -225,4 +225,48 @@ describe('SettingsView', () => {
     ).not.toBeInTheDocument()
     await act(async () => {})
   })
+})
+
+it('distinguishes a reachable external endpoint with a missing model from a stopped server', async () => {
+  seedSuccess({
+    ...SETTINGS,
+    provider: {
+      ...SETTINGS.provider,
+      provider: 'local',
+      litert_status: {
+        ...SETTINGS.provider.litert_status!,
+        running: false,
+        endpoint_reachable: true,
+        model_available: false,
+        available: false,
+      },
+      litert_health: {
+        ok: false,
+        endpoint_reachable: true,
+        model_available: false,
+        error: 'Selected model is unavailable',
+      },
+    },
+  })
+  render(<SettingsView />)
+  expect(
+    await screen.findByText(/endpoint reachable; selected model unavailable/i),
+  ).toBeInTheDocument()
+  expect(screen.queryByText(/Stopped — chat uses/i)).not.toBeInTheDocument()
+})
+
+it('shows effective local privacy when a previously saved hosted mode remains in configuration', async () => {
+  seedSuccess({
+    ...SETTINGS,
+    provider: {
+      ...SETTINGS.provider,
+      provider: 'local',
+      mode: 'remote_planning_and_narration',
+      egress_categories: [],
+    },
+  })
+  render(<SettingsView />)
+  const privacy = await screen.findByRole('region', { name: 'Privacy' })
+  expect(privacy).toHaveTextContent('Local only — no network egress')
+  expect(privacy).not.toHaveTextContent('Remote planning + narration')
 })

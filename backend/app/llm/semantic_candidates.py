@@ -38,6 +38,7 @@ _SIGNIFICANT_KEYS: dict[str, tuple[str, ...]] = {
     "get_last_workout": ("activity_type", "min_duration_minutes"),
     "get_top_workouts": ("activity_type", "metric", "n", "start_date", "end_date"),
     "get_trend": ("metric_id", "granularity", "start_date", "end_date"),
+    "get_sleep_trend": ("granularity", "start_date", "end_date"),
     "get_period_summary": ("start_date", "end_date"),
     "get_comparison": (
         "this_start",
@@ -45,6 +46,7 @@ _SIGNIFICANT_KEYS: dict[str, tuple[str, ...]] = {
         "last_start",
         "last_end",
         "activity_type",
+        "metric_ids",
     ),
     "get_fallback_answer": (),
 }
@@ -110,6 +112,8 @@ def plan_fingerprint(tool_name: str, args: Mapping[str, Any]) -> tuple[Any, ...]
         value = args.get(key)
         if isinstance(value, str):
             value = value.casefold().strip()
+        if isinstance(value, list):
+            value = tuple(value)
         values.append(value)
     return tuple(values)
 

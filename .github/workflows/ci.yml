@@ -6,6 +6,114 @@ on:
   pull_request:
 
 jobs:
+  ubuntu-browser-acceptance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTEST_XDIST_AUTO_NUM_WORKERS: '2'
+      TTI_INGEST_WORKERS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend/package-lock.json
+            scripts/browser-acceptance/package-lock.json
+      - run: uv sync --directory backend --dev --locked --python 3.12
+      - run: npm --prefix frontend ci
+      - run: npm --prefix scripts/browser-acceptance ci --ignore-scripts
+      - name: Audit isolated browser tooling
+        run: npm --prefix scripts/browser-acceptance audit
+      - name: Cache the locked Chromium headless shell
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-shell-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/browser-acceptance/package-lock.json') }}
+      - name: Install locked Chromium headless shell
+        working-directory: scripts/browser-acceptance
+        run: ./node_modules/.bin/playwright install --only-shell chromium
+      - name: Verify runner libraries by launching Chromium
+        working-directory: scripts/browser-acceptance
+        run: |
+          node --input-type=module <<'JS'
+          import { chromium } from 'playwright'
+          const browser = await chromium.launch({ headless: true })
+          console.log('Chromium', browser.version())
+          await browser.close()
+          JS
+      - name: Check harness syntax and regression sensitivity
+        run: |
+          for script in scripts/browser-acceptance/*.mjs; do node --check "$script"; done
+          uv run --directory backend python -m compileall -q ../scripts/browser-acceptance
+          PYTHONPATH="${GITHUB_WORKSPACE}/backend" uv run --directory backend python ../scripts/browser-acceptance/self_test.py
+          npm --prefix scripts/browser-acceptance run self-test
+      - name: Build actual production frontend
+        run: npm --prefix frontend run build
+      - name: Real Chromium, FastAPI, importer and hard restart (synthetic only)
+        run: >-
+          uv run --directory backend python ../scripts/browser-acceptance/run.py
+          --artifacts "${RUNNER_TEMP}/tti-browser-artifacts"
+      - name: Record setup failure when the harness could not start
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          output = Path(os.environ['RUNNER_TEMP']) / 'tti-browser-artifacts' / 'receipt.json'
+          if not output.exists():
+              output.parent.mkdir(parents=True, exist_ok=True)
+              output.write_text(json.dumps({
+                  'head': os.environ['GITHUB_SHA'],
+                  'criteria': {'harness-started': False},
+                  'exit': 1,
+              }) + '\n')
+          PY
+      - name: Preserve only synthetic screenshots and sanitized criteria
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu-browser-acceptance-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/tti-browser-artifacts/*.png
+            ${{ runner.temp }}/tti-browser-artifacts/receipt.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  macos-lifecycle-smoke:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    env:
+      TTI_LOCAL_AUTOSTART: '0'
+      TTI_LOCAL_STOP_ON_EXIT: '0'
+      PYTEST_XDIST_AUTO_NUM_WORKERS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm', cache-dependency-path: frontend/package-lock.json }
+      - run: uv sync --directory backend --dev --locked --python 3.12
+      - run: npm --prefix frontend ci
+      - name: Verify supported runtimes
+        run: |
+          node --version
+          npm --version
+          node -e 'if (process.versions.node.split(".")[0] !== "20") process.exit(1)'
+          uv run --directory backend python -c 'import sys; print(sys.version); assert sys.version_info >= (3, 12)'
+      - name: Synthetic import, restart and readiness (providers forbidden)
+        shell: bash
+        run: |
+          smoke_dir=$(mktemp -d "${RUNNER_TEMP}/tti-lifecycle.XXXXXX")
+          trap 'rm -rf "$smoke_dir"' EXIT
+          export TTI_DB_PATH="$smoke_dir/health.duckdb"
+          export TTI_APP_STATE_PATH="$smoke_dir/state.sqlite"
+          uv run --directory backend pytest tests/integration/test_maintenance_lifecycle.py \
+            --basetemp="$smoke_dir/pytest" -n 0 -q --no-cov
+          npm --prefix frontend run test -- --run tests/api/maintenance-fetch.test.ts --maxWorkers=2
+
   version-consistency:
     runs-on: ubuntu-latest
     steps:

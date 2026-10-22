@@ -36,6 +36,7 @@ export function formatNumber(value: number, fractionDigits = 0): string {
 
 export function formatMetricValue(value: number | null, unit: string): string | null {
   if (value === null) return null
+  if (unit === 'hours') return formatDurationMinutes(value * 60)
   return `${formatNumber(value, unit === 'km' ? 1 : 0)} ${unit}`
 }
 
@@ -90,6 +91,20 @@ export function formatDateOnly(isoDate: string): string {
 
 export function formatDateRange(startDate: string, endDate: string): string {
   return `${formatDateOnly(startDate)} to ${formatDateOnly(endDate)}`
+}
+
+/** Validate an ISO calendar day without allowing JavaScript's date rollover. */
+export function isValidDateOnly(value: string | null | undefined): value is string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000-')) return false
+  const date = new Date(`${value}T00:00:00Z`)
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+}
+
+/** Shift a validated calendar day independently of the computer clock or timezone. */
+export function shiftDateOnly(value: string, days: number): string {
+  const date = new Date(`${value}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
 }
 
 const ISO_DAY_BUCKET = /^\d{4}-\d{2}-\d{2}$/

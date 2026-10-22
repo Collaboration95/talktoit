@@ -56,6 +56,7 @@ tti/
 │   └── package.json
 ├── scripts/
 │   ├── check-versions.sh    # version-consistency gate (backend, frontend, runtime)
+│   ├── browser-acceptance/  # pinned synthetic real-browser/import/restart harness
 │   └── groq_smoke.sh        # quick end-to-end LLM smoke against the CLI
 ├── experiments/             # one-off explorations; not production code
 │   └── chart-comparison/    # chart-library evaluation gallery (DONE)
@@ -130,8 +131,8 @@ relies on 3.13-only syntax — keep it that way so the two stay interchangeable.
 binary (pydocstyle via the `D` rules).
 
 Version comes from `uv.lock` (currently **0.15.20**, floor `>=0.11.0` in `pyproject.toml`).
-The pre-commit hook pins its own copy in `.pre-commit-config.yaml`; see §6 for why those two
-numbers can differ.
+The pre-commit hook pins the same version in `.pre-commit-config.yaml`; keep both pins
+aligned when updating Ruff (§6).
 
 ```toml
 # backend/pyproject.toml
@@ -233,6 +234,13 @@ them explicitly with `make test-bench` (= `pytest -m benchmark --no-cov`) or `ma
 (＝ `pytest tests/bench -m benchmark --no-cov -q`). Benchmarks run against synthetic data
 only, record privacy-safe `benchmark` diagnostics events, and assert documented thresholds.
 
+`make bench-synthetic` is the separate, slow generated-only baseline runner. It builds a
+Node 20 production manifest, then reports small/representative fixed-seed cases using
+median/nearest-rank p95, full official CLI import wall time and sampled process-tree RSS.
+It is never part of the default tests or tiny `make bench` policy suite. Run only after
+other agents stop CPU-heavy work. See [the measurement protocol](decisions/performance-baseline.md)
+for sampling options, privacy boundaries, HTTP/browser limitations and pending decisions.
+
 **Test split:**
 - `tests/unit/` — pure logic only; no DuckDB, no filesystem, no network. Fast.
 - `tests/integration/` — real DuckDB (in-memory DB seeded from `tests/fixtures/sample.xml`
@@ -269,6 +277,45 @@ health data.
   aggregation into SQL rather than into Python. Example: `get_top_workouts` ranks with
   `ORDER BY {metric} DESC NULLS LAST, start_date DESC, id DESC LIMIT ?` in a single query
   (metric column comes from a closed Literal whitelist — never interpolated input).
+- **Durable activation** — new imports publish immutable DB/manifest generations under
+  `<configured-db-path>.datasets/`; a versioned atomic `active.json` pointer is the activation
+  authority. Import and startup recovery share a mandatory POSIX writer lock. Recovery
+  validates the committed generation before providers/health migrations and repairs the
+  SQLite manifest/root projection. `resolve_db_path()` identifies the configured namespace;
+  `resolve_effective_db_path()` follows the pointer. Published DBs open read-only. See
+  `docs/decisions/dataset-lifecycle.md` for the wire format, crash boundaries, legacy adoption,
+  leases, tombstone deletion, and owned import recovery.
+- **Request snapshots** — use `dataset_snapshot()` for a leased connection, immutable
+  manifest and export root. Readers take a stable cross-process shared generation lock and
+  reread the pointer before opening DuckDB. HTTP, CLI, dashboard caches, routes and status
+  use that tuple; they do not borrow identity from SQLite. Explicit external CLI sources
+  remain unassociated. No active pointer yields an empty in-memory schema and no identity;
+  dashboard resources are empty, Settings metrics unavailable, and chat offers import
+  guidance without model execution. Never create a configured health file for onboarding.
+  Connection-consuming offloads use `app.db.async_worker` to shield and drain work
+  before propagating cancellation. Dashboard HTTP registration applies the same rule;
+  snapshot teardown waits for actual worker exit, even after repeated cancellation.
+- **Deletion and retirement** — deletion uses the same writer lock as import, commits an
+  inactive pointer, clears the projection, then waits a bounded time for exclusive generation
+  leases. Busy/unremovable data stays inactive and returns a safe retryable 409. Recovery
+  retries cleanup without resurrecting it. Retain the newest rollback pointer; retire older
+  copies only after leases drain. Unknown entries and changed contents are preserved.
+  Versioned `retirement.json` records proven former rollback pointers and directory
+  identities before their reference is replaced. Publication, recovery and snapshot
+  release retry this queue; an unreferenced directory name alone grants no cleanup authority.
+  Cleanup validates recorded identity after the exclusive lease, then uses the shared
+  `app.state.cleanup_claims` format-2 protocol: persist original authority, atomically
+  capture on the same filesystem, validate the captured object, persist validation,
+  then dispose only within the held private namespace. A parent descriptor alone
+  does not prove child-file identity. Public source names are never unlinked after
+  validation. Replacements and mismatched claims retain durable proof for manual
+  recovery. Empty allocation/claim directories, completion records and stable locks
+  remain. Older deletion intents cannot gain missing authority through journal,
+  retirement-queue or claim recovery. This protocol trusts private claim contents
+  and targets local POSIX filesystems; see `ownership-claim-response.md` for limits.
+- **Owned import recovery** — after lifecycle recovery returns with no locks held, startup
+  runs `recover_import_jobs(repository)` on a worker thread before providers/migrations.
+  See `docs/decisions/import-artifact-ownership.md` for ownership/liveness and durable jobs.
 - **SQLite app-state** — `backend/data/app_state.sqlite` (override via `TTI_APP_STATE_PATH`):
   dataset manifests, conversations/turns, saved views, and the validated chat cache. Opened
   with `PRAGMA journal_mode = WAL`, `synchronous = NORMAL`, and a bounded
@@ -277,7 +324,11 @@ health data.
   `ds_*` id in `dataset_versions`; chat cache entries are scoped by `(cache_key,
   dataset_version_id)` so a re-ingested export (changed file, changed coverage dates)
   automatically misses and refetches fresh answers. `cache_mode="fresh"` forces the same
-  refetch on demand.
+  refetch on demand. Cache-v8 retains snapshot invalidation and rejects earlier incorrect
+  sleep-intent answers; semantic reuse and selected
+  follow-ups require a persisted `leased-generation-v1` intent marker. History remains
+  readable independently. Synthetic dependency overrides must bind their tuple explicitly
+  with `bind_dataset_snapshot`; unbound connections never borrow a dataset identity.
 - **Diagnostics store** — privacy-safe performance/event telemetry in the same SQLite file:
   allowlisted metadata per category (no question text, health values, paths, or SQL), a
   retention cap (`max_events`, default 5000, oldest evicted), and summaries computed in SQL
@@ -305,8 +356,8 @@ holds the resolved versions — the lockfile is the source of truth for reviews:
 | Tool | Range in `package.json` | Resolved in `package-lock.json` |
 |---|---|---|
 | TypeScript | `~5.8.0` | 5.8.3 |
-| Vite | `^6.3.0` | 6.4.3 |
-| Vitest | `^3.1.0` | 3.2.6 |
+| Vite | `^6.4.5` | 6.4.5 |
+| Vitest / coverage-v8 | `4.1.12` (both) | 4.1.12 |
 | oxlint | `^1.8.0` | 1.71.0 |
 | Prettier | `^3.5.0` | 3.8.4 |
 
@@ -465,6 +516,26 @@ implementation, unit-tested).
 - The chart libraries themselves. Test only that wrappers pass the right props.
 - CSS/visual appearance.
 
+Daily-use guidance reads the existing Settings metric states and dataset counts. Starters
+are a deterministic supported subset; returning to Chat remounts and refreshes the guidance.
+`use-import-job.ts` reconnects through `GET /api/imports`, polls with an abort signal,
+reconciles cancellation races, and discards superseded responses. Workers are process-local;
+job records are durable, and startup reconciles them with committed generations and owned
+operations. Missing jobs remain unknown/interrupted. The UI displays reported states and known counts,
+never estimates ingestion progress. Settings and model health share a one-second loopback
+probe, offloaded from the event loop. Hosted health is configuration-only. Egress categories
+include question text for both planning and narration; narration also uses rounded facts.
+
+Dashboard training volume has a separate abortable effect and scope-generation guard;
+its granularity changes and local retry leave other panels and pagination intact.
+`charts/lazy-trend-line.tsx` and workout-route rendering use `DeferredChart` to defer
+ECharts until actual chart use. Import resources and resolved components are shared by loader identity;
+failed imports/renders retain surrounding answers and formatted data or route download.
+Explicit loading state avoids React's Suspense commit delay. Retry starts a new import resource;
+browsers may retain failed modules, so the data fallback
+remains usable. The [frontend performance decision](decisions/performance-frontend.md)
+records production graph evidence, synthetic functional checks and pending quiet timings.
+
 ### 3.5 Styling — Tailwind v3 (load-bearing via Tremor)
 
 Tailwind v3 is a recorded decision (see `docs/planning/`): `@tremor/react` (locked for the
@@ -615,8 +686,8 @@ matching their file; `useXxx.ts` hooks; PascalCase types (no `I` prefix).
 
 ```yaml
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit     # rev v0.11.0
-    hooks: [id: ruff (--fix), id: ruff-format]
+  - repo: https://github.com/astral-sh/ruff-pre-commit     # rev v0.15.20
+    hooks: [id: ruff-check (--fix), id: ruff-format]
   - repo: local
     hooks:                  # system hooks call the canonical commands
       - pyright: uv run --directory backend pyright
@@ -637,10 +708,9 @@ this). Check whether a clone has it with `test -x .git/hooks/pre-commit`.
 Two other things worth knowing about the hook set:
 
 - **Hook versions are pinned by git tag, independently of `uv.lock`/`package-lock.json`.**
-  `ruff-pre-commit` is pinned at `rev: v0.11.0` while the lockfile resolves Ruff **0.15.20**.
-  Both run real Ruff, but a rule added or changed between the two releases can lint
-  differently in the hook (pre-commit) and in `make lint`/CI (locked venv). Bump the `rev` to
-  match the lockfile whenever that matters; pre-commit fetches the hook env on first run.
+  `ruff-pre-commit` and the backend lockfile both use **0.15.20**. Keep the hook revision
+  aligned with the locked Ruff version so staged checks and CI use the same rules.
+  Pre-commit fetches the hook environment on first run.
 - **The Python and Node hooks use `pass_filenames: false`**, so they run the project-wide
   command on every commit that touches a matching file rather than just the staged paths.
   Ruff (via the `ruff-pre-commit` repo, whose hooks do receive filenames) is the staged-only
@@ -672,10 +742,34 @@ jobs:
   build:                 # depends on the frontend gates → npm run build
 ```
 
+The additional `macos-lifecycle-smoke` job pins Python 3.12 and Node 20, logs/asserts
+the runtime versions, installs both committed locks, and runs
+`tests/integration/test_maintenance_lifecycle.py` plus the real MSW fetch/cancellation
+regression. It imports the synthetic fixture through the official V2 CLI, checks all nine
+row counts and six child relationships, verifies the 45.5-minute run and 90,954 steps, and
+boots the real ASGI lifespan before/after import to assert `/health` and `/api/status`.
+All state lives in a disposable runner temp directory, gateway inference and health
+probes are forbidden mocks, and local autostart/stop are disabled. No background web server
+is started. This is a smoke job, not the full macOS matrix. Existing Ubuntu coverage gates
+remain in place. Remote Actions acceptance must be recorded separately from local success.
+
 ### `audit.yml` — runs weekly (Mon 08:00 UTC) + `workflow_dispatch`
 
-- `audit-python` → `uv sync --directory backend --dev` → `uv run --directory backend pip-audit`
-- `audit-node` → `npm --prefix frontend audit --audit-level=moderate`
+- `audit-python` → `uv sync --directory backend --dev --locked --python 3.12` → `uv run --directory backend pip-audit`
+- `audit-node` → Node 20 / `npm --prefix frontend ci` → `npm --prefix frontend audit --audit-level=moderate`
+
+The audit severity threshold is unchanged. The remaining Tailwind 3 dependency findings
+stay visible and failing; see [the remediation decision](decisions/dependency-remediation.md)
+and [fresh dispositions](decisions/dependency-disposition-2026-10.md). Production-only
+audits do not substitute for the complete dependency gate. Vitest and coverage-v8 must
+remain on exactly the same version; the migration preserves the coverage thresholds and
+source include/exclude patterns.
+
+For concurrent local agents use `PYTEST_XDIST_AUTO_NUM_WORKERS=2` and Vitest
+`--maxWorkers=2`. Full backend tests leave `TTI_LOCAL_AUTOSTART` unset because the
+explicitly mocked autostart lifecycle tests exercise both settings. The dedicated smoke
+sets it to 0. Keep health and app-state paths in disposable temp storage for all local
+verification; see [the Node 20 baseline](decisions/maintenance-baseline-2026-10.md).
 
 Notes: jobs are independent except `build` waits on the frontend gates; the per-module
 coverage gates live in the `test-backend` job; the benchmark exclude (`-m \"not benchmark\"`)
@@ -783,3 +877,34 @@ v1 template: `workout_card`, `ranked_list`, `trend_chart`, `period_summary`, `co
 *Last updated: 2026-08-08 (audit pass — synced with the running tree; Makefile targets,
 marker config, version gate, diagnostics store, SQL-ordered queries, and the shared health
 hook documented).*
+
+
+## 12. Local measured analytics
+
+`queries.get_sleep_trend` and `union_interval_hours` own the shared dashboard/chat
+sleep coverage calculation. `sleep_trend` is a separate validated registry entry;
+categorical sleep must not use the numeric `metric_trend` path. Dashboard stages
+retain asleep-only union and bounded stage partitions. Neither raw intervals nor
+sleep questions/results enter provider projections. Supported date scopes and
+unsupported sleep wording resolve locally, even with no provider or dataset.
+
+`comparison` accepts optional catalog-limited `metric_ids` for steps, resting HR
+and HRV. Steps average daily source sums over observed days; the other two average
+observations. Optional row coverage/basis/tone fields travel together through the
+Pydantic model, TypeScript type and renderer. A missing side has a null delta;
+neutral signed changes imply no health outcome. Omitted `metric_ids` retains the
+workout path. Only two complete explicit ISO ranges (`from YYYY-MM-DD to ... vs ...`)
+or the English forms in the accepted decision are recognized locally. Ambiguous,
+incomplete or unsupported metric comparisons ask for clarification.
+
+`app.presentation` supplies shared readable backend date labels. Frontend
+`lib/format` supplies coverage/date labels and converts hour-valued tooltip
+measurements to whole minutes. Chat cache v8 includes formatter v3, typed planner
+v2 and narration facts v3. Semantic intent includes sleep dates/granularity and
+comparison metric selection; leased generation identity and route boundaries remain
+unchanged. Synthetic acceptance lives in `tests/integration/test_sleep_metric_chat.py`;
+it exercises published generation HTTP/CLI parity with provider calls denied.
+Sleep planning requires one complete supported date clause. Stage/category requests
+return local unsupported guidance instead of coverage for a different measurement.
+Settings starter capabilities count usable numeric observations (including zero) or
+categorical text according to the metric catalog; malformed records do not advertise starters.

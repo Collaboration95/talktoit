@@ -5,10 +5,40 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Literal
 
-CACHE_KEY_VERSION = "chat-cache-v3"
+CACHE_KEY_VERSION = "chat-cache-v8"
 """Bump when a local fact, formatter, privacy, or response contract changes."""
+SNAPSHOT_CONTRACT = "leased-generation-v1"
+
+
+def snapshot_plan(plan: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """Mark persisted intent as produced under the leased generation contract."""
+    return {**plan, "snapshot_contract": SNAPSHOT_CONTRACT} if plan is not None else None
+
+
+def trusted_snapshot_plan(raw: object) -> bool:
+    """Reject pre-snapshot semantic history without deleting independent history."""
+    if not isinstance(raw, str):
+        return False
+    try:
+        plan = json.loads(raw)
+    except (ValueError, TypeError):
+        return False
+    return isinstance(plan, dict) and plan.get("snapshot_contract") == SNAPSHOT_CONTRACT
+
+
+def matches_managed_database(database_path: Path, managed_database_path: Path) -> bool:
+    """Require existing, canonical path equality before sharing managed identity.
+
+    Arbitrary CLI databases have no manifest binding. Only the configured health
+    database can borrow the active manifest; failed path resolution means bypass.
+    """
+    try:
+        return database_path.resolve(strict=True) == managed_database_path.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return False
 
 
 def generation_identity(config: Mapping[str, object]) -> str:
@@ -35,9 +65,9 @@ def build_cache_key(
         "kind": kind,
         "timezone": "Asia/Singapore",
         "response_contract": "chat-v1",
-        "formatter_contract": "health-format-v2",
-        "planner_contract": "typed-plan-v1",
-        "narration_projection": "template-facts-v2",
+        "formatter_contract": "health-format-v3",
+        "planner_contract": "typed-plan-v2",
+        "narration_projection": "template-facts-v3",
         "generation_identity": generation_identity,
     }
     if kind == "exact":

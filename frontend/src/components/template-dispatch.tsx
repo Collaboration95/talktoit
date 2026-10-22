@@ -90,7 +90,20 @@ function normalizeFallback(value: unknown, message?: string): FallbackData {
     question: typeof record['question'] === 'string' ? record['question'] : '',
     table: normalizeFallbackTable(record['table']),
     text: typeof record['text'] === 'string' ? record['text'] : null,
-    ...(message ? { message } : {}),
+    ...(message
+      ? { message }
+      : typeof record['message'] === 'string'
+        ? { message: record['message'] }
+        : {}),
+    ...([
+      'unsupported',
+      'no_matching_data',
+      'clarification_needed',
+      'provider_unavailable',
+      'unavailable',
+    ].includes(String(record['reason']))
+      ? { reason: record['reason'] as NonNullable<FallbackData['reason']> }
+      : {}),
   }
 }
 

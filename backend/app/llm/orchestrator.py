@@ -16,16 +16,17 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import openai
 
+from app.db.async_worker import run_db_worker
 from app.db.data_profile import DataProfile, get_data_profile
 from app.db.queries import get_fallback
 from app.llm.answer_facts import deterministic_narrative, narration_facts
 from app.llm.client import DEFAULT_MODEL
-from app.llm.local_planner import plan_local_question
+from app.llm.local_planner import is_sleep_question, plan_local_question
 from app.llm.provider_gateway import ProviderGateway, ProviderUnavailableError
 from app.llm.provider_projection import narration_projection, planning_projection
 from app.llm.tools import TOOL_NAMES, dispatch_tool, normalize_tool_name, render_tool_catalog
 from app.models.chat import ChatResponse, ResponseMetadata
-from app.models.templates import FallbackData
+from app.models.templates import FallbackData, FallbackReason
 from app.state.diagnostics import (
     DiagnosticsBuffer,
     DiagnosticsRepository,
@@ -78,17 +79,39 @@ Rules:
 """
 
 
-def _make_fallback_response(question: str, narrative: str = "") -> ChatResponse:
+def _make_fallback_response(
+    question: str, narrative: str = "", reason: FallbackReason = "unavailable"
+) -> ChatResponse:
     """Build a fallback ChatResponse for error cases.
 
     Args:
         question: The original user question.
         narrative: Optional narrative text for the response.
+        reason: Validated local outcome used for recovery guidance.
 
     Returns:
         A :class:`ChatResponse` with template_id ``"fallback"``.
     """
-    fallback: FallbackData = get_fallback(question)
+    # Guidance comes from the application, never untrusted provider fallback prose.
+    guidance = {
+        "provider_unavailable": (
+            "The question provider is unavailable or disabled. "
+            "Check the saved provider in Settings, "
+            "or try a supported trend or latest workout question."
+        ),
+        "clarification_needed": (
+            "Please name a workout type, metric and date range, "
+            "or select an answer with Ask about this answer."
+        ),
+        "unavailable": (
+            "This answer could not be completed. "
+            "Try a more specific metric, workout type or date range."
+        ),
+    }
+    fallback: FallbackData = get_fallback(
+        question, text=guidance.get(reason, guidance["unavailable"])
+    )
+    fallback.reason = reason
     return ChatResponse(
         template_id="fallback",
         data=fallback.model_dump(mode="json"),
@@ -156,13 +179,35 @@ def _local_narrative(template_id: str, data: dict[str, Any]) -> str:
     return deterministic_narrative(template_id, narration_facts(template_id, data))
 
 
-def _terminal_response(template_id: str, data: dict[str, Any]) -> ChatResponse | None:
+def _terminal_response(
+    template_id: str, data: dict[str, Any], question: str = ""
+) -> ChatResponse | None:
     """Return terminal local results that must never be sent to narration.
 
     A fallback contains already-vetted local guidance.  Empty approved facts are
     also not useful narrator input, so supported templates retain a deterministic
     sentence rather than making an ungrounded model call.
     """
+    series = data.get("series", [])
+    if (template_id == "ranked_list" and not data.get("rows")) or (
+        template_id == "trend_chart"
+        and not any(isinstance(point, dict) and point.get("value") is not None for point in series)
+    ):
+        fallback = FallbackData(
+            question=question,
+            table=None,
+            reason="no_matching_data",
+            text=(
+                "No matching measurements were found. Try a wider date range, "
+                "another metric or workout type, or check available data in Settings."
+            ),
+        )
+        return ChatResponse(
+            template_id="fallback",
+            data=fallback.model_dump(mode="json"),
+            narrative="",
+            metadata=ResponseMetadata(provenance="fallback"),
+        )
     if template_id == "fallback":
         return ChatResponse(
             template_id=template_id,
@@ -240,18 +285,20 @@ class ChatOrchestrator:
 
         Note:
             Local DuckDB work (the data-profile query and tool dispatch) runs
-            on worker threads via ``asyncio.to_thread``; only the optional
-            remote provider calls are awaited on the event loop.
+            on worker threads. Cancellation drains each worker before returning
+            so its caller can safely close the connection and snapshot lease.
         """
         self.executed_plan = None
         if data_profile is None:
-            data_profile = await asyncio.to_thread(get_data_profile, self.conn)
+            data_profile = await run_db_worker(get_data_profile, self.conn)
         today = (data_profile.latest_date or date.today()).isoformat()
 
         # ── Stage 1: deterministic local plan ────────────────────────────────
         # A recognised question must not touch the optional provider. This is
         # both the privacy boundary and the fast path for ordinary use.
         local_plan = _validated_plan(plan_override)
+        if is_sleep_question(question):
+            local_plan = _validated_plan(plan_local_question(question, data_profile))
         if local_plan is None and not local_plan_checked:
             local_plan = _validated_plan(plan_local_question(question, data_profile))
         if local_plan is not None:
@@ -265,7 +312,7 @@ class ChatOrchestrator:
                 meta={"mode": "local", "model": "local", "error_class": ""},
             )
             try:
-                template_id, data_dict = await asyncio.to_thread(
+                template_id, data_dict = await run_db_worker(
                     self._dispatch_tool, tool_name, args, question
                 )
             except Exception:
@@ -273,7 +320,7 @@ class ChatOrchestrator:
                     "llm.local_tool_dispatch_failed", extra={"payload": {"tool": tool_name}}
                 )
                 return _make_fallback_response(question)
-            terminal = _terminal_response(template_id, data_dict)
+            terminal = _terminal_response(template_id, data_dict, question)
             if terminal is not None:
                 return terminal
             return ChatResponse(
@@ -301,6 +348,7 @@ class ChatOrchestrator:
             },
         ]
         plan: dict[str, Any] | None = None
+        provider_unavailable = False
         plan_started = time.perf_counter()
         try:
             planner_content = await self._complete_provider("planning", planner_messages)
@@ -313,6 +361,7 @@ class ChatOrchestrator:
                 meta={"mode": "remote", "model": self.model, "error_class": ""},
             )
         except ProviderUnavailableError:
+            provider_unavailable = True
             logger.info("Remote planner unavailable or disabled")
             safe_record(
                 self.diagnostics_repository,
@@ -324,22 +373,35 @@ class ChatOrchestrator:
 
         resolved_plan = _validated_plan(plan)
         if resolved_plan is None:
-            return _make_fallback_response(question)
+            return _make_fallback_response(
+                question,
+                reason="provider_unavailable" if provider_unavailable else "clarification_needed",
+            )
         tool_name, args = resolved_plan
+        if tool_name == "get_fallback_answer":
+            return _make_fallback_response(question, reason="clarification_needed")
         self.executed_plan = {"tool_name": tool_name, "arguments": dict(args)}
 
         # ── Execute the tool ─────────────────────────────────────────────────
         try:
-            template_id, data_dict = await asyncio.to_thread(
+            template_id, data_dict = await run_db_worker(
                 self._dispatch_tool, tool_name, args, question
             )
         except Exception:
             logger.exception("llm.tool_dispatch_failed", extra={"payload": {"tool": tool_name}})
             return _make_fallback_response(question)
 
-        terminal = _terminal_response(template_id, data_dict)
+        terminal = _terminal_response(template_id, data_dict, question)
         if terminal is not None:
             return terminal
+
+        if tool_name == "get_sleep_trend" or data_dict.get("metric_label") == "Sleep":
+            return ChatResponse(
+                template_id=template_id,
+                data=data_dict,
+                narrative=_local_narrative(template_id, data_dict),
+                metadata=ResponseMetadata(provenance="remote_planned"),
+            )
 
         narrative_prompt = _NARRATIVE_PROMPT.format(today=today)
         projection = narration_projection(question, tool_name, data_dict, template_id=template_id)

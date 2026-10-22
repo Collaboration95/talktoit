@@ -21,10 +21,12 @@ from app.api.chat import router as chat_router
 from app.api.conversations import router as conversations_router
 from app.api.dashboard import router as dashboard_router
 from app.api.diagnostics import router as diagnostics_router
+from app.api.imports import recover_import_jobs
 from app.api.imports import router as imports_router
 from app.api.saved_views import router as saved_views_router
 from app.api.settings import router as settings_router
 from app.api.status import router as status_router
+from app.db.dataset_lifecycle import DatasetLifecycle
 from app.db.migrate import SCHEMA_VERSION, migrate
 from app.llm.provider_gateway import make_provider_gateway
 from app.observability import configure_logging
@@ -154,12 +156,17 @@ def _maybe_stop_litert_on_exit() -> None:
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     configure_logging()
+    repository = AppStateRepository()
+    lifecycle = DatasetLifecycle()
+    generation = lifecycle.recover(repository)
+    await asyncio.to_thread(recover_import_jobs, repository)
     app.state.provider_gateway = make_provider_gateway()
-    migrate()
+    if generation is None and not lifecycle.has_pointer():
+        migrate()
     # Process-scoped app-state repositories: migrated exactly once here so
     # per-request accessors never open a migration connection again, and every
     # handler shares the same instance instead of constructing a fresh one.
-    app.state.app_state_repository = AppStateRepository()
+    app.state.app_state_repository = repository
     app.state.app_state_repository.migrate()
     app.state.diagnostics_repository = DiagnosticsRepository()
     app.state.diagnostics_repository.migrate()

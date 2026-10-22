@@ -17,21 +17,23 @@ export function Comparison({ data, narrative }: ComparisonProps) {
         <span>vs</span>
         <span>{data.last_period_label}</span>
       </div>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b text-left text-gray-500">
-            <th className="py-2 pr-4 font-medium">Metric</th>
-            <th className="py-2 pr-4 font-medium">{data.this_period_label}</th>
-            <th className="py-2 pr-4 font-medium">{data.last_period_label}</th>
-            <th className="py-2 font-medium">Change</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.metrics.map((m) => (
-            <ComparisonRow key={m.label} metric={m} />
-          ))}
-        </tbody>
-      </table>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b text-left text-gray-500">
+              <th className="py-2 pr-4 font-medium">Metric</th>
+              <th className="py-2 pr-4 font-medium">{data.this_period_label}</th>
+              <th className="py-2 pr-4 font-medium">{data.last_period_label}</th>
+              <th className="py-2 font-medium">Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.metrics.map((m) => (
+              <ComparisonRow key={m.label} metric={m} />
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
@@ -50,19 +52,36 @@ function directionColor(direction: ComparisonMetric['direction']): string {
 
 function ComparisonRow({ metric }: { metric: ComparisonMetric }) {
   const arrow = directionArrow(metric.direction)
-  const color = directionColor(metric.direction)
+  const color =
+    metric.direction_tone === 'neutral' ? 'text-gray-500' : directionColor(metric.direction)
   return (
     <tr className="border-b last:border-0">
       <td className="py-2 pr-4 font-medium text-gray-700">{metric.label}</td>
       <td className="py-2 pr-4 text-gray-900">
         {formatMetricValue(metric.this_value, metric.unit) ?? '—'}
+        <Coverage observed={metric.this_observed_days} requested={metric.this_requested_days} />
       </td>
       <td className="py-2 pr-4 text-gray-500">
         {formatMetricValue(metric.last_value, metric.unit) ?? '—'}
+        <Coverage observed={metric.last_observed_days} requested={metric.last_requested_days} />
       </td>
       <td className={`py-2 font-medium ${color}`}>
         {arrow} {formatSignedMetricValue(metric.delta, metric.unit)}
       </td>
     </tr>
   )
+}
+
+function Coverage({
+  observed,
+  requested,
+}: {
+  observed: number | null | undefined
+  requested: number | null | undefined
+}) {
+  return observed != null && requested != null ? (
+    <span className="block text-xs font-normal text-gray-500">
+      {observed}/{requested} days
+    </span>
+  ) : null
 }

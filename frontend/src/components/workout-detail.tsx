@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchWorkoutDetail } from '@/api/dashboard'
 import type { WorkoutDetail as WorkoutDetailType } from '@/api/dashboard'
-import ReactECharts from 'echarts-for-react'
+import { DeferredChart } from '@/components/deferred-chart'
 import {
   formatDateTime,
   formatDistanceKm,
@@ -9,6 +9,8 @@ import {
   formatMetricValue,
   formatNumber,
 } from '@/lib/format'
+
+const loadRouteChart = () => import('echarts-for-react')
 
 interface WorkoutDetailProps {
   workoutId: number
@@ -196,9 +198,28 @@ export function WorkoutDetail({ workoutId, fingerprint, onBack }: WorkoutDetailP
               />
             </div>
           ) : null}
-          <ReactECharts option={gpsOption} style={{ height: 250 }} />
+          <DeferredChart
+            load={loadRouteChart}
+            chartProps={{ option: gpsOption, style: { height: 250 } }}
+            fallback={
+              <p className="text-sm text-gray-600">
+                Download GeoJSON to view the route in another app.
+              </p>
+            }
+          />
         </div>
-      ) : null}
+      ) : (
+        <div className="mt-4 rounded bg-gray-50 p-3 text-sm text-gray-600">
+          <p className="font-medium">
+            {data.route?.state === 'invalid' ? 'Route could not be read' : 'No route available'}
+          </p>
+          <p>
+            {data.route?.state === 'invalid'
+              ? 'The companion route file is unreadable or contains no usable points. Check the original export and reimport locally.'
+              : 'This workout has no usable route in the imported dataset. XML uploads do not include companion GPX files. Check the original export and local import instructions in Settings.'}
+          </p>
+        </div>
+      )}
 
       {/* Metadata table */}
       {data.metadata.length > 0 ? (
