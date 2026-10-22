@@ -16,8 +16,6 @@ import logging
 import mmap
 import os
 import re
-import shutil
-import tempfile
 import time
 from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -26,6 +24,7 @@ from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from app.db.dataset_lifecycle import DatasetLifecycle
 from app.ingest.bytescan import WorkerResult, parse_byte_range
 from app.ingest.compatibility import (
     V2CompatibilityError,
@@ -33,6 +32,7 @@ from app.ingest.compatibility import (
     require_well_formed_export,
 )
 from app.ingest.reconcile import load_shards_into_duckdb
+from app.state.import_artifacts import ImportOperation, cleanup_artifact, current_operation
 
 if TYPE_CHECKING:
     import duckdb
@@ -250,34 +250,40 @@ def ingest(
     root = Path(configured_root).resolve() if configured_root is not None else None
     if root is not None:
         root.mkdir(parents=True, exist_ok=True)
-    shard_dir = Path(tempfile.mkdtemp(prefix="tti_shards_", dir=root)).resolve()
-    created = shard_dir.stat()
-    identity = (created.st_dev, created.st_ino)
+    operation = current_operation()
+    owns_operation = operation is None
+    if operation is None:
+        operation = ImportOperation.create(DatasetLifecycle())
+    if root is None:
+        root = operation.lifecycle.root / "shards"
+    shard_dir = operation.new_directory("shards", root)
+    identity = (operation.lifecycle.target, operation.id)
     try:
-        result = _parse_to_shards(xml_path, n_workers, shard_dir)
+        with operation.current():
+            result = _parse_to_shards(xml_path, n_workers, shard_dir)
     except BaseException:
         if cleanup:
             _cleanup_owned_shards(shard_dir, identity)
+        if owns_operation:
+            operation.close()
         raise
     result["_shard_identity"] = identity
+    if owns_operation:
+        result["_shard_handle"] = operation
     return result
 
 
-def _cleanup_owned_shards(shard_dir: Path, identity: tuple[int, int]) -> None:
-    """Remove only the directory allocated by this run, without following links.
-
-    A renamed/replaced directory is left alone. The inode/device captured at
-    creation authorizes cleanup; a basename or a caller-supplied root cannot.
-    shutil.rmtree also leaves symlink targets inside the run untouched.
-    """
+def _cleanup_owned_shards(shard_dir: Path, identity: tuple[Path, str]) -> None:
+    """Clean only a recorded allocation; never infer authority from a basename."""
+    operation = None
     try:
-        current = shard_dir.lstat()
-        if shard_dir.resolve() != shard_dir or (current.st_dev, current.st_ino) != identity:
-            logger.warning("ingest.cleanup.ownership_changed")
-            return
-        shutil.rmtree(shard_dir, ignore_errors=True)
-    except (OSError, RuntimeError):
-        logger.warning("ingest.cleanup.unavailable")
+        operation = ImportOperation.attach(DatasetLifecycle(identity[0]), identity[1])
+        cleanup_artifact(operation, shard_dir)
+    except (OSError, ValueError, RuntimeError):
+        logger.warning("ingest.cleanup.ownership_changed")
+    finally:
+        if operation is not None:
+            operation.close()
 
 
 def _parse_to_shards(xml_path: Path, n_workers: int, shard_dir: Path) -> dict[str, Any]:
@@ -377,13 +383,44 @@ def _validate_worker_results(
     return [by_worker[index] for index in range(expected_worker_count)]
 
 
+def _worker_ownership() -> tuple[str, str] | None:
+    operation = current_operation()
+    return (str(operation.lifecycle.target), operation.id) if operation else None
+
+
+def _parse_owned_range(
+    *,
+    ownership: tuple[str, str] | None,
+    xml_path: str,
+    start_byte: int,
+    end_byte: int,
+    worker_idx: int,
+    shard_dir: str,
+) -> WorkerResult:
+    operation = None
+    try:
+        if ownership is not None:
+            operation = ImportOperation.attach(DatasetLifecycle(Path(ownership[0])), ownership[1])
+        return parse_byte_range(
+            xml_path=xml_path,
+            start_byte=start_byte,
+            end_byte=end_byte,
+            worker_idx=worker_idx,
+            shard_dir=shard_dir,
+        )
+    finally:
+        if operation is not None:
+            operation.close()
+
+
 def _run_worker_ranges_serial(
     xml_path: Path, ranges: list[tuple[int, int]], shard_dir: Path
 ) -> list[WorkerResult]:
     """Run ranges in worker order for the one-process fallback path."""
     results: list[WorkerResult] = []
     for worker_idx, (start, end) in enumerate(ranges):
-        result = parse_byte_range(
+        result = _parse_owned_range(
+            ownership=_worker_ownership(),
             xml_path=str(xml_path),
             start_byte=start,
             end_byte=end,
@@ -419,7 +456,8 @@ def _run_worker_ranges_parallel(
     try:
         for worker_idx, (start, end) in enumerate(ranges):
             future = executor.submit(
-                parse_byte_range,
+                _parse_owned_range,
+                ownership=_worker_ownership(),
                 xml_path=str(xml_path),
                 start_byte=start,
                 end_byte=end,
@@ -544,6 +582,9 @@ def ingest_v2(
 
     finally:
         _cleanup_owned_shards(Path(shard_dir), result["_shard_identity"])
+        handle = result.get("_shard_handle")
+        if isinstance(handle, ImportOperation):
+            handle.close()
 
     total_time = time.time() - overall_start
     logger.info("ingest.complete", extra={"payload": {"total_seconds": round(total_time, 3)}})

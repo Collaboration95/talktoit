@@ -24,24 +24,11 @@ def _client(monkeypatch, tmp_path) -> AsyncClient:
 
 
 def _activate_sample_dataset(monkeypatch, tmp_path) -> None:
-    import duckdb
+    from tests.integration.test_dataset_crash_recovery import _child
 
     monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
     monkeypatch.setenv("TTI_DB_PATH", str(tmp_path / "health.duckdb"))
-    path = tmp_path / "health.duckdb"
-    conn = duckdb.connect(str(path))
-    ingest(str(FIXTURE), conn)
-    conn.close()
-    AppStateRepository().activate(
-        source_bytes=b"",
-        source_size_bytes=0,
-        parser_version="legacy-v1",
-        schema_version="1",
-        worker_count=1,
-        coverage_start="2026-01-01",
-        coverage_end="2026-01-31",
-        counts={"records": 1},
-    )
+    _child(tmp_path, "import", FIXTURE)
 
 
 async def test_settings_reports_provider_mode_and_storage(monkeypatch, tmp_path) -> None:
@@ -202,7 +189,7 @@ async def test_delete_health_with_missing_file_still_clears_the_active_dataset(
 async def test_delete_health_reports_a_clear_conflict_when_removal_fails(
     monkeypatch, tmp_path
 ) -> None:
-    """A filesystem failure is a 409 with a safe message and keeps the dataset."""
+    """A filesystem failure is a safe 409 after durable deactivation."""
     monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
     monkeypatch.setenv("TTI_DB_PATH", str(tmp_path / "health.duckdb"))
     repo = AppStateRepository()
@@ -218,12 +205,16 @@ async def test_delete_health_reports_a_clear_conflict_when_removal_fails(
         counts={"records": 1},
     )
 
-    from app.api import settings as settings_module
+    from pathlib import Path
 
-    def _failing_delete() -> int:
-        raise OSError("read-only file system")
+    real_unlink = Path.unlink
 
-    monkeypatch.setattr(settings_module, "delete_health_database", _failing_delete)
+    def _failing_delete(path, *args, **kwargs):
+        if path == tmp_path / "health.duckdb":
+            raise OSError("read-only file system")
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", _failing_delete)
 
     async with _client(monkeypatch, tmp_path) as client:
         response = await client.request(
@@ -234,4 +225,4 @@ async def test_delete_health_reports_a_clear_conflict_when_removal_fails(
 
     assert response.status_code == 409
     assert "could not be removed" in response.json()["detail"]
-    assert repo.get_active() is not None
+    assert repo.get_active() is None

@@ -3,15 +3,27 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from datetime import date
+from pathlib import Path
 
 import duckdb
 
 from app.cli import chat as chat_cli
+from app.db.connection import DatasetSnapshot
 from app.db.data_profile import DataProfile
 from app.llm.cache_keys import build_cache_key
 from app.models.chat import ChatResponse, ResponseMetadata
 from app.state.app_state import AppStateRepository
+
+
+@contextmanager
+def _memory_snapshot(*args, **kwargs):
+    conn = duckdb.connect(":memory:")
+    try:
+        yield DatasetSnapshot(conn, None, source_path=Path(":memory:"))
+    finally:
+        conn.close()
 
 
 def test_cli_prints_json_output(monkeypatch, capsys) -> None:
@@ -174,18 +186,18 @@ def test_cli_migrates_database_before_read_only_open(monkeypatch, tmp_path) -> N
         events.append("migrate")
         return False
 
-    def _fake_connect(db_path=None, *, read_only=False):
+    def _fake_snapshot(db_path=None, *, allow_legacy=False):
         assert db_path == database.resolve()
-        events.append(f"connect:{read_only}")
+        events.append(f"snapshot:{allow_legacy}")
         raise RuntimeError("intentional stop after migration")
 
     monkeypatch.setattr(chat_cli, "migrate", _fake_migrate)
-    monkeypatch.setattr(chat_cli, "connect", _fake_connect)
+    monkeypatch.setattr(chat_cli, "dataset_snapshot", _fake_snapshot)
 
     with pytest.raises(RuntimeError, match="intentional stop"):
         asyncio.run(chat_cli._ask_question("Show my last run"))
 
-    assert events == ["migrate", "connect:True"]
+    assert events == ["migrate", "snapshot:True"]
 
 
 def test_ensure_local_server_ignores_non_local_provider(monkeypatch, capsys) -> None:
@@ -281,7 +293,7 @@ def test_cli_does_not_serve_or_write_degraded_cache_entries(tmp_path, monkeypatc
             return _fallback_response(received_question)
 
     monkeypatch.setattr(chat_cli, "migrate", lambda _db_path=None: False)
-    monkeypatch.setattr(chat_cli, "connect", lambda *_args, **_kwargs: duckdb.connect(":memory:"))
+    monkeypatch.setattr(chat_cli, "dataset_snapshot", _memory_snapshot)
     monkeypatch.setattr(chat_cli, "AppStateRepository", lambda: repo)
     monkeypatch.setattr(chat_cli.DatasetLifecycle, "recover", lambda *_args: None)
     monkeypatch.setattr(chat_cli, "get_gateway_for_config", lambda _config: _Gateway())
@@ -341,7 +353,7 @@ def test_cli_leaves_shared_gateway_open(tmp_path, monkeypatch) -> None:
             return _fallback_response(question)
 
     monkeypatch.setattr(chat_cli, "migrate", lambda _db_path=None: False)
-    monkeypatch.setattr(chat_cli, "connect", lambda *_args, **_kwargs: duckdb.connect(":memory:"))
+    monkeypatch.setattr(chat_cli, "dataset_snapshot", _memory_snapshot)
     monkeypatch.setattr(chat_cli, "AppStateRepository", lambda: repo)
     monkeypatch.setattr(chat_cli.DatasetLifecycle, "recover", lambda *_args: None)
     monkeypatch.setattr(chat_cli, "get_gateway_for_config", lambda _config: gateway)

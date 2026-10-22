@@ -21,11 +21,11 @@ from pydantic import BaseModel
 from app.analytics.metric_catalog import METRIC_CATALOG
 from app.api.deps import get_app_state_repository, get_diagnostics_repository
 from app.db.connection import (
-    connect,
+    DatasetSnapshot,
+    dataset_snapshot,
     delete_health_database,
-    health_database_size_bytes,
-    resolve_db_path,
 )
+from app.db.dataset_lifecycle import DatasetBusyError, DatasetRecoveryError
 from app.state.app_state import AppStateRepository
 from app.state.diagnostics import DiagnosticsRepository
 
@@ -92,22 +92,16 @@ def _row_count(conn: duckdb.DuckDBPyConnection, sql: str, params: list[str] | No
     return int(row[0]) if row else 0
 
 
-def _metric_states(repository: AppStateRepository) -> dict[str, str]:
+def _metric_states(snapshot: DatasetSnapshot) -> dict[str, str]:
     """Classify catalog metrics as available/unavailable/out_of_range/malformed.
 
     Never returns raw values; only availability classes and the standard
     vocabulary the product uses to explain absent vs unsupported data.
     """
-    active = repository.get_active()
-    health_path = resolve_db_path()
-    if active is None or not health_path.exists():
+    if snapshot.dataset is None:
         return dict.fromkeys(METRIC_CATALOG, "unavailable")
-
+    conn = snapshot.connection
     states: dict[str, str] = {}
-    try:
-        conn = connect(read_only=True)
-    except duckdb.Error:
-        return dict.fromkeys(METRIC_CATALOG, "unavailable")
     try:
         record_counts = {
             str(row[0]): int(row[1])
@@ -125,8 +119,8 @@ def _metric_states(repository: AppStateRepository) -> dict[str, str]:
             else:  # workouts
                 count = _row_count(conn, "SELECT COUNT(*) FROM workouts")
                 states[metric_id] = "available" if count > 0 else "out_of_range"
-    finally:
-        conn.close()
+    except duckdb.Error:
+        return dict.fromkeys(METRIC_CATALOG, "unavailable")
     return states
 
 
@@ -208,7 +202,17 @@ def _build_settings_payload(
     repo: AppStateRepository, diagnostics: DiagnosticsRepository
 ) -> dict[str, object]:
     """Return introspective settings and storage state; no health values."""
-    active = repo.get_active()
+    with dataset_snapshot() as snapshot:
+        return _settings_for_snapshot(repo, diagnostics, snapshot)
+
+
+def _settings_for_snapshot(
+    repo: AppStateRepository,
+    diagnostics: DiagnosticsRepository,
+    snapshot: DatasetSnapshot,
+) -> dict[str, object]:
+    """Read every health-related Settings field from the same leased tuple."""
+    active = snapshot.dataset
     config = repo.get_provider_config()
     local = _local_readiness(config) if config.get("provider") == "local" else None
     litert_status = local["status"] if local else {}
@@ -235,7 +239,9 @@ def _build_settings_payload(
         },
         "storage": {
             "app_state_bytes": app_state_bytes,
-            "health_db_bytes": health_database_size_bytes(),
+            "health_db_bytes": snapshot.database_path.stat().st_size
+            if snapshot.database_path
+            else None,
             "cache": cache,
             "conversations": repo.count_conversations(),
             "saved_views": repo.saved_view_count(),
@@ -248,7 +254,7 @@ def _build_settings_payload(
             "coverage_start": active.coverage_start if active else None,
             "coverage_end": active.coverage_end if active else None,
             "warnings": list(active.warnings) if active else [],
-            "metric_states": _metric_states(repo),
+            "metric_states": _metric_states(snapshot),
             "vocabulary": ["available", "unavailable", "out_of_range", "unsupported", "malformed"],
         },
     }
@@ -260,7 +266,10 @@ async def get_settings(
     diagnostics: DiagnosticsRepository = Depends(get_diagnostics_repository),
 ) -> dict[str, object]:
     """Return settings without blocking the event loop on local probes/scans."""
-    return await asyncio.to_thread(_build_settings_payload, repo, diagnostics)
+    try:
+        return await asyncio.to_thread(_build_settings_payload, repo, diagnostics)
+    except (DatasetBusyError, DatasetRecoveryError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.put("/settings/provider")
@@ -411,8 +420,13 @@ async def delete_imported_health_data(
         raise HTTPException(status_code=422, detail="Scope mismatch for health clear.")
     try:
         deleted = await asyncio.to_thread(_delete_health_and_deactivate, repo)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (RuntimeError, OSError) as exc:
+        message = (
+            str(exc)
+            if isinstance(exc, (DatasetBusyError, DatasetRecoveryError))
+            else ("Health data could not be removed. Retry health deletion.")
+        )
+        raise HTTPException(status_code=409, detail=message) from exc
     return {"deleted": deleted, "scope": "health"}
 
 
@@ -425,10 +439,4 @@ def _delete_health_and_deactivate(repo: AppStateRepository) -> int:
     absent. Filesystem failures are normalized to a runtime error the endpoint
     reports as a conflict rather than an internal failure.
     """
-    try:
-        deleted = delete_health_database()
-    except OSError as exc:
-        raise RuntimeError(f"The health database could not be removed: {exc}") from exc
-    if not resolve_db_path().exists():
-        repo.deactivate_active_dataset()
-    return deleted
+    return delete_health_database(repo)

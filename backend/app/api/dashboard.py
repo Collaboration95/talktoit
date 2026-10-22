@@ -30,7 +30,7 @@ from app.db.aggregations import (
     to_local_dt,
     utc_bounds,
 )
-from app.db.connection import connect, lease_connection, resolve_db_path
+from app.db.connection import dataset_snapshot, resolve_db_path, snapshot_for_connection
 from app.db.dashboard_cache import (
     CapabilitiesGlobal,
     DashboardContext,
@@ -39,6 +39,7 @@ from app.db.dashboard_cache import (
     resolve_dashboard_context,
 )
 from app.db.data_profile import DataProfile
+from app.db.dataset_lifecycle import DatasetBusyError, DatasetRecoveryError
 from app.db.migrate import table_has_column
 from app.db.queries import (
     SQL_DISTANCE_BY_WORKOUT,
@@ -225,14 +226,11 @@ LIMIT 1
 
 def _get_conn() -> Generator[duckdb.DuckDBPyConnection, None, None]:
     """FastAPI dependency — open a DB connection for the request lifetime."""
-    conn = connect(read_only=True)
     try:
-        # Leased for the request so a concurrent import/deletion never closes
-        # the connection while this handler is still reading from it.
-        with lease_connection(conn):
-            yield conn
-    finally:
-        conn.close()
+        with dataset_snapshot() as snapshot:
+            yield snapshot.connection
+    except (DatasetBusyError, DatasetRecoveryError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -929,8 +927,13 @@ def get_workout_detail(
     route = WorkoutRouteState(state="missing", message="No route is available for this workout.")
     route_path_row = conn.execute(_SQL_WORKOUT_ROUTE_PATH, [workout_id]).fetchone()
     if route_path_row is not None and route_path_row[0] is not None:
-        export_root = _resolve_export_root(repo)
-        gps_route = parse_gpx_route(route_path_row[0], allowed_root=export_root)
+        snapshot = snapshot_for_connection(conn)
+        export_root = snapshot.export_root if snapshot else None
+        gps_route = (
+            parse_gpx_route(route_path_row[0], allowed_root=export_root)
+            if export_root is not None
+            else None
+        )
         if gps_route is None:
             route = WorkoutRouteState(state="invalid", message="The saved route could not be read.")
         else:

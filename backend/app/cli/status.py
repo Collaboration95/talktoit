@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 
+from app.db.connection import dataset_snapshot
 from app.state.app_state import AppStateRepository
 
 
@@ -16,7 +17,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.parse_args(argv)
     repository = AppStateRepository()
-    active = repository.get_active()
+    with dataset_snapshot() as snapshot:
+        active = snapshot.dataset
     try:
         provider = repository.get_provider_config().get("provider")
     except Exception:

@@ -104,7 +104,6 @@ def test_failure_and_retry_clean_only_owned_run(tmp_path, monkeypatch, failure):
 
 def test_default_temporary_mode_cleans_success_and_reconcile_failure(tmp_path, monkeypatch):
     monkeypatch.delenv("TTI_INGEST_SHARDS", raising=False)
-    monkeypatch.setattr(coordinator.tempfile, "tempdir", str(tmp_path))
     with duckdb.connect(":memory:") as db:
         coordinator.ingest_v2(FIXTURE, db, n_workers=1)
     assert list(tmp_path.iterdir()) == []
@@ -143,7 +142,9 @@ def test_concurrent_runs_cannot_remove_each_others_shards(tmp_path, monkeypatch)
     with ThreadPoolExecutor(max_workers=2) as pool:
         futures = [pool.submit(run) for _ in range(2)]
         assert [future.result()["records"] for future in futures] == [40, 40]
-    assert all(not child.exists() for child in children)
+    # Unknown entries preserve the entire owned child rather than inferring
+    # ownership of a caller-created sentinel from its enclosing directory.
+    assert all((child / "this-run.txt").read_text() == "owned" for child in children)
     _assert_preserved(root, sibling)
 
 
@@ -183,7 +184,7 @@ def test_cleanup_does_not_follow_symlinks_or_replacement_directories(
     elif replace_child == "directory":
         assert (children[0] / "replacement.txt").read_text() == "replacement data"
     else:
-        assert not children[0].exists()
+        assert (children[0] / "external-link").is_symlink()
 
 
 def test_pool_fallback_preserves_root_and_reconciles_worker_parity(tmp_path, monkeypatch):

@@ -8,8 +8,25 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
 
-CACHE_KEY_VERSION = "chat-cache-v4"
+CACHE_KEY_VERSION = "chat-cache-v5"
 """Bump when a local fact, formatter, privacy, or response contract changes."""
+SNAPSHOT_CONTRACT = "leased-generation-v1"
+
+
+def snapshot_plan(plan: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """Mark persisted intent as produced under the leased generation contract."""
+    return {**plan, "snapshot_contract": SNAPSHOT_CONTRACT} if plan is not None else None
+
+
+def trusted_snapshot_plan(raw: object) -> bool:
+    """Reject pre-snapshot semantic history without deleting independent history."""
+    if not isinstance(raw, str):
+        return False
+    try:
+        plan = json.loads(raw)
+    except (ValueError, TypeError):
+        return False
+    return isinstance(plan, dict) and plan.get("snapshot_contract") == SNAPSHOT_CONTRACT
 
 
 def matches_managed_database(database_path: Path, managed_database_path: Path) -> bool:
