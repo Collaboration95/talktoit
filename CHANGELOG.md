@@ -34,7 +34,7 @@ in `make check` and CI).
 - Sleep requests clarify unsupported/conflicting periods and explain unsupported
   stages rather than answering a narrower date range or a different measurement.
 - Malformed numeric records no longer advertise Chat starters; measured zeros and
-  categorical sleep remain available. Cache v7 invalidates older incorrect answers.
+  categorical sleep remain available. Cache v8 invalidates older incorrect answers.
 - Cancelled chat and dashboard workers retain their connections and generation
   leases until actual worker exit, including repeated cancellation.
 - Superseded rollback generations retire through durable ownership records;

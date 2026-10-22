@@ -93,6 +93,29 @@ required performance cases after these backend changes.
 
 ## Detailed evidence
 
+### Round-two findings and next candidate
+
+Round two passed maintenance/performance but reproduced three remaining gaps:
+leading date fragments, NREM/expanded REM wording bypassing local sleep policy,
+and replacement of a retirement directory after its initial ownership check.
+No real provider transport ran. [Round-two reports](reviews/README.md#round-2)
+retain the observations; [sleep corrections](review-corrections-round-2.md) and
+[anchored cleanup](safety-review-corrections-round-2.md) record the responses.
+
+Current combined product source `7d398f0` consumes a bounded complete sleep
+request/date grammar, shares known category/stage aliases with projection guards,
+and uses cache v8 to reject prior v7 answers. Cleanup validates persisted directory
+identity after the exclusive lease and uses descriptor-relative unlinks. Empty
+directories/lease metadata remain; old deletion intents without identity preserve
+present files for local recovery.
+
+The combined gate passed **1,238 backend /224 frontend tests**, overall **88.90%**,
+ingestion **91.55%**, LLM **82.30%**, with thresholds unchanged. Parent-confirmed
+app/test trees match that gate. Rebuilt real macOS browser journey: **47/47 pass**,
+exit 0; quiet small `make bench`: **11 pass**, exit 0. Source `7d398f0` needs new
+CI and independent round-three acceptance. Main and all outcome gates remain open;
+earlier production timings stay pinned to their original source identities.
+
 - [Baseline](maintenance-baseline-2026-10.md), [dependency decision](dependency-remediation.md)
   and [dispositions](dependency-disposition-2026-10.md): toolchain, locks, audits,
   official synthetic counts and workflow validation.

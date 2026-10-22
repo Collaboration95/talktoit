@@ -303,6 +303,11 @@ health data.
   Versioned `retirement.json` records proven former rollback pointers and directory
   identities before their reference is replaced. Publication, recovery and snapshot
   release retry this queue; an unreferenced directory name alone grants no cleanup authority.
+  Cleanup validates recorded identity after the exclusive lease and unlinks through
+  the held directory descriptor. Empty allocation directories and lease files remain;
+  portable cleanup never issues a pathname `rmdir` that could target a replacement.
+  Deletion intents also retain directory identities; older intents without proof
+  preserve present files for local recovery.
 - **Owned import recovery** — after lifecycle recovery returns with no locks held, startup
   runs `recover_import_jobs(repository)` on a worker thread before providers/migrations.
   See `docs/decisions/import-artifact-ownership.md` for ownership/liveness and durable jobs.
@@ -314,7 +319,7 @@ health data.
   `ds_*` id in `dataset_versions`; chat cache entries are scoped by `(cache_key,
   dataset_version_id)` so a re-ingested export (changed file, changed coverage dates)
   automatically misses and refetches fresh answers. `cache_mode="fresh"` forces the same
-  refetch on demand. Cache-v7 retains snapshot invalidation and rejects earlier incorrect
+  refetch on demand. Cache-v8 retains snapshot invalidation and rejects earlier incorrect
   sleep-intent answers; semantic reuse and selected
   follow-ups require a persisted `leased-generation-v1` intent marker. History remains
   readable independently. Synthetic dependency overrides must bind their tuple explicitly
@@ -889,7 +894,7 @@ incomplete or unsupported metric comparisons ask for clarification.
 
 `app.presentation` supplies shared readable backend date labels. Frontend
 `lib/format` supplies coverage/date labels and converts hour-valued tooltip
-measurements to whole minutes. Chat cache v7 includes formatter v3, typed planner
+measurements to whole minutes. Chat cache v8 includes formatter v3, typed planner
 v2 and narration facts v3. Semantic intent includes sleep dates/granularity and
 comparison metric selection; leased generation identity and route boundaries remain
 unchanged. Synthetic acceptance lives in `tests/integration/test_sleep_metric_chat.py`;
