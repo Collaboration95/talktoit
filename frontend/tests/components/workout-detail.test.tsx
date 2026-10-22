@@ -10,7 +10,16 @@ afterEach(() => server.resetHandlers())
 afterAll(() => server.close())
 
 // Mock ECharts (used for the local GPS route explorer)
-vi.mock('echarts-for-react', () => ({ default: () => <div data-testid="echarts" /> }))
+const chartState = vi.hoisted(() => ({ fail: false }))
+vi.mock('echarts-for-react', () => ({
+  default: () => {
+    if (chartState.fail) throw new Error('synthetic route chart failure')
+    return <div data-testid="echarts" />
+  },
+}))
+beforeEach(() => {
+  chartState.fail = false
+})
 
 const MOCK_WORKOUT = {
   id: 1,
@@ -143,4 +152,39 @@ it('explains an invalid route without offering download or exposing paths', asyn
   render(<WorkoutDetail workoutId={1} onBack={vi.fn()} />)
   expect(await screen.findByText('Route could not be read')).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Download GeoJSON' })).not.toBeInTheDocument()
+})
+
+it('keeps route download, metrics and navigation available when its chart fails', async () => {
+  const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    chartState.fail = true
+    server.use(
+      http.get('/api/dashboard/workouts/1', () =>
+        HttpResponse.json({
+          ...MOCK_WORKOUT,
+          gps_route: {
+            type: 'LineString',
+            coordinates: [
+              [103.8, 1.3],
+              [103.81, 1.31],
+            ],
+          },
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    const onBack = vi.fn()
+    render(<WorkoutDetail workoutId={1} onBack={onBack} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Chart could not be loaded.')
+    expect(screen.getByText('46 min')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Download GeoJSON' })).toBeEnabled()
+    chartState.fail = false
+    await user.click(screen.getByRole('button', { name: 'Retry chart' }))
+    expect(await screen.findByTestId('echarts')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Back to list/ }))
+    expect(onBack).toHaveBeenCalledOnce()
+  } finally {
+    chartState.fail = false
+    errors.mockRestore()
+  }
 })

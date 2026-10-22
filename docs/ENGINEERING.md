@@ -507,6 +507,15 @@ never estimates ingestion progress. Settings and model health share a one-second
 probe, offloaded from the event loop. Hosted health is configuration-only. Egress categories
 include question text for both planning and narration; narration also uses rounded facts.
 
+Dashboard training volume has a separate abortable effect and scope-generation guard;
+its granularity changes and local retry leave other panels and pagination intact.
+`charts/lazy-trend-line.tsx` and workout-route rendering use `DeferredChart` to defer
+ECharts until actual chart use. Resolved component types are shared by loader identity;
+failed imports/renders retain surrounding answers and formatted data or route download.
+Retry recreates the lazy type; browsers may retain failed modules, so the data fallback
+remains usable. The [frontend performance decision](decisions/performance-frontend.md)
+records production graph evidence, synthetic functional checks and pending quiet timings.
+
 ### 3.5 Styling — Tailwind v3 (load-bearing via Tremor)
 
 Tailwind v3 is a recorded decision (see `docs/planning/`): `@tremor/react` (locked for the

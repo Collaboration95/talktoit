@@ -31,6 +31,11 @@ in `make check` and CI).
 
 ### Fixed
 
+- Dashboard volume granularity changes fetch only training volume, with independent
+  loading/error/retry and stale-response protection while other panels stay usable.
+- Trend and route charts load on use. Chart failures retain the query and offer
+  retry plus formatted trend values or the existing route download.
+
 - Workout answer narration and chat coverage dates use readable Singapore dates.
   Sleep tooltips show whole minutes instead of rounding fractional hours away.
 - Semantic-cache identity includes sleep dates/granularity and comparison metric

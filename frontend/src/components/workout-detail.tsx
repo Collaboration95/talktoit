@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchWorkoutDetail } from '@/api/dashboard'
 import type { WorkoutDetail as WorkoutDetailType } from '@/api/dashboard'
-import ReactECharts from 'echarts-for-react'
+import { DeferredChart } from '@/components/deferred-chart'
 import {
   formatDateTime,
   formatDistanceKm,
@@ -9,6 +9,8 @@ import {
   formatMetricValue,
   formatNumber,
 } from '@/lib/format'
+
+const loadRouteChart = () => import('echarts-for-react')
 
 interface WorkoutDetailProps {
   workoutId: number
@@ -196,7 +198,15 @@ export function WorkoutDetail({ workoutId, fingerprint, onBack }: WorkoutDetailP
               />
             </div>
           ) : null}
-          <ReactECharts option={gpsOption} style={{ height: 250 }} />
+          <DeferredChart
+            load={loadRouteChart}
+            chartProps={{ option: gpsOption, style: { height: 250 } }}
+            fallback={
+              <p className="text-sm text-gray-600">
+                Download GeoJSON to view the route in another app.
+              </p>
+            }
+          />
         </div>
       ) : (
         <div className="mt-4 rounded bg-gray-50 p-3 text-sm text-gray-600">
