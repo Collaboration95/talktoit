@@ -52,3 +52,28 @@ Original report SHA-256 values:
 - `round-3-safety.md`: `6b570dca76b16056fcb24adf955a34172570dd7afa2c82a82a77271e4c6753fc`.
 - `round-3-ux-analytics.md`: `9e1fed032e84cff34f39b8ad55b7dc9d4d5fd7453b7db90e0350ba9759b057f4`.
 - `round-3-maintenance-performance.md`: `7802ea5eee4966328580d1e2de80e63b881ff67a9ae7bc30d29337452cd8c1d3`.
+
+## Round 4 and performance protocol acceptance
+
+Round 4 reviewed `80f25f8`, tree `3de52384a0c216eaf597f9293e1eb9c3dda6a881`,
+which became production main `a0ac51b` without changing its tree.
+
+- [Safety: premerge PASS](round-4-safety.md), 202 focused checks.
+- [Integration: no code findings](round-4-integration.md), 29 focused checks. Its sole CI-evidence objection was subsequently resolved by exact-head run39848434455 and its actual 47/47 Ubuntu artifact with the same reviewed tree. Main run39851476974 also passed all ten jobs. The original conditional report remains unchanged.
+
+Original report hashes (public copies exclude internal citation annotations only):
+
+- `round-4-safety.md`: `915f870f8dc36ce2420d9b768a0820988f73d786dc162850848c6cfcc1973c9b`.
+- `round-4-integration.md`: `8fb810fc79f7ce0fd93aace89b71b6a723ee1a2b6d8dce8024a7d20945259fb9`.
+
+The actual-main performance failure required a method correction, not a speculative
+production optimization. [Method R1](performance-method-r1.md) accepted the plan;
+[R2](performance-method-r2-implementation.md) found a summary-canvas false positive;
+[R3](performance-method-r3-implementation.md) accepted its corrected implementation
+at `8006620`, digest `9ee6b4a46b06ca2e6b74acb0619d4e0b44cc9f7805fb05ecb217de30f7b3ef04`.
+The parent discharged R3's exact-head CI condition using eleven successful checks
+in run39867103866 and its real47/47 artifact/test-merge tree649fb85.
+
+[Bounded corrected qualification](../evidence/corrected-qualification-8006620/corrected-qualification.md)
+then passed with all88 raw numeric trials preserved. These protocol/measurement
+verdicts do not supply final merged-main five-gate acceptance or issue closure.

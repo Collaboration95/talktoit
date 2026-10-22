@@ -1,0 +1,2206 @@
+{
+  "$defs": {
+    "Authority": {
+      "additionalProperties": false,
+      "properties": {
+        "harness_head": {
+          "const": "8006620ec27f06dd9834b5cfdc268974c2f439fc",
+          "title": "Harness Head",
+          "type": "string"
+        },
+        "harness_tree": {
+          "const": "649fb8539ffa04e9a06913dff95263baec0d969d",
+          "title": "Harness Tree",
+          "type": "string"
+        },
+        "protocol_sha256": {
+          "const": "9ee6b4a46b06ca2e6b74acb0619d4e0b44cc9f7805fb05ecb217de30f7b3ef04",
+          "title": "Protocol Sha256",
+          "type": "string"
+        },
+        "freeze_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Freeze Sha256",
+          "type": "string"
+        },
+        "plan_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Plan Sha256",
+          "type": "string"
+        },
+        "r1_report_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "R1 Report Sha256",
+          "type": "string"
+        },
+        "r2_report_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "R2 Report Sha256",
+          "type": "string"
+        },
+        "r3_report_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "R3 Report Sha256",
+          "type": "string"
+        },
+        "r3_receipt_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "R3 Receipt Sha256",
+          "type": "string"
+        },
+        "ci_binding_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Ci Binding Sha256",
+          "type": "string"
+        },
+        "ci_run": {
+          "const": 39867103866,
+          "title": "Ci Run",
+          "type": "integer"
+        },
+        "ci_job": {
+          "const": 120131931189,
+          "title": "Ci Job",
+          "type": "integer"
+        },
+        "ci_test_merge": {
+          "const": "e83d09efa6463f4b6c52f877016217e494affc8e",
+          "title": "Ci Test Merge",
+          "type": "string"
+        },
+        "ci_tree": {
+          "const": "649fb8539ffa04e9a06913dff95263baec0d969d",
+          "title": "Ci Tree",
+          "type": "string"
+        },
+        "ci_successful_checks": {
+          "const": 11,
+          "title": "Ci Successful Checks",
+          "type": "integer"
+        },
+        "ubuntu_functional_criteria": {
+          "const": 47,
+          "title": "Ubuntu Functional Criteria",
+          "type": "integer"
+        },
+        "ci_condition_parent_verified": {
+          "const": true,
+          "title": "Ci Condition Parent Verified",
+          "type": "boolean"
+        },
+        "final_outcome_acceptance": {
+          "const": "pending_parent_independent_acceptance",
+          "title": "Final Outcome Acceptance",
+          "type": "string"
+        }
+      },
+      "required": [
+        "harness_head",
+        "harness_tree",
+        "protocol_sha256",
+        "freeze_sha256",
+        "plan_sha256",
+        "r1_report_sha256",
+        "r2_report_sha256",
+        "r3_report_sha256",
+        "r3_receipt_sha256",
+        "ci_binding_sha256",
+        "ci_run",
+        "ci_job",
+        "ci_test_merge",
+        "ci_tree",
+        "ci_successful_checks",
+        "ubuntu_functional_criteria",
+        "ci_condition_parent_verified",
+        "final_outcome_acceptance"
+      ],
+      "title": "Authority",
+      "type": "object"
+    },
+    "BrowserGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "production_head": {
+          "pattern": "^[a-f0-9]{40}$",
+          "title": "Production Head",
+          "type": "string"
+        },
+        "source_checkout_head": {
+          "pattern": "^[a-f0-9]{40}$",
+          "title": "Source Checkout Head",
+          "type": "string"
+        },
+        "harness_head": {
+          "const": "8006620ec27f06dd9834b5cfdc268974c2f439fc",
+          "title": "Harness Head",
+          "type": "string"
+        },
+        "harness_sha256": {
+          "const": "9ee6b4a46b06ca2e6b74acb0619d4e0b44cc9f7805fb05ecb217de30f7b3ef04",
+          "title": "Harness Sha256",
+          "type": "string"
+        },
+        "case": {
+          "const": "representative",
+          "title": "Case",
+          "type": "string"
+        },
+        "seed": {
+          "const": 137,
+          "title": "Seed",
+          "type": "integer"
+        },
+        "workers": {
+          "const": 1,
+          "title": "Workers",
+          "type": "integer"
+        },
+        "corpus_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Corpus Sha256",
+          "type": "string"
+        },
+        "samples": {
+          "const": 20,
+          "title": "Samples",
+          "type": "integer"
+        },
+        "warmups": {
+          "const": 2,
+          "title": "Warmups",
+          "type": "integer"
+        },
+        "trials": {
+          "items": {
+            "$ref": "#/$defs/BrowserTrial"
+          },
+          "maxItems": 22,
+          "minItems": 22,
+          "title": "Trials",
+          "type": "array"
+        },
+        "measurements": {
+          "$ref": "#/$defs/MetricStats"
+        },
+        "all_trial_errors": {
+          "$ref": "#/$defs/Errors"
+        },
+        "retained_trial_errors": {
+          "$ref": "#/$defs/Errors"
+        },
+        "phase_request_counts": {
+          "$ref": "#/$defs/Phases"
+        },
+        "guards": {
+          "$ref": "#/$defs/Guards"
+        },
+        "official_import_parity_verified": {
+          "const": true,
+          "title": "Official Import Parity Verified",
+          "type": "boolean"
+        },
+        "browser_exit": {
+          "const": 0,
+          "title": "Browser Exit",
+          "type": "integer"
+        },
+        "cleanup": {
+          "const": true,
+          "title": "Cleanup",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "production_head",
+        "source_checkout_head",
+        "harness_head",
+        "harness_sha256",
+        "case",
+        "seed",
+        "workers",
+        "corpus_sha256",
+        "samples",
+        "warmups",
+        "trials",
+        "measurements",
+        "all_trial_errors",
+        "retained_trial_errors",
+        "phase_request_counts",
+        "guards",
+        "official_import_parity_verified",
+        "browser_exit",
+        "cleanup"
+      ],
+      "title": "BrowserGroup",
+      "type": "object"
+    },
+    "BrowserTrial": {
+      "additionalProperties": false,
+      "properties": {
+        "ordinal": {
+          "title": "Ordinal",
+          "type": "integer"
+        },
+        "retained": {
+          "title": "Retained",
+          "type": "boolean"
+        },
+        "metrics": {
+          "$ref": "#/$defs/MetricValues"
+        },
+        "errors": {
+          "$ref": "#/$defs/Errors"
+        },
+        "phase_requests": {
+          "$ref": "#/$defs/Phases"
+        }
+      },
+      "required": [
+        "ordinal",
+        "retained",
+        "metrics",
+        "errors",
+        "phase_requests"
+      ],
+      "title": "BrowserTrial",
+      "type": "object"
+    },
+    "Command": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "enum": [
+            "natural-main",
+            "natural-reference",
+            "browser-primary-reference",
+            "browser-primary-main",
+            "browser-confirmation-main",
+            "browser-confirmation-reference"
+          ],
+          "title": "Label",
+          "type": "string"
+        },
+        "start_epoch": {
+          "minimum": 0,
+          "title": "Start Epoch",
+          "type": "number"
+        },
+        "end_epoch": {
+          "minimum": 0,
+          "title": "End Epoch",
+          "type": "number"
+        },
+        "exit_code": {
+          "title": "Exit Code",
+          "type": "integer"
+        },
+        "argv_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Argv Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "start_epoch",
+        "end_epoch",
+        "exit_code",
+        "argv_sha256"
+      ],
+      "title": "Command",
+      "type": "object"
+    },
+    "Comparison": {
+      "additionalProperties": false,
+      "properties": {
+        "median": {
+          "$ref": "#/$defs/Delta"
+        },
+        "p95": {
+          "$ref": "#/$defs/Delta"
+        },
+        "no_material_regression": {
+          "title": "No Material Regression",
+          "type": "boolean"
+        },
+        "median_useful_gain": {
+          "title": "Median Useful Gain",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "median",
+        "p95",
+        "no_material_regression",
+        "median_useful_gain"
+      ],
+      "title": "Comparison",
+      "type": "object"
+    },
+    "Definitions": {
+      "additionalProperties": false,
+      "properties": {
+        "browser": {
+          "const": "real_loopback_tcp",
+          "title": "Browser",
+          "type": "string"
+        },
+        "natural": {
+          "const": "in_process_asgi_real_pending_turn_and_independent_writer",
+          "title": "Natural",
+          "type": "string"
+        },
+        "cached_chat": {
+          "const": "performance_now_before_locator_click_to_visible_enabled_input_plus_exact_two_frames",
+          "title": "Cached Chat",
+          "type": "string"
+        },
+        "first_chart": {
+          "const": "first_visible_nonzero_canvas_plus_two_frames_not_animation_completion",
+          "title": "First Chart",
+          "type": "string"
+        },
+        "volume": {
+          "const": "response_finished_plus_two_frames",
+          "title": "Volume",
+          "type": "string"
+        },
+        "readiness": {
+          "const": "body_render_v1_all_affected_panels",
+          "title": "Readiness",
+          "type": "string"
+        },
+        "diagnostic_upper_bound": {
+          "const": "not_a_primary_metric",
+          "title": "Diagnostic Upper Bound",
+          "type": "string"
+        },
+        "provider_latency": {
+          "const": "unmeasured_denied",
+          "title": "Provider Latency",
+          "type": "string"
+        },
+        "physical_phone": {
+          "const": "unqualified",
+          "title": "Physical Phone",
+          "type": "string"
+        },
+        "physical_power_loss": {
+          "const": "unqualified",
+          "title": "Physical Power Loss",
+          "type": "string"
+        },
+        "personal_export_guarantee": {
+          "const": "none",
+          "title": "Personal Export Guarantee",
+          "type": "string"
+        },
+        "new_memory_measurement": {
+          "const": "not_collected",
+          "title": "New Memory Measurement",
+          "type": "string"
+        },
+        "retained_memory": {
+          "const": "sampled_simultaneous_process_tree_rss_not_pss_uss_or_true_peak",
+          "title": "Retained Memory",
+          "type": "string"
+        },
+        "retained_ingestion_p95": {
+          "const": "n3_maximum_reference_only",
+          "title": "Retained Ingestion P95",
+          "type": "string"
+        },
+        "statistic": {
+          "const": "nearest_rank_p95_population_variance_no_outlier_removal",
+          "title": "Statistic",
+          "type": "string"
+        }
+      },
+      "required": [
+        "browser",
+        "natural",
+        "cached_chat",
+        "first_chart",
+        "volume",
+        "readiness",
+        "diagnostic_upper_bound",
+        "provider_latency",
+        "physical_phone",
+        "physical_power_loss",
+        "personal_export_guarantee",
+        "new_memory_measurement",
+        "retained_memory",
+        "retained_ingestion_p95",
+        "statistic"
+      ],
+      "title": "Definitions",
+      "type": "object"
+    },
+    "Delta": {
+      "additionalProperties": false,
+      "properties": {
+        "reference": {
+          "minimum": 0,
+          "title": "Reference",
+          "type": "number"
+        },
+        "main": {
+          "minimum": 0,
+          "title": "Main",
+          "type": "number"
+        },
+        "difference_ms": {
+          "title": "Difference Ms",
+          "type": "number"
+        },
+        "percent": {
+          "title": "Percent",
+          "type": "number"
+        },
+        "regression": {
+          "title": "Regression",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "reference",
+        "main",
+        "difference_ms",
+        "percent",
+        "regression"
+      ],
+      "title": "Delta",
+      "type": "object"
+    },
+    "EndpointCounts": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "minimum": 0,
+          "title": "Status",
+          "type": "integer"
+        },
+        "summary": {
+          "minimum": 0,
+          "title": "Summary",
+          "type": "integer"
+        },
+        "workouts": {
+          "minimum": 0,
+          "title": "Workouts",
+          "type": "integer"
+        },
+        "volume": {
+          "minimum": 0,
+          "title": "Volume",
+          "type": "integer"
+        },
+        "steps": {
+          "minimum": 0,
+          "title": "Steps",
+          "type": "integer"
+        },
+        "heart": {
+          "minimum": 0,
+          "title": "Heart",
+          "type": "integer"
+        },
+        "sleep": {
+          "minimum": 0,
+          "title": "Sleep",
+          "type": "integer"
+        },
+        "sleep_stages": {
+          "minimum": 0,
+          "title": "Sleep Stages",
+          "type": "integer"
+        },
+        "capabilities": {
+          "minimum": 0,
+          "title": "Capabilities",
+          "type": "integer"
+        },
+        "other": {
+          "minimum": 0,
+          "title": "Other",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "status",
+        "summary",
+        "workouts",
+        "volume",
+        "steps",
+        "heart",
+        "sleep",
+        "sleep_stages",
+        "capabilities",
+        "other"
+      ],
+      "title": "EndpointCounts",
+      "type": "object"
+    },
+    "Environment": {
+      "additionalProperties": false,
+      "properties": {
+        "checkpoint": {
+          "enum": [
+            "formal-start",
+            "before-natural-main",
+            "after-natural-main",
+            "before-natural-reference",
+            "after-natural-reference",
+            "before-browser-primary-reference",
+            "after-browser-primary-reference",
+            "before-browser-primary-main",
+            "after-browser-primary-main",
+            "formal-end",
+            "before-browser-confirmation-main",
+            "after-browser-confirmation-main",
+            "before-browser-confirmation-reference",
+            "after-browser-confirmation-reference"
+          ],
+          "title": "Checkpoint",
+          "type": "string"
+        },
+        "observed_epoch": {
+          "minimum": 0,
+          "title": "Observed Epoch",
+          "type": "number"
+        },
+        "power_source": {
+          "const": "AC",
+          "title": "Power Source",
+          "type": "string"
+        },
+        "battery_percent": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Battery Percent",
+          "type": "integer"
+        },
+        "low_power_modes": {
+          "items": {
+            "const": 0,
+            "type": "integer"
+          },
+          "title": "Low Power Modes",
+          "type": "array"
+        },
+        "load_average": {
+          "items": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "title": "Load Average",
+          "type": "array"
+        },
+        "background_apps": {
+          "items": {
+            "enum": [
+              "Brave Browser",
+              "ChatGPT",
+              "Docker",
+              "FigmaAgent",
+              "Google Chrome",
+              "Mail",
+              "Microsoft Outlook",
+              "Microsoft Word",
+              "Notes",
+              "Photos",
+              "Preview",
+              "Safari",
+              "T3 Code (Beta)",
+              "Telegram",
+              "Visual Studio Code",
+              "WhatsApp",
+              "Xcode",
+              "iTerm"
+            ],
+            "type": "string"
+          },
+          "title": "Background Apps",
+          "type": "array"
+        },
+        "other_app_count": {
+          "minimum": 0,
+          "title": "Other App Count",
+          "type": "integer"
+        },
+        "sampled_process_groups": {
+          "items": {
+            "$ref": "#/$defs/ProcessSample"
+          },
+          "title": "Sampled Process Groups",
+          "type": "array"
+        }
+      },
+      "required": [
+        "checkpoint",
+        "observed_epoch",
+        "power_source",
+        "battery_percent",
+        "low_power_modes",
+        "load_average",
+        "background_apps",
+        "other_app_count",
+        "sampled_process_groups"
+      ],
+      "title": "Environment",
+      "type": "object"
+    },
+    "Errors": {
+      "additionalProperties": false,
+      "properties": {
+        "requests": {
+          "minimum": 0,
+          "title": "Requests",
+          "type": "integer"
+        },
+        "transport_failures": {
+          "minimum": 0,
+          "title": "Transport Failures",
+          "type": "integer"
+        },
+        "panel_transport_failures": {
+          "minimum": 0,
+          "title": "Panel Transport Failures",
+          "type": "integer"
+        },
+        "http_failures": {
+          "minimum": 0,
+          "title": "Http Failures",
+          "type": "integer"
+        },
+        "body_failures": {
+          "minimum": 0,
+          "title": "Body Failures",
+          "type": "integer"
+        },
+        "parse_failures": {
+          "minimum": 0,
+          "title": "Parse Failures",
+          "type": "integer"
+        },
+        "aborts": {
+          "minimum": 0,
+          "title": "Aborts",
+          "type": "integer"
+        },
+        "network_failures": {
+          "minimum": 0,
+          "title": "Network Failures",
+          "type": "integer"
+        },
+        "timeouts": {
+          "minimum": 0,
+          "title": "Timeouts",
+          "type": "integer"
+        },
+        "intentional_cancellations": {
+          "minimum": 0,
+          "title": "Intentional Cancellations",
+          "type": "integer"
+        },
+        "incomplete_bodies": {
+          "minimum": 0,
+          "title": "Incomplete Bodies",
+          "type": "integer"
+        },
+        "endpoints": {
+          "$ref": "#/$defs/EndpointCounts"
+        }
+      },
+      "required": [
+        "requests",
+        "transport_failures",
+        "panel_transport_failures",
+        "http_failures",
+        "body_failures",
+        "parse_failures",
+        "aborts",
+        "network_failures",
+        "timeouts",
+        "intentional_cancellations",
+        "incomplete_bodies",
+        "endpoints"
+      ],
+      "title": "Errors",
+      "type": "object"
+    },
+    "Guards": {
+      "additionalProperties": false,
+      "properties": {
+        "provider_calls": {
+          "const": 0,
+          "title": "Provider Calls",
+          "type": "integer"
+        },
+        "network_attempts": {
+          "const": 0,
+          "title": "Network Attempts",
+          "type": "integer"
+        },
+        "page_errors_asserted_zero": {
+          "const": true,
+          "title": "Page Errors Asserted Zero",
+          "type": "boolean"
+        },
+        "external_requests_asserted_zero": {
+          "const": true,
+          "title": "External Requests Asserted Zero",
+          "type": "boolean"
+        },
+        "readiness_probes_denied": {
+          "minimum": 0,
+          "title": "Readiness Probes Denied",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "provider_calls",
+        "network_attempts",
+        "page_errors_asserted_zero",
+        "external_requests_asserted_zero",
+        "readiness_probes_denied"
+      ],
+      "title": "Guards",
+      "type": "object"
+    },
+    "Historical": {
+      "additionalProperties": false,
+      "properties": {
+        "main_report_sha256": {
+          "const": "235018f9af1f8e27818233445e892345862110339d5ac203224fa7d137d8ef24",
+          "title": "Main Report Sha256",
+          "type": "string"
+        },
+        "main_numeric_sha256": {
+          "const": "f89c33d170d3efc994fe5821fd31b863481ebed8e5454505210383cd4a30aac1",
+          "title": "Main Numeric Sha256",
+          "type": "string"
+        },
+        "main_numeric_bytes": {
+          "const": 1431881,
+          "title": "Main Numeric Bytes",
+          "type": "integer"
+        },
+        "original_verdict": {
+          "const": "REVISE",
+          "title": "Original Verdict",
+          "type": "string"
+        },
+        "source_cause": {
+          "const": "unassigned",
+          "title": "Source Cause",
+          "type": "string"
+        },
+        "primary_cached_chat_reference": {
+          "items": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Primary Cached Chat Reference",
+          "type": "array"
+        },
+        "primary_cached_chat_main": {
+          "items": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Primary Cached Chat Main",
+          "type": "array"
+        },
+        "confirmation_cached_chat_reference": {
+          "items": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Confirmation Cached Chat Reference",
+          "type": "array"
+        },
+        "confirmation_cached_chat_main": {
+          "items": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Confirmation Cached Chat Main",
+          "type": "array"
+        },
+        "primary_main_failed_retained": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Primary Main Failed Retained",
+          "type": "array"
+        },
+        "confirmation_main_failed_retained": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Confirmation Main Failed Retained",
+          "type": "array"
+        },
+        "confirmation_main_failed_warmups": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Confirmation Main Failed Warmups",
+          "type": "array"
+        },
+        "original_panel_error_reasons": {
+          "const": "unknown_not_reclassified",
+          "title": "Original Panel Error Reasons",
+          "type": "string"
+        },
+        "natural_primary_reference_p95": {
+          "minimum": 0,
+          "title": "Natural Primary Reference P95",
+          "type": "number"
+        },
+        "natural_primary_main_p95": {
+          "minimum": 0,
+          "title": "Natural Primary Main P95",
+          "type": "number"
+        },
+        "natural_confirmation_outcome": {
+          "enum": [
+            "primary_tail_not_confirmed_under_declared_rule",
+            "persistent_regression"
+          ],
+          "title": "Natural Confirmation Outcome",
+          "type": "string"
+        },
+        "frozen_baseline_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Frozen Baseline Sha256",
+          "type": "string"
+        },
+        "frozen_portfolio_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Frozen Portfolio Sha256",
+          "type": "string"
+        },
+        "frozen_chart_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Frozen Chart Sha256",
+          "type": "string"
+        },
+        "old_trials_unmodified": {
+          "const": true,
+          "title": "Old Trials Unmodified",
+          "type": "boolean"
+        },
+        "old_and_new_populations_not_pooled": {
+          "const": true,
+          "title": "Old And New Populations Not Pooled",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "main_report_sha256",
+        "main_numeric_sha256",
+        "main_numeric_bytes",
+        "original_verdict",
+        "source_cause",
+        "primary_cached_chat_reference",
+        "primary_cached_chat_main",
+        "confirmation_cached_chat_reference",
+        "confirmation_cached_chat_main",
+        "primary_main_failed_retained",
+        "confirmation_main_failed_retained",
+        "confirmation_main_failed_warmups",
+        "original_panel_error_reasons",
+        "natural_primary_reference_p95",
+        "natural_primary_main_p95",
+        "natural_confirmation_outcome",
+        "frozen_baseline_sha256",
+        "frozen_portfolio_sha256",
+        "frozen_chart_sha256",
+        "old_trials_unmodified",
+        "old_and_new_populations_not_pooled"
+      ],
+      "title": "Historical",
+      "type": "object"
+    },
+    "Kernel": {
+      "additionalProperties": false,
+      "properties": {
+        "original_module_sha256": {
+          "const": "5f7ae55d7469dbe055d0bc092aaba7226a747b9d42a5d74be8f512b10e77dd74",
+          "title": "Original Module Sha256",
+          "type": "string"
+        },
+        "natural_prefix_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Natural Prefix Sha256",
+          "type": "string"
+        },
+        "selected_function_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Selected Function Sha256",
+          "type": "string"
+        },
+        "prefix_verbatim": {
+          "const": true,
+          "title": "Prefix Verbatim",
+          "type": "boolean"
+        },
+        "only_post_natural_output_and_assertions_added": {
+          "const": true,
+          "title": "Only Post Natural Output And Assertions Added",
+          "type": "boolean"
+        },
+        "exact_hit_and_controlled_barrier_not_executed": {
+          "const": true,
+          "title": "Exact Hit And Controlled Barrier Not Executed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "original_module_sha256",
+        "natural_prefix_sha256",
+        "selected_function_sha256",
+        "prefix_verbatim",
+        "only_post_natural_output_and_assertions_added",
+        "exact_hit_and_controlled_barrier_not_executed"
+      ],
+      "title": "Kernel",
+      "type": "object"
+    },
+    "MetricStats": {
+      "additionalProperties": false,
+      "properties": {
+        "cold_chat_ready_ms": {
+          "$ref": "#/$defs/Stats"
+        },
+        "first_chart_canvas_ms": {
+          "$ref": "#/$defs/Stats"
+        },
+        "cached_chat_shell_ms": {
+          "$ref": "#/$defs/Stats"
+        },
+        "cached_dashboard_ms": {
+          "$ref": "#/$defs/Stats"
+        },
+        "volume_response_plus_two_frames_ms": {
+          "$ref": "#/$defs/Stats"
+        },
+        "first_chart_locator_upper_bound_ms": {
+          "$ref": "#/$defs/Stats"
+        }
+      },
+      "required": [
+        "cold_chat_ready_ms",
+        "first_chart_canvas_ms",
+        "cached_chat_shell_ms",
+        "cached_dashboard_ms",
+        "volume_response_plus_two_frames_ms",
+        "first_chart_locator_upper_bound_ms"
+      ],
+      "title": "MetricStats",
+      "type": "object"
+    },
+    "MetricValues": {
+      "additionalProperties": false,
+      "properties": {
+        "cold_chat_ready_ms": {
+          "minimum": 0,
+          "title": "Cold Chat Ready Ms",
+          "type": "number"
+        },
+        "first_chart_canvas_ms": {
+          "minimum": 0,
+          "title": "First Chart Canvas Ms",
+          "type": "number"
+        },
+        "cached_chat_shell_ms": {
+          "minimum": 0,
+          "title": "Cached Chat Shell Ms",
+          "type": "number"
+        },
+        "cached_dashboard_ms": {
+          "minimum": 0,
+          "title": "Cached Dashboard Ms",
+          "type": "number"
+        },
+        "volume_response_plus_two_frames_ms": {
+          "minimum": 0,
+          "title": "Volume Response Plus Two Frames Ms",
+          "type": "number"
+        },
+        "first_chart_locator_upper_bound_ms": {
+          "minimum": 0,
+          "title": "First Chart Locator Upper Bound Ms",
+          "type": "number"
+        }
+      },
+      "required": [
+        "cold_chat_ready_ms",
+        "first_chart_canvas_ms",
+        "cached_chat_shell_ms",
+        "cached_dashboard_ms",
+        "volume_response_plus_two_frames_ms",
+        "first_chart_locator_upper_bound_ms"
+      ],
+      "title": "MetricValues",
+      "type": "object"
+    },
+    "NaturalGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "production_head": {
+          "pattern": "^[a-f0-9]{40}$",
+          "title": "Production Head",
+          "type": "string"
+        },
+        "source_checkout_head": {
+          "pattern": "^[a-f0-9]{40}$",
+          "title": "Source Checkout Head",
+          "type": "string"
+        },
+        "case": {
+          "const": "representative",
+          "title": "Case",
+          "type": "string"
+        },
+        "seed": {
+          "const": 137,
+          "title": "Seed",
+          "type": "integer"
+        },
+        "corpus_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Corpus Sha256",
+          "type": "string"
+        },
+        "samples": {
+          "const": 20,
+          "title": "Samples",
+          "type": "integer"
+        },
+        "warmups": {
+          "const": 2,
+          "title": "Warmups",
+          "type": "integer"
+        },
+        "trials": {
+          "items": {
+            "$ref": "#/$defs/NaturalTrial"
+          },
+          "maxItems": 22,
+          "minItems": 22,
+          "title": "Trials",
+          "type": "array"
+        },
+        "measurements": {
+          "$ref": "#/$defs/NaturalStats"
+        },
+        "profile_calls_all": {
+          "const": 22,
+          "title": "Profile Calls All",
+          "type": "integer"
+        },
+        "profile_calls_retained": {
+          "const": 20,
+          "title": "Profile Calls Retained",
+          "type": "integer"
+        },
+        "distinct_questions": {
+          "const": 2,
+          "title": "Distinct Questions",
+          "type": "integer"
+        },
+        "terminal_completed_all": {
+          "const": 22,
+          "title": "Terminal Completed All",
+          "type": "integer"
+        },
+        "terminal_completed_retained": {
+          "const": 20,
+          "title": "Terminal Completed Retained",
+          "type": "integer"
+        },
+        "parity_verified": {
+          "const": true,
+          "title": "Parity Verified",
+          "type": "boolean"
+        },
+        "managed_generation_verified": {
+          "const": true,
+          "title": "Managed Generation Verified",
+          "type": "boolean"
+        },
+        "provider_calls": {
+          "const": 0,
+          "title": "Provider Calls",
+          "type": "integer"
+        },
+        "network_attempts": {
+          "const": 0,
+          "title": "Network Attempts",
+          "type": "integer"
+        },
+        "privacy_denials": {
+          "const": 0,
+          "title": "Privacy Denials",
+          "type": "integer"
+        },
+        "exit_code": {
+          "const": 0,
+          "title": "Exit Code",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "production_head",
+        "source_checkout_head",
+        "case",
+        "seed",
+        "corpus_sha256",
+        "samples",
+        "warmups",
+        "trials",
+        "measurements",
+        "profile_calls_all",
+        "profile_calls_retained",
+        "distinct_questions",
+        "terminal_completed_all",
+        "terminal_completed_retained",
+        "parity_verified",
+        "managed_generation_verified",
+        "provider_calls",
+        "network_attempts",
+        "privacy_denials",
+        "exit_code"
+      ],
+      "title": "NaturalGroup",
+      "type": "object"
+    },
+    "NaturalStats": {
+      "additionalProperties": false,
+      "properties": {
+        "chat_ms": {
+          "$ref": "#/$defs/Stats"
+        },
+        "writer_ms": {
+          "$ref": "#/$defs/Stats"
+        },
+        "profile_ms": {
+          "$ref": "#/$defs/Stats"
+        }
+      },
+      "required": [
+        "chat_ms",
+        "writer_ms",
+        "profile_ms"
+      ],
+      "title": "NaturalStats",
+      "type": "object"
+    },
+    "NaturalTrial": {
+      "additionalProperties": false,
+      "properties": {
+        "trial": {
+          "title": "Trial",
+          "type": "integer"
+        },
+        "retained": {
+          "title": "Retained",
+          "type": "boolean"
+        },
+        "chat_ms": {
+          "minimum": 0,
+          "title": "Chat Ms",
+          "type": "number"
+        },
+        "writer_ms": {
+          "minimum": 0,
+          "title": "Writer Ms",
+          "type": "number"
+        },
+        "profile_ms": {
+          "items": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "maxItems": 1,
+          "minItems": 1,
+          "title": "Profile Ms",
+          "type": "array"
+        },
+        "profile_calls": {
+          "const": 1,
+          "title": "Profile Calls",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "trial",
+        "retained",
+        "chat_ms",
+        "writer_ms",
+        "profile_ms",
+        "profile_calls"
+      ],
+      "title": "NaturalTrial",
+      "type": "object"
+    },
+    "Phases": {
+      "additionalProperties": false,
+      "properties": {
+        "mount": {
+          "minimum": 0,
+          "title": "Mount",
+          "type": "integer"
+        },
+        "toggle": {
+          "minimum": 0,
+          "title": "Toggle",
+          "type": "integer"
+        },
+        "scope": {
+          "minimum": 0,
+          "title": "Scope",
+          "type": "integer"
+        },
+        "cached_chat": {
+          "minimum": 0,
+          "title": "Cached Chat",
+          "type": "integer"
+        },
+        "cached_dashboard": {
+          "minimum": 0,
+          "title": "Cached Dashboard",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mount",
+        "toggle",
+        "scope",
+        "cached_chat",
+        "cached_dashboard"
+      ],
+      "title": "Phases",
+      "type": "object"
+    },
+    "PrimaryComparisons": {
+      "additionalProperties": false,
+      "properties": {
+        "cold_chat_ready_ms": {
+          "$ref": "#/$defs/Comparison"
+        },
+        "first_chart_canvas_ms": {
+          "$ref": "#/$defs/Comparison"
+        },
+        "cached_chat_shell_ms": {
+          "$ref": "#/$defs/Comparison"
+        },
+        "cached_dashboard_ms": {
+          "$ref": "#/$defs/Comparison"
+        },
+        "volume_response_plus_two_frames_ms": {
+          "$ref": "#/$defs/Comparison"
+        }
+      },
+      "required": [
+        "cold_chat_ready_ms",
+        "first_chart_canvas_ms",
+        "cached_chat_shell_ms",
+        "cached_dashboard_ms",
+        "volume_response_plus_two_frames_ms"
+      ],
+      "title": "PrimaryComparisons",
+      "type": "object"
+    },
+    "ProcessSample": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "enum": [
+            "Google Chrome",
+            "ChatGPT",
+            "WindowServer",
+            "node",
+            "python",
+            "Python",
+            "Electron",
+            "Slack",
+            "Code",
+            "Safari",
+            "kernel_task",
+            "mds_stores",
+            "mdworker_shared",
+            "uv",
+            "Finder",
+            "T3 Code",
+            "Codex",
+            "other_system_or_user_processes"
+          ],
+          "title": "Name",
+          "type": "string"
+        },
+        "cpu_percent": {
+          "minimum": 0,
+          "title": "Cpu Percent",
+          "type": "number"
+        },
+        "rss_bytes": {
+          "minimum": 0,
+          "title": "Rss Bytes",
+          "type": "integer"
+        },
+        "processes": {
+          "minimum": 0,
+          "title": "Processes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "cpu_percent",
+        "rss_bytes",
+        "processes"
+      ],
+      "title": "ProcessSample",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "group": {
+          "enum": [
+            "normal_backend_matrices",
+            "xml_validation_scan",
+            "numeric_trend",
+            "writer_barrier_profile_exact",
+            "retirement_followups",
+            "workout_query_confirmation",
+            "static_graph_build",
+            "old_failed_browser_pairs",
+            "nonqualifying_diagnostics",
+            "corrected_browser_primary",
+            "natural_confirmation"
+          ],
+          "title": "Group",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "reused_by_exact_identity",
+            "historical_REVISE",
+            "nonqualifying",
+            "fresh_PASS"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "main_head": {
+          "const": "a0ac51b6a24442f669608f153efe5b0c98931051",
+          "title": "Main Head",
+          "type": "string"
+        },
+        "reference_head": {
+          "const": "859f89a405499ecef024fb8dde127a5f3d7c2f77",
+          "title": "Reference Head",
+          "type": "string"
+        },
+        "window": {
+          "enum": [
+            "original_actual_main_AC",
+            "diagnostic_parallel_window",
+            "corrected_current_AC"
+          ],
+          "title": "Window",
+          "type": "string"
+        },
+        "method_hashes": {
+          "additionalProperties": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "propertyNames": {
+            "enum": [
+              "matrix",
+              "matrix_controller",
+              "production_helpers",
+              "supplement_controller",
+              "repeated_imports",
+              "retirement_inventory",
+              "browser",
+              "graph",
+              "followup_imports",
+              "followup_once",
+              "confirmation_query",
+              "confirmation_controller",
+              "confirmation_browser",
+              "window_final",
+              "window_initial",
+              "publication_parse_initial",
+              "publication_before_error_counts",
+              "publication",
+              "common_backend_harness",
+              "current_protocol",
+              "natural_prefix"
+            ]
+          },
+          "title": "Method Hashes",
+          "type": "object"
+        },
+        "counts": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "propertyNames": {
+            "enum": [
+              "imports_raw",
+              "imports_retained",
+              "workloads_raw",
+              "workloads_retained",
+              "processes_raw",
+              "processes_retained",
+              "queries_retained",
+              "natural_raw",
+              "natural_retained",
+              "exact_raw",
+              "exact_retained",
+              "barrier_raw",
+              "barrier_retained",
+              "retirement_raw",
+              "retirement_retained",
+              "followup_raw",
+              "followup_retained",
+              "browser_raw",
+              "browser_retained",
+              "snapshots",
+              "files",
+              "queries_raw"
+            ]
+          },
+          "title": "Counts",
+          "type": "object"
+        },
+        "original_numeric_package_sha256": {
+          "const": "f89c33d170d3efc994fe5821fd31b863481ebed8e5454505210383cd4a30aac1",
+          "title": "Original Numeric Package Sha256",
+          "type": "string"
+        },
+        "original_source_labels_preserved": {
+          "const": true,
+          "title": "Original Source Labels Preserved",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "group",
+        "status",
+        "main_head",
+        "reference_head",
+        "window",
+        "method_hashes",
+        "counts",
+        "original_numeric_package_sha256",
+        "original_source_labels_preserved"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "ReuseProof": {
+      "additionalProperties": false,
+      "properties": {
+        "r3_equivalence_receipt_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "R3 Equivalence Receipt Sha256",
+          "type": "string"
+        },
+        "source_equivalence_artifact_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Source Equivalence Artifact Sha256",
+          "type": "string"
+        },
+        "raw_method_bindings_reverified": {
+          "const": 47,
+          "title": "Raw Method Bindings Reverified",
+          "type": "integer"
+        },
+        "common_backend_modules": {
+          "const": 7,
+          "title": "Common Backend Modules",
+          "type": "integer"
+        },
+        "common_backend_harness_manifest_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Common Backend Harness Manifest Sha256",
+          "type": "string"
+        },
+        "production_inputs_equal": {
+          "const": true,
+          "title": "Production Inputs Equal",
+          "type": "boolean"
+        },
+        "retained_build_output_files": {
+          "const": 8,
+          "title": "Retained Build Output Files",
+          "type": "integer"
+        },
+        "retained_static_js_bytes": {
+          "const": 230763,
+          "title": "Retained Static Js Bytes",
+          "type": "integer"
+        },
+        "retained_gzip_bytes": {
+          "const": 71199,
+          "title": "Retained Gzip Bytes",
+          "type": "integer"
+        },
+        "retained_initial_echarts_sources": {
+          "const": 0,
+          "title": "Retained Initial Echarts Sources",
+          "type": "integer"
+        },
+        "new_build_or_graph_workload": {
+          "const": false,
+          "title": "New Build Or Graph Workload",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "r3_equivalence_receipt_sha256",
+        "source_equivalence_artifact_sha256",
+        "raw_method_bindings_reverified",
+        "common_backend_modules",
+        "common_backend_harness_manifest_sha256",
+        "production_inputs_equal",
+        "retained_build_output_files",
+        "retained_static_js_bytes",
+        "retained_gzip_bytes",
+        "retained_initial_echarts_sources",
+        "new_build_or_graph_workload"
+      ],
+      "title": "ReuseProof",
+      "type": "object"
+    },
+    "Runtime": {
+      "additionalProperties": false,
+      "properties": {
+        "python": {
+          "const": "3.12.11",
+          "title": "Python",
+          "type": "string"
+        },
+        "node": {
+          "const": "20.20.2",
+          "title": "Node",
+          "type": "string"
+        },
+        "duckdb": {
+          "const": "1.5.4",
+          "title": "Duckdb",
+          "type": "string"
+        },
+        "playwright": {
+          "const": "1.63.0",
+          "title": "Playwright",
+          "type": "string"
+        },
+        "chrome": {
+          "const": "155.0.8059.85",
+          "title": "Chrome",
+          "type": "string"
+        },
+        "chrome_executable_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Chrome Executable Sha256",
+          "type": "string"
+        },
+        "chrome_executable_hash_unchanged_after_run": {
+          "const": true,
+          "title": "Chrome Executable Hash Unchanged After Run",
+          "type": "boolean"
+        },
+        "os_product": {
+          "const": "26.6.2",
+          "title": "Os Product",
+          "type": "string"
+        },
+        "os_release": {
+          "const": "25.6.0",
+          "title": "Os Release",
+          "type": "string"
+        },
+        "hardware_model": {
+          "const": "Mac17,2",
+          "title": "Hardware Model",
+          "type": "string"
+        },
+        "cpu": {
+          "const": "Apple M5",
+          "title": "Cpu",
+          "type": "string"
+        },
+        "logical_cpus": {
+          "const": 10,
+          "title": "Logical Cpus",
+          "type": "integer"
+        },
+        "memory_bytes": {
+          "const": 34359738368,
+          "title": "Memory Bytes",
+          "type": "integer"
+        },
+        "browser_lock_sha256": {
+          "const": "4b63d0083815166106973b47948eb925887d419fc91e3bb76372c610b9feadcb",
+          "title": "Browser Lock Sha256",
+          "type": "string"
+        },
+        "runtime_substitution": {
+          "const": false,
+          "title": "Runtime Substitution",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "python",
+        "node",
+        "duckdb",
+        "playwright",
+        "chrome",
+        "chrome_executable_sha256",
+        "chrome_executable_hash_unchanged_after_run",
+        "os_product",
+        "os_release",
+        "hardware_model",
+        "cpu",
+        "logical_cpus",
+        "memory_bytes",
+        "browser_lock_sha256",
+        "runtime_substitution"
+      ],
+      "title": "Runtime",
+      "type": "object"
+    },
+    "Source": {
+      "additionalProperties": false,
+      "properties": {
+        "production_head": {
+          "pattern": "^[a-f0-9]{40}$",
+          "title": "Production Head",
+          "type": "string"
+        },
+        "production_tree": {
+          "pattern": "^[a-f0-9]{40}$",
+          "title": "Production Tree",
+          "type": "string"
+        },
+        "source_checkout_head": {
+          "pattern": "^[a-f0-9]{40}$",
+          "title": "Source Checkout Head",
+          "type": "string"
+        },
+        "source_checkout_tree": {
+          "pattern": "^[a-f0-9]{40}$",
+          "title": "Source Checkout Tree",
+          "type": "string"
+        },
+        "backend_app_tree": {
+          "pattern": "^[a-f0-9]{40}$",
+          "title": "Backend App Tree",
+          "type": "string"
+        },
+        "backend_tests_tree": {
+          "pattern": "^[a-f0-9]{40}$",
+          "title": "Backend Tests Tree",
+          "type": "string"
+        },
+        "frontend_source_tree": {
+          "pattern": "^[a-f0-9]{40}$",
+          "title": "Frontend Source Tree",
+          "type": "string"
+        },
+        "frontend_tests_tree": {
+          "pattern": "^[a-f0-9]{40}$",
+          "title": "Frontend Tests Tree",
+          "type": "string"
+        },
+        "backend_lock_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Backend Lock Sha256",
+          "type": "string"
+        },
+        "frontend_lock_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Frontend Lock Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "production_head",
+        "production_tree",
+        "source_checkout_head",
+        "source_checkout_tree",
+        "backend_app_tree",
+        "backend_tests_tree",
+        "frontend_source_tree",
+        "frontend_tests_tree",
+        "backend_lock_sha256",
+        "frontend_lock_sha256"
+      ],
+      "title": "Source",
+      "type": "object"
+    },
+    "Stats": {
+      "additionalProperties": false,
+      "properties": {
+        "samples": {
+          "minimum": 0,
+          "title": "Samples",
+          "type": "integer"
+        },
+        "median": {
+          "minimum": 0,
+          "title": "Median",
+          "type": "number"
+        },
+        "p95": {
+          "minimum": 0,
+          "title": "P95",
+          "type": "number"
+        },
+        "minimum": {
+          "minimum": 0,
+          "title": "Minimum",
+          "type": "number"
+        },
+        "maximum": {
+          "minimum": 0,
+          "title": "Maximum",
+          "type": "number"
+        },
+        "stddev": {
+          "minimum": 0,
+          "title": "Stddev",
+          "type": "number"
+        },
+        "variance": {
+          "minimum": 0,
+          "title": "Variance",
+          "type": "number"
+        }
+      },
+      "required": [
+        "samples",
+        "median",
+        "p95",
+        "minimum",
+        "maximum",
+        "stddev",
+        "variance"
+      ],
+      "title": "Stats",
+      "type": "object"
+    },
+    "Thresholds": {
+      "additionalProperties": false,
+      "properties": {
+        "median_ratio_strict": {
+          "const": 1.1,
+          "title": "Median Ratio Strict",
+          "type": "number"
+        },
+        "p95_ratio_strict": {
+          "const": 1.15,
+          "title": "P95 Ratio Strict",
+          "type": "number"
+        },
+        "absolute_floor_ms": {
+          "const": 5,
+          "title": "Absolute Floor Ms",
+          "type": "integer"
+        },
+        "useful_gain_percent": {
+          "const": 10,
+          "title": "Useful Gain Percent",
+          "type": "integer"
+        },
+        "useful_gain_ms": {
+          "const": 10,
+          "title": "Useful Gain Ms",
+          "type": "integer"
+        },
+        "maximum_browser_confirmations": {
+          "const": 1,
+          "title": "Maximum Browser Confirmations",
+          "type": "integer"
+        },
+        "natural_confirmation_pairs": {
+          "const": 1,
+          "title": "Natural Confirmation Pairs",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "median_ratio_strict",
+        "p95_ratio_strict",
+        "absolute_floor_ms",
+        "useful_gain_percent",
+        "useful_gain_ms",
+        "maximum_browser_confirmations",
+        "natural_confirmation_pairs"
+      ],
+      "title": "Thresholds",
+      "type": "object"
+    },
+    "Window": {
+      "additionalProperties": false,
+      "properties": {
+        "start_epoch": {
+          "minimum": 0,
+          "title": "Start Epoch",
+          "type": "number"
+        },
+        "end_epoch": {
+          "minimum": 0,
+          "title": "End Epoch",
+          "type": "number"
+        },
+        "duration_seconds": {
+          "minimum": 0,
+          "title": "Duration Seconds",
+          "type": "number"
+        },
+        "formal_commands_start_epoch": {
+          "minimum": 0,
+          "title": "Formal Commands Start Epoch",
+          "type": "number"
+        },
+        "formal_commands_end_epoch": {
+          "minimum": 0,
+          "title": "Formal Commands End Epoch",
+          "type": "number"
+        },
+        "formal_commands_span_seconds": {
+          "minimum": 0,
+          "title": "Formal Commands Span Seconds",
+          "type": "number"
+        },
+        "sleep_events": {
+          "const": 0,
+          "title": "Sleep Events",
+          "type": "integer"
+        },
+        "wake_events": {
+          "const": 0,
+          "title": "Wake Events",
+          "type": "integer"
+        },
+        "battery_power_mentions": {
+          "const": 0,
+          "title": "Battery Power Mentions",
+          "type": "integer"
+        },
+        "assertion_lost": {
+          "const": false,
+          "title": "Assertion Lost",
+          "type": "boolean"
+        },
+        "sampled_alive_checkpoints": {
+          "minimum": 0,
+          "title": "Sampled Alive Checkpoints",
+          "type": "integer"
+        },
+        "maximum_observation_gap_seconds": {
+          "minimum": 0,
+          "title": "Maximum Observation Gap Seconds",
+          "type": "number"
+        },
+        "assertion_present_in_final_pmset": {
+          "const": true,
+          "title": "Assertion Present In Final Pmset",
+          "type": "boolean"
+        },
+        "assertion_exit": {
+          "const": -15,
+          "title": "Assertion Exit",
+          "type": "integer"
+        },
+        "owned_assertion_stopped": {
+          "const": true,
+          "title": "Owned Assertion Stopped",
+          "type": "boolean"
+        },
+        "owned_servers_stopped": {
+          "const": true,
+          "title": "Owned Servers Stopped",
+          "type": "boolean"
+        },
+        "source_worktree_clean": {
+          "const": true,
+          "title": "Source Worktree Clean",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "start_epoch",
+        "end_epoch",
+        "duration_seconds",
+        "formal_commands_start_epoch",
+        "formal_commands_end_epoch",
+        "formal_commands_span_seconds",
+        "sleep_events",
+        "wake_events",
+        "battery_power_mentions",
+        "assertion_lost",
+        "sampled_alive_checkpoints",
+        "maximum_observation_gap_seconds",
+        "assertion_present_in_final_pmset",
+        "assertion_exit",
+        "owned_assertion_stopped",
+        "owned_servers_stopped",
+        "source_worktree_clean"
+      ],
+      "title": "Window",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "bounded_qualification_only": {
+      "const": true,
+      "title": "Bounded Qualification Only",
+      "type": "boolean"
+    },
+    "status": {
+      "enum": [
+        "PASS",
+        "REVISE",
+        "BLOCKED"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "parent_final_acceptance": {
+      "const": "pending",
+      "title": "Parent Final Acceptance",
+      "type": "string"
+    },
+    "authority": {
+      "$ref": "#/$defs/Authority"
+    },
+    "sources": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Source"
+      },
+      "propertyNames": {
+        "enum": [
+          "main",
+          "reference"
+        ]
+      },
+      "title": "Sources",
+      "type": "object"
+    },
+    "runtime": {
+      "$ref": "#/$defs/Runtime"
+    },
+    "window": {
+      "$ref": "#/$defs/Window"
+    },
+    "environment": {
+      "items": {
+        "$ref": "#/$defs/Environment"
+      },
+      "title": "Environment",
+      "type": "array"
+    },
+    "thresholds": {
+      "$ref": "#/$defs/Thresholds"
+    },
+    "definitions": {
+      "$ref": "#/$defs/Definitions"
+    },
+    "natural_kernel": {
+      "$ref": "#/$defs/Kernel"
+    },
+    "natural_confirmation": {
+      "additionalProperties": {
+        "$ref": "#/$defs/NaturalGroup"
+      },
+      "propertyNames": {
+        "enum": [
+          "main",
+          "reference"
+        ]
+      },
+      "title": "Natural Confirmation",
+      "type": "object"
+    },
+    "natural_comparison": {
+      "$ref": "#/$defs/Comparison"
+    },
+    "browser_primary": {
+      "additionalProperties": {
+        "$ref": "#/$defs/BrowserGroup"
+      },
+      "propertyNames": {
+        "enum": [
+          "main",
+          "reference"
+        ]
+      },
+      "title": "Browser Primary",
+      "type": "object"
+    },
+    "browser_primary_comparison": {
+      "$ref": "#/$defs/PrimaryComparisons"
+    },
+    "browser_confirmation": {
+      "additionalProperties": {
+        "$ref": "#/$defs/BrowserGroup"
+      },
+      "propertyNames": {
+        "enum": [
+          "main",
+          "reference"
+        ]
+      },
+      "title": "Browser Confirmation",
+      "type": "object"
+    },
+    "browser_confirmation_comparison": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PrimaryComparisons"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "browser_confirmation_pairs_used": {
+      "enum": [
+        0,
+        1
+      ],
+      "title": "Browser Confirmation Pairs Used",
+      "type": "integer"
+    },
+    "primary_metric_count": {
+      "const": 5,
+      "title": "Primary Metric Count",
+      "type": "integer"
+    },
+    "historical": {
+      "$ref": "#/$defs/Historical"
+    },
+    "reuse_proof": {
+      "$ref": "#/$defs/ReuseProof"
+    },
+    "provenance": {
+      "items": {
+        "$ref": "#/$defs/Provenance"
+      },
+      "title": "Provenance",
+      "type": "array"
+    },
+    "commands": {
+      "items": {
+        "$ref": "#/$defs/Command"
+      },
+      "title": "Commands",
+      "type": "array"
+    },
+    "premeasurement_setup_errors": {
+      "const": 1,
+      "title": "Premeasurement Setup Errors",
+      "type": "integer"
+    },
+    "partial_or_failed_qualifying_commands": {
+      "minimum": 0,
+      "title": "Partial Or Failed Qualifying Commands",
+      "type": "integer"
+    },
+    "raw_artifact_sha256": {
+      "additionalProperties": {
+        "pattern": "^[a-f0-9]{64}$",
+        "type": "string"
+      },
+      "propertyNames": {
+        "enum": [
+          "natural_main",
+          "natural_reference",
+          "natural_main_setup",
+          "natural_reference_setup",
+          "browser_reference",
+          "browser_main",
+          "browser_reference_trials",
+          "browser_main_trials",
+          "browser_reference_receipt",
+          "browser_main_receipt",
+          "private_commands",
+          "natural_adapter",
+          "measure_controller",
+          "window_observer",
+          "environment_capture",
+          "kernel_identity",
+          "runtime_preflight",
+          "window_cleanup",
+          "measurement_state",
+          "freeze",
+          "plan",
+          "setup_errors"
+        ]
+      },
+      "title": "Raw Artifact Sha256",
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "bounded_qualification_only",
+    "status",
+    "parent_final_acceptance",
+    "authority",
+    "sources",
+    "runtime",
+    "window",
+    "environment",
+    "thresholds",
+    "definitions",
+    "natural_kernel",
+    "natural_confirmation",
+    "natural_comparison",
+    "browser_primary",
+    "browser_primary_comparison",
+    "browser_confirmation",
+    "browser_confirmation_comparison",
+    "browser_confirmation_pairs_used",
+    "primary_metric_count",
+    "historical",
+    "reuse_proof",
+    "provenance",
+    "commands",
+    "premeasurement_setup_errors",
+    "partial_or_failed_qualifying_commands",
+    "raw_artifact_sha256"
+  ],
+  "title": "Package",
+  "type": "object"
+}
