@@ -259,6 +259,19 @@ WHERE type = ?
 ORDER BY start_date
 """
 
+_SQL_NUMERIC_TREND = """
+WITH observations AS (
+    SELECT date_trunc(?, timezone(?, timezone('UTC', start_date)))::DATE AS bucket,
+           value
+    FROM records
+    WHERE type = ? AND start_date >= ? AND start_date < ? AND value IS NOT NULL
+)
+SELECT bucket, CASE WHEN ? = 'sum' THEN SUM(value) ELSE AVG(value) END
+FROM observations
+GROUP BY bucket
+ORDER BY bucket
+"""
+
 _SQL_WORKOUTS_STATS = f"""
 SELECT COUNT(*) AS cnt, SUM({_DURATION_EXPR_BARE}) AS dur
 FROM workouts
@@ -713,22 +726,13 @@ def get_trend(
     agg = aggregation or METRIC_AGGREGATION.get(metric_id, "avg")
     utc_start, utc_end = _utc_bounds(start, end, tz)
 
-    rows = conn.execute(_SQL_TREND, [metric_id, utc_start, utc_end]).fetchall()
-
-    # Group by bucket in Python
-    bucket_values: dict[str, list[float]] = {}
-    for start_date_utc, value in rows:
-        local_dt = _to_local_dt(start_date_utc, tz)
-        key = bucket_key(local_dt.date(), granularity)
-        bucket_values.setdefault(key, []).append(float(value))
-
-    # Aggregate
-    aggregated: dict[str, float] = {}
-    for key, vals in bucket_values.items():
-        if agg == "sum":
-            aggregated[key] = sum(vals)
-        else:
-            aggregated[key] = sum(vals) / len(vals)
+    # UTC-naive timestamps must first acquire UTC before local bucketing.
+    # Only bucket rows cross the DuckDB boundary; labels and gap filling retain
+    # the same shared Python helpers (including ISO week-year labels).
+    rows = conn.execute(
+        _SQL_NUMERIC_TREND, [granularity, tz, metric_id, utc_start, utc_end, agg]
+    ).fetchall()
+    aggregated = {bucket_key(bucket, granularity): float(value) for bucket, value in rows}
 
     # Fill all buckets, None for missing
     all_buckets = generate_buckets(start, end, granularity)
