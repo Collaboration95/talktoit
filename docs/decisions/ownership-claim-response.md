@@ -212,3 +212,56 @@ Pyright: zero errors/warnings, exit 0, `types-index-v2.log`.
 
 A fresh combined full run is necessary because of the recorded full-gate failures
 and this source correction. Its result follows below; the failed run is retained.
+
+### Final combined verification
+
+Tested source head: `09a732c77b2c6bf62fa86f3b3af534c58d29685b`. The corrected
+full command uses `check-v2.sh env` with fresh absolute `v2/full/health.duckdb`,
+`v2/full/state.sqlite`, `v2/full/shards` and `v2/full/private` paths, then
+`make check-full`. **Exit 0**, `combined-check-full-fixed.log`:
+
+- **1,390 backend tests and 224 frontend tests passed**.
+- Backend overall **89.01%** (7,274/8,172 statements); ingestion **91.55%**
+  (954/1,042); LLM **82.30%** (1,372/1,667). The original 80/90/70 gates pass.
+- Lifecycle **91.31%**, shared claim helper **92.20%**, import artifacts **94%**,
+  original worker helper **100%**. No coverage threshold/exclusion changed.
+- Frontend statements **89.28%**, branches **80.43%**, functions **91.36%** and
+  lines **92.11%** pass unchanged gates.
+- Backend/frontend formatting, lint, types and version consistency pass in the
+  same command. All applicable commit hooks pass. No source changes occur during
+  this run, and no additional broad gate is run afterward.
+
+Exact tested trees, unchanged by this evidence-only update:
+
+- Backend app: `f75d9a0948217621e380a655fbe0560f3dcb23f3`.
+- Backend tests: `5bfcff185625429808f0e8db68b9d296f6170c6d`.
+- Frontend source: `9812124868edcd97694b01c31d8fae58d8a32dcb`.
+- Frontend tests: `a77651bf117dbdff932e4299503ed061ee5390d1`.
+
+The final full-run hook recorded one DNS and six TCP denials, no private-file or
+real SDK completion attempts. These are blocked attempts, not successful access.
+Real providers/transport remained denied; fake gateway tests stayed functional.
+Python 3.12.11, Node 20.20.2, two pytest/Vitest workers and unset global autostart,
+stop-on-exit and ingest-worker overrides are retained. Coverage JSON and command,
+exit, tree, original-report-hash and denial receipts remain outside the checkout.
+
+API, planner/provider projection/cache v8, frontend production/tests, original
+connection/worker/orchestrator, coordinator/parser/reconciliation and dependency
+locks are unchanged from 5105. All original cancellation, active/retained/leased,
+CLI identity, scope/confirmation, missing/failure and canonical parity checks pass.
+Only test observers were adapted for explicitly verified empty private metadata;
+all original sentinel/value/FK/worker/envelope assertions remain enabled.
+
+Own source commits are separate: legacy authority
+`84da3a968c2eaa8206f8b1d915953f427d483e66`, capture protocol
+`e1105a16d1ee2384028f6fe30acb79b240061a5a`, and physical-subject lookup/observers
+`09a732c77b2c6bf62fa86f3b3af534c58d29685b`. Original published R2 work is preserved.
+No parent worktree or PR body/comments/check monitoring were changed here.
+
+Remaining limits: bounded public-source replacement/private-namespace trust;
+intentional empty metadata and completion tombstones; manual recovery for
+quarantined mismatches, uncommitted initial preparation, unsupported prototype
+catalogs or changed persisted locators. No successful inference/private-file read,
+formal timed benchmark, updated browser/build/Linux CI, new independent acceptance
+or merged-main completion is claimed. Parent keeps PR #213 open and owns those
+remaining receipts and the new review with every prior brief/report/response.
