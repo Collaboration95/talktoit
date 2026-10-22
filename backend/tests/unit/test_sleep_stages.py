@@ -92,3 +92,35 @@ def test_sleep_panels_use_the_same_source_policy() -> None:
         start=datetime(2024, 1, 1).date(), end=datetime(2024, 1, 2).date(), conn=conn
     )
     assert stages.total_asleep_hours in [point.value for point in sleep.series]
+
+
+def test_sleep_trend_includes_awake_and_in_bed_intervals_but_stages_do_not() -> None:
+    """The legacy sleep trend is elapsed category coverage, not asleep-only time."""
+    conn = duckdb.connect(":memory:")
+    conn.execute(SQL_CREATE_TABLES)
+    conn.execute(
+        """INSERT INTO records VALUES
+        (1, 'HKCategoryTypeIdentifierSleepAnalysis', 'Watch', NULL, NULL, NULL,
+         NULL, '2024-01-01 13:30:00', '2024-01-01 16:00:00', NULL,
+         'HKCategoryValueSleepAnalysisInBed'),
+        (2, 'HKCategoryTypeIdentifierSleepAnalysis', 'Watch', NULL, NULL, NULL,
+         NULL, '2024-01-01 14:00:00', '2024-01-01 15:00:00', NULL,
+         'HKCategoryValueSleepAnalysisAsleepCore'),
+        (3, 'HKCategoryTypeIdentifierSleepAnalysis', 'Watch', NULL, NULL, NULL,
+         NULL, '2024-01-01 15:00:00', '2024-01-01 15:30:00', NULL,
+         'HKCategoryValueSleepAnalysisAwake')"""
+    )
+
+    trend = get_sleep(
+        granularity="day",
+        start=datetime(2024, 1, 1).date(),
+        end=datetime(2024, 1, 2).date(),
+        conn=conn,
+    )
+    stages = get_sleep_stages(
+        start=datetime(2024, 1, 1).date(), end=datetime(2024, 1, 2).date(), conn=conn
+    )
+
+    assert trend.series[0].value == 2.5
+    assert stages.total_asleep_hours == 1.0
+    assert stages.stages_hours == {"core": 1.0}
