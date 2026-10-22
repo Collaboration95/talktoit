@@ -12,7 +12,6 @@ import json
 import math
 import os
 import re
-import shutil
 import stat
 import uuid
 from collections.abc import Generator
@@ -26,13 +25,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.db.dataset_lifecycle import DatasetLifecycle
 from app.state.app_state import AppStateRepository
+from app.state.cleanup_claims import authority_key, identity, remove_entry
+from app.state.cleanup_claims import directory as claim_directory
 
 _CURRENT: ContextVar[ImportOperation | None] = ContextVar("import_operation", default=None)
 _ID = re.compile(r"[0-9a-f]{32}\Z")
-_SHARD = re.compile(
-    r"(?:records|record_metadata|hrv_beats|workouts|workout_events|workout_statistics|"
-    r"workout_routes|workout_metadata|activity_summaries)-[0-9]{4,}-[0-9]{4,}\.parquet\Z"
-)
 _MAX_RECORD = 1024 * 1024
 _INTERRUPTED = "The import was interrupted. Choose your export to try again."
 
@@ -330,29 +327,54 @@ def _remove_artifact(artifact: Artifact, operation: ImportOperation) -> None:
     elif path.is_relative_to(root) and path.parent != root / "shards":
         return
     try:
-        if _identity(path.parent) != artifact.parent or _identity(path) != artifact.identity:
+        if _identity(path.parent) != artifact.parent:
             return
-        if artifact.kind == "upload":
-            if stat.S_ISREG(path.lstat().st_mode):
-                path.unlink()
-        else:
-            if not path.is_dir():
+        with claim_directory(path.parent) as parent:
+            if identity(parent) != (artifact.parent.device, artifact.parent.inode):
                 return
-            # Directory ownership covers canonical importer output only. Unknown
-            # entries, nested directories and links preserve the entire child.
-            for child in path.iterdir():
-                if not stat.S_ISREG(child.lstat().st_mode):
+            authority = authority_key(f"{operation.id}:{artifact.model_dump_json()}")
+            result = remove_entry(
+                root,
+                authority=authority,
+                source_parent=path.parent,
+                source_fd=parent,
+                name=path.name,
+                namespace_parent=path.parent,
+                namespace_fd=parent,
+                policy=artifact.kind,
+            )
+            if result is not None:
+                return
+            if _identity(path) != artifact.identity:
+                return
+            source = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+            try:
+                value = os.fstat(source)
+                expected_type = (
+                    stat.S_ISREG(value.st_mode)
+                    if artifact.kind == "upload"
+                    else stat.S_ISDIR(value.st_mode)
+                )
+                if (
+                    identity(source) != (artifact.identity.device, artifact.identity.inode)
+                    or not expected_type
+                ):
                     return
-                if artifact.kind == "shards" and not _SHARD.fullmatch(child.name):
-                    return
-                if artifact.kind == "staging" and child.name not in {
-                    "health.duckdb",
-                    "health.duckdb.wal",
-                    "manifest.json",
-                }:
-                    return
-            shutil.rmtree(path)
-        _sync(path.parent)
+                # Keep the originally checked inode alive throughout capture;
+                # only the independently validated private capture is disposed.
+                remove_entry(
+                    root,
+                    authority=authority,
+                    source_parent=path.parent,
+                    source_fd=parent,
+                    name=path.name,
+                    namespace_parent=path.parent,
+                    namespace_fd=parent,
+                    policy=artifact.kind,
+                    expected=(artifact.identity.device, artifact.identity.inode),
+                )
+            finally:
+                os.close(source)
     except (OSError, ValueError, RuntimeError):
         # Missing, renamed or replaced artifacts and unavailable filesystems are
         # preserved. Records remain available for an idempotent later retry.

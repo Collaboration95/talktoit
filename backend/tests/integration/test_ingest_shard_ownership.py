@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier
@@ -27,6 +28,19 @@ def _root(tmp_path):
 def _assert_preserved(root, sibling):
     assert (root / "sentinel.txt").read_text() == "caller data"
     assert (sibling / "keep.parquet").read_bytes() == b"unrelated"
+
+
+def _assert_only_empty_claim_metadata(root, sibling):
+    public = set()
+    for path in root.iterdir():
+        if path.name.startswith(".tti_claim_"):
+            assert re.fullmatch(r"\.tti_claim_[0-9a-f]{32}", path.name)
+            assert {p.name for p in path.iterdir()} == {"payload"}
+            assert (path / "payload").is_dir()
+            assert list((path / "payload").iterdir()) == []
+        else:
+            public.add(path)
+    assert public == {root / "sentinel.txt", sibling}
 
 
 @pytest.mark.parametrize("configuration", ["explicit", "environment", "symlink", "normalized"])
@@ -92,14 +106,14 @@ def test_failure_and_retry_clean_only_owned_run(tmp_path, monkeypatch, failure):
             else:
                 coordinator.ingest_v2(source, db, n_workers=1)
     _assert_preserved(root, sibling)
-    assert set(root.iterdir()) == {root / "sentinel.txt", sibling}
+    _assert_only_empty_claim_metadata(root, sibling)
     assert all(not child.exists() for child in seen)
     with duckdb.connect(":memory:") as db:
         monkeypatch.setattr(coordinator, "load_shards_into_duckdb", real_load)
         stats = coordinator.ingest_v2(FIXTURE, db, n_workers=1)
         assert stats["workouts"] == 3
     _assert_preserved(root, sibling)
-    assert set(root.iterdir()) == {root / "sentinel.txt", sibling}
+    _assert_only_empty_claim_metadata(root, sibling)
 
 
 def test_default_temporary_mode_cleans_success_and_reconcile_failure(tmp_path, monkeypatch):
@@ -227,4 +241,4 @@ def test_pool_fallback_preserves_root_and_reconciles_worker_parity(tmp_path, mon
     assert counts[0] == counts[1]
     assert snapshots[0] == snapshots[1]
     _assert_preserved(root, sibling)
-    assert set(root.iterdir()) == {root / "sentinel.txt", sibling}
+    _assert_only_empty_claim_metadata(root, sibling)

@@ -178,18 +178,32 @@ remain separate requirements.
 
 ### Hosted qualification
 
-`ubuntu-browser-acceptance` is a new independent, 15-minute Ubuntu job. It installs
+`ubuntu-browser-acceptance` is an independent, 15-minute Ubuntu 24.04 job. It installs
 both existing application locks and the separate browser lock, audits the browser
-package, installs bundled Chromium and Ubuntu libraries through the official
-Playwright CLI, checks syntax/sensitivity, builds the production frontend and
+package, caches and installs the locked Chromium headless shell, verifies library
+availability through an actual launch, checks syntax/sensitivity, builds the production frontend and
 runs the same supervisor. An `always()` step provides a setup-failure receipt if
 the harness could not start; another uploads only PNGs and the sanitized receipt
 for seven days. Existing macOS lifecycle, Ubuntu test/coverage/build and weekly
 audit gates are unchanged.
 
-**Ubuntu execution is pending the parent's batched PR.** Local macOS evidence is
-not Linux evidence or a green acceptance gate. The parent must cherry-pick this
-standalone commit with the chart repair and corrected Settings wrapping, obtain the actual
-Ubuntu artifact/check receipt, and complete independent review and integrated
-acceptance. No PR, watcher, review loop, merge, issue closure or quiet-window
-benchmark is performed by this follow-up.
+The `5105dc5` CI attempt reached the unchanged 15-minute limit: browser/dependency
+provisioning consumed 14m22s, dominated by slow Azure Ubuntu mirror downloads, and
+the actual journey was cancelled after 21 seconds. This is a failed/incomplete
+receipt, not accepted Linux evidence. GitHub's check annotation explicitly reports
+the maximum execution time (run `39832338300`, job `120011437502`).
+
+Hosted browser setup now pins Ubuntu 24.04, caches the exact lock-selected browser
+revision, installs only the headless Chromium shell actually used by the harness,
+and launches it to validate the runner's libraries. Host validation is not disabled:
+missing libraries or a failed launch fail the job before acceptance. This avoids
+unconditional package upgrades/font downloads on the hosted image. Fresh or local
+Ubuntu installations may still need the documented `install --with-deps` command.
+The complete browser scenarios, artifact policy and 15-minute limit are unchanged.
+Actual success on the updated workflow remains required.
+
+Earlier PR #212 and `5c21941` Linux receipts passed all 47 criteria at their recorded
+sources. They do not qualify the cancelled `5105dc5` attempt or this changed setup.
+Actual updated-head Ubuntu execution remains required; local launch/static checks
+are not Linux acceptance. The parent retains the current artifact/check receipt,
+independent review and actual-main qualification before issue or gate completion.

@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
 
-CACHE_KEY_VERSION = "chat-cache-v6"
+CACHE_KEY_VERSION = "chat-cache-v8"
 """Bump when a local fact, formatter, privacy, or response contract changes."""
 SNAPSHOT_CONTRACT = "leased-generation-v1"
 

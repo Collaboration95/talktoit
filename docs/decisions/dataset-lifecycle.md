@@ -157,6 +157,10 @@ The integration requirements carried forward were to represent no-active-data ex
 
 ## Leased consumers, deletion and artifact integration (#160–#163)
 
+The final safety-review corrections below strengthen worker lifetime and normal
+retirement. They supersede the original snapshot-release-only retirement behavior
+described in this section; see [the correction evidence](safety-review-corrections.md).
+
 `app.db.connection.dataset_snapshot()` owns a request's `DatasetSnapshot`: connection, immutable manifest, database path and export root. `DatasetLifecycle.lease()` reads the pointer, opens the already-published stable generation lease inode without following links, takes a shared POSIX lock, rereads the pointer and validates the manifest. A changed pointer releases everything and retries the whole tuple, up to four attempts; lease waits are bounded to 250 ms per attempt. The DB opens read-only while that lease is held. Each context closes its connection and releases its lease at completion, including exceptions and cancellation. Existing connection-manager leases also prevent idle-close code from closing in-use handles. Acquisition/open errors produce safe recovery/conflict messages, not DuckDB paths or SQL.
 
 Chat prephase/finalization, dashboard profiles/capabilities, workout route loading, HTTP status/Settings and managed CLI identity all use that connection's snapshot. They never acquire the identity or root independently from the mutable SQLite projection. Route parsing completes within the lease and uses only its allowed root; browser route downloads derive from that same returned geometry. Explicit external CLI overrides bypass managed recovery, identity, caches and conversation associations, even if the managed pointer is unavailable. An unassociated legacy CLI source retains its readonly behavior and holds a shared lifecycle lock so import/deletion cannot remove it mid-query.
@@ -189,3 +193,198 @@ Dev `d2d33b9a46593ac53ef613f39d17564198c9df0e` is included, and the original PR 
 - Final module coverage gates: `coverage report --include='app/ingest/*' --fail-under=90` — **91%, exit 0**; `--include='app/llm/*' --fail-under=70` — **83%, exit 0**. No coverage threshold or exclusion was changed.
 
 Private lease/operation lock inodes and closed ownership records are intentionally retained. Ambiguous/unproven files may require local recovery rather than automatic reclamation; status stays inactive after committed deletion. Ubuntu/macOS PR CI and the parent's independent integrated/browser acceptance remain pending. This batch performs no PR review loop, monitoring, merge or issue closure.
+
+## Final safety-review corrections (#160–#162, 23 October 2026)
+
+A request's snapshot must outlive the **actual connection-consuming worker**, not
+only its asyncio waiter. `app.db.async_worker` shields each borrowed-connection
+worker and drains it before propagating cancellation. Further cancellations cannot
+abandon that drain. Worker exceptions are retrieved while cancellation remains the
+request's terminal result. Both orchestrator dispatch branches, standalone profiling,
+and HTTP chat preparation use this rule. Cancelled-turn cleanup is also drained,
+so a prephase that commits its turn late cannot strand it. The pending-only terminal
+state transitions remain unchanged.
+
+All synchronous dashboard handlers use `db_worker_endpoint`: an async wrapper with
+the original callable signature that runs the existing handler through the same
+helper. This also covers native asyncio task cancellation, which can abandon the
+framework's ordinary synchronous-handler offload. Dependencies retain their
+snapshot until the actual handler exits. Local queries stay off the event loop;
+handler bodies, request/query counts, schemas, pagination, caches and route roots
+are unchanged. Status and Settings acquire and close their snapshots **inside**
+their off-thread payload function; they do not borrow a connection from an earlier
+request dependency. SQLite-only chat finalization does not consume the health
+connection. Import/recovery workers likewise own their lifecycle locks/resources.
+
+### Durable retirement candidates
+
+`retirement.json` is a new additive, strict, bounded version-1 record. It does not
+change the pointer, manifest, journal, retention or deletion formats:
+
+```json
+{"format_version":1,"generations":[{"pointer":{"format_version":1,"generation_id":"ds_<32 lowercase hex>","manifest_sha256":"<64 lowercase hex>"},"device":0,"inode":0}]}
+```
+
+`device` and `inode` identify the exact generation directory when its former
+retained pointer is recorded. Candidate IDs must be non-null and unique. Normal
+successful cleanup leaves an empty list. A missing record means no proven pending
+candidates; older stores remain readable. Unknown versions/fields, duplicates,
+symlinks and malformed records fail closed before import/startup reconciliation.
+
+Under the lifecycle writer lock, after successful projection reconciliation:
+
+1. Before replacing or clearing `retained.json`, record its exact former pointer
+   and directory identity if superseded. Write a unique temporary record, flush
+   and fsync it, atomically replace `retirement.json`, and fsync the managed root.
+   Failure here leaves the retained reference/journal available for replay.
+2. Replace/fsync the retained pointer, then unlink/fsync the activation journal as
+   before. Replaying an existing candidate never refreshes its directory identity
+   or digest from current filesystem contents.
+3. Attempt candidate cleanup without waiting for readers. Recheck active,
+   retained, journal and deletion protections under the writer lock. Require the
+   original directory device/inode, exact manifest digest and DB hash, no extra
+   entries, and the stable exclusive generation lease before unlinking anything.
+4. Flush the generations parent after successful removal, then atomically
+   write/fsync the remaining candidates. A crash before pruning leaves proof for
+   idempotent retry. A crash during unlinking can resume only the exact recorded
+   directory; a surviving DB without its matching manifest is preserved.
+
+Activation and every successful reconciliation retry this queue. Snapshot teardown
+also makes a nonblocking writer attempt **after** closing the connection/releasing
+the shared generation lease. If publication holds the writer lock at release, its
+post-reconciliation drain or subsequent startup retries the durable candidate.
+Busy leases, IO failures, changed contents/identities and unknown entries preserve
+the candidate for retry. Pruning IO failure can leave already-removed candidates in
+the queue; this does not roll back a reconciled import. Stable lease lock records
+remain in place. Active and newest rollback copies remain protected.
+
+No directory scan infers retirement authority. Complete but uncommitted generations,
+ambiguous old allocations and copies whose retained reference was lost by an older
+version remain preserved; that lost proof cannot be reconstructed safely. Subsequent
+normal committed copies no longer accumulate indefinitely. This protocol retains
+the existing local POSIX rename/fsync/flock limits and makes no physical power-loss
+or network-filesystem claim.
+
+### Second-review directory ownership correction (R2-F1)
+
+The previous initial pathname check did not protect cleanup from a directory
+replacement between that check and exclusive lease acquisition. Removal now
+receives the recorded directory device/inode, acquires the exclusive generation
+lease, opens the managed root, generations parent and child with no-follow
+directory descriptors, and compares `fstat` against that recorded identity before
+closing any idle connection or unlinking any file. Listing, bounded manifest
+parsing, manifest/DB hashing and both file unlinks use the validated directory
+descriptor. File opens require regular files and use `O_NOFOLLOW | O_NONBLOCK`;
+entry identities are checked against the held file descriptors before unlinking.
+Matching bytes alone never authorize a replacement directory.
+
+`os.unlink(name, dir_fd=validated_directory)` continues to address the original
+allocation if its pathname is renamed and replaced after validation. A final
+pathname identity check preserves durable proof when that replacement is observed.
+The replacement, including an empty replacement, receives no unlink or rmdir.
+File, directory and lease descriptors close on errors and cancellation.
+
+Portable POSIX does not provide conditional rmdir-by-inode. Cleanup deliberately
+retains the emptied generation allocation rather than issuing an unbound pathname
+rmdir. Stable lease files also remain. Normal sequential imports still remove old
+DB and manifest copies, retaining only active/newest rollback health data; metadata
+grows by an empty directory per reclaimed allocation. There is no general directory
+collector. The old `generation_directory_removed` fault seam is replaced by
+`generation_directory_fsynced`; partial unlink, repeated startup and IO-failure
+cases retain their assertions and exercise the anchored directory flush instead.
+
+The validated directory is fsynced after both file unlinks, then its anchored
+parent is fsynced, before queue proof may be pruned. A failed flush retains the
+candidate. An already-empty recorded allocation can be flushed and retried after
+process death; a surviving DB without its manifest remains preserved. The original
+candidate-publication/retained-pointer/journal ordering is unchanged.
+
+Explicit health deletion uses the same removal primitive. New version-1
+`deletion.json` records additionally contain `identities`, a strict list using the
+same pointer/device/inode shape as retirement candidates. Retry/startup never
+refresh these recorded identities. Pending retirement identities are reused;
+active, retained, pending retirement and existing deletion references supply
+authority. Directory scans and complete-but-uncommitted manifests supply none.
+Unknown/uncommitted copies remain preserved even during explicit deletion.
+The confirmation/scope, inactive tombstone, bounded lease wait, useful retryable
+409, missing-file idempotence and independent state scopes remain unchanged.
+
+Older version-1 deletion records without identities still parse. Already missing
+or empty allocations complete without unlink; present files with no recorded
+identity remain inactive and preserved for manual local recovery. Neither startup
+nor explicit retry invents that missing proof. Older binaries reject the additive
+field safely rather than deleting through it. This conservative compatibility limit
+does not affect newly recorded deletion retries.
+
+See [the complete second-round correction evidence](safety-review-corrections-round-2.md).
+These are local POSIX macOS/Ubuntu operations, without Linux-only syscalls or
+`/proc` paths. Process-death/fsync tests do not establish physical power-loss,
+network-filesystem durability, or safety against arbitrary non-cooperating writes
+inside immutable generation files outside the writer/lease protocol.
+
+### Legacy deletion authority (round-three maintenance R3-F1)
+
+An existing deletion intent's member without an original directory identity stays
+unproven. This absence applies by generation ID throughout retry, activation or
+deletion journal finalization and startup. `_queue_retirement` cannot mint proof
+for that member; explicit deletion cannot backfill it from any preexisting or
+newly poisoned retirement candidate. Fully proven members retain their original
+identities, including when copied into retirement records. New members outside
+the existing intent may acquire ordinary independently proven authority.
+
+Present unproven files and their side-channel records remain preserved behind
+the inactive retryable conflict. If all unproven allocations become empty or
+missing, cleanup first durably removes their disqualified retirement records,
+then removes/fsyncs the deletion intent. Otherwise clearing that negative fence
+would leave poisoned proof usable later. No present file is removed by this
+disqualification. The four `retirement_disqualified_*` boundaries cover its
+write/fsync/replace/root-fsync order and repeated startup after process death.
+
+No record format or lock protocol changes. The exact historical writer and
+expanded regression evidence are described in
+[legacy deletion authority](legacy-deletion-authority.md).
+
+### Durable entry claims (round-three safety R3-F1/F2)
+
+Generation files are no longer unlinked through public source names. The shared
+`app.state.cleanup_claims` journal captures each entry by atomic same-filesystem
+rename into a newly allocated private namespace, then validates the captured
+inode/type and original digest before private disposal. A directory FD alone
+only anchors the parent; the captured, validated object now supplies the missing
+child-entry boundary. The same primitive captures whole import allocations.
+
+Claim records are strict, bounded version-2 state under `cleanup-claims/<key>/`.
+The catalog has a durably written format marker; unmarked earlier prototypes or
+unsupported catalogs remain preserved for local recovery. Lookup binds original
+authority to physical parent device/inode and a normalized entry name, not a
+mutable pathname spelling. Original locator fields must still match exactly;
+aliases fail closed instead of creating fresh authority for a completed subject.
+`PREPARED` persists original expectations before capture; source/claim directory
+flushes precede `CAPTURED`; validation and its durable `VALIDATED` record precede
+private unlink; directory flushes precede `CLEANED`. Completed records remain to
+prevent recapture of replacement source entries. Any observed remaining source
+entry or inconsistent completion state preserves the caller's authority. Queue
+pruning remains last, after all claims finish, the generation is empty, its
+original directory binding matches and required directories are flushed.
+
+Mismatched captures are durably quarantined, never deleted. Regular files can be
+hard-linked back only if the source is absent, retaining the quarantine link too;
+directories remain preserved privately without overwrite restoration. Unknown
+uncommitted metadata and absent/ambiguous captures require local recovery. No
+claim scan infers authority: replay requires the caller's original record and
+existing lock/ownership. In particular, no claim can promote an identity-less
+legacy deletion member.
+
+The configured legacy DB uses the same protocol. New deletion intents add optional
+`legacy_identity: {device, inode, sha256}` captured once after idle checkpoint/close.
+Canonical health-table validation runs on the protected captured database. Older
+`legacy:true` records without this identity preserve present files; retries never
+backfill them. A WAL or failure to capture original proof is preserved for local
+recovery. Missing files remain idempotent. No public envelope or lock changes.
+
+The private catalog/namespaces and captured contents must be protected from other
+writers. These are bounded public-source replacement guarantees, not protection
+against same-account code rewriting private records, captured bindings or contents.
+Empty allocations/private namespaces and completion metadata are retained; normal
+old DB copies are reclaimed. See [the complete claim response](ownership-claim-response.md)
+for the trust boundary, cross-filesystem placement, crash ordering and evidence.

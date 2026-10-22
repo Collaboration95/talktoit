@@ -45,6 +45,14 @@ native uploads, cancellation/restart, keyboard and phone-width acceptance.
 - Cross-process reader leases prevent unlinking in-use generations. Health
   deletion first commits an inactive tombstone, then performs retryable physical
   cleanup. History, settings and other independent scopes remain separate.
+- Off-thread chat/profile/dashboard work drains before cancellation releases its
+  connection and lease. Retirement validates recorded ownership after the exclusive
+  lease. Shared durable claims capture entries on the same filesystem before
+  validating and disposing of private captured objects. Public replacements remain
+  preserved; older deletion intents cannot gain missing authority during retries.
+  Empty metadata/completion records remain, and quarantined mismatches require
+  manual recovery. Private claim contents are trusted; this is a bounded local
+  POSIX protocol. See [the response and limits](ownership-claim-response.md).
 - Import artifacts have operation locks and explicit ownership metadata. Startup
   reconciles lifecycle state before abandoned jobs/artifacts. Stable ownership
   records, unknown files and ambiguous artifacts are intentionally preserved.
@@ -100,6 +108,9 @@ qualify network filesystems. XML-only uploads omit GPX companions; route access
 requires the original unpacked export through the existing local importer.
 Chrome can retain a failed module import on retry; formatted answer data remains
 available. Phone-width desktop-browser evidence is not physical-device evidence.
+Empty generation directories and stable lease metadata remain after DB reclamation.
+Older deletion intents without recorded directory identity preserve present files
+for manual local recovery; unknown or uncommitted allocations are not auto-collected.
 
 Profile caching (#184) and workout summary/join optimization were rejected by
 measured criteria, with reopening triggers in the performance receipts. Optional

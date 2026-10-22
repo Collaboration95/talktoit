@@ -120,11 +120,24 @@ def _comparison_plan(
     return {"tool_name": "get_comparison", "arguments": arguments}
 
 
+def _is_sleep_category_question(question: str) -> bool:
+    """Share known stage/category aliases with classification and unsupported planning."""
+    text = re.sub(r"[\u2010-\u2014]", "-", question.casefold())
+    return re.search(
+        r"\b(?:nrem|(?:non[-\s]*)?rem|(?:non[-\s]*)?rapid[-\s]+eye[-\s]+movement|"
+        r"stages?|categor(?:y|ies)|asleep|awake|awakenings?|bedtime)\b|\bin[- ]?bed\b",
+        text,
+    ) is not None or (
+        re.search(r"\b(?:deep|core|light)\b", text) is not None
+        and (re.search(r"\bsleep\w*\b", text) is not None or _activity_type(text) is None)
+    )
+
+
 def is_sleep_question(question: str) -> bool:
     """Keep sleep wording local even when it is outside the supported grammar."""
-    return (
+    return _is_sleep_category_question(question) or (
         re.search(
-            r"\b(?:sleep\w*|asleep|slept|insomnia|awake|awakenings?|bedtime|rem)\b|\bin[- ]bed\b",
+            r"\b(?:sleep\w*|slept|insomnia)\b",
             question.casefold(),
         )
         is not None
@@ -249,9 +262,44 @@ def _metric_comparison_plan(question: str) -> dict[str, Any]:
     }
 
 
+def _sleep_date_range(text: str, as_of: date | None) -> tuple[date, date] | None:
+    """Consume a bounded request prefix and its entire supported date clause."""
+    request = re.fullmatch(
+        r"(?:(?:show|plot|chart)\s+(?:me\s+)?(?:my\s+)?|my\s+)?"
+        r"(?:(?:daily|weekly|monthly)\s+)?sleep"
+        r"(?:\s+(?:interval coverage|coverage|duration|trend))?\s+(?P<clause>.+)"
+        r"|how\s+(?:did i sleep|much sleep did i get|long did i sleep)\s+(?P<asked_clause>.+)",
+        text.strip().rstrip(".?!"),
+    )
+    if request is None:
+        return None
+    clause = (request.group("clause") or request.group("asked_clause")).strip()
+    if re.match(r"(?:from|between)\b", clause):
+        ranges = _explicit_ranges(clause)
+        return ranges[0] if len(ranges) == 1 else None
+    if as_of is None or not re.fullmatch(
+        rf"(?:(?:in|for|during)\s+)?(?:"
+        rf"(?:{_MONTH_PATTERN})\s+\d{{4}}|(?:this|last)\s+(?:week|month|year)|year to date)",
+        clause,
+    ):
+        return None
+    try:
+        period = _period_for_question(clause, as_of)
+    except ValueError:
+        return None
+    return (period[0], period[1]) if period is not None else None
+
+
 def _sleep_plan(question: str, profile: DataProfile) -> dict[str, Any]:
-    ranges = _explicit_ranges(question)
     lower = question.casefold()
+    # A coverage explanation may name included categories without asking to measure one.
+    intent = re.sub(r"\bincluding awake and in[- ]?bed (?:records|intervals)\b", "", lower)
+    if _is_sleep_category_question(intent):
+        return _fallback_plan(
+            "Sleep stages (REM, deep and core) and time asleep, awake or in bed are not supported "
+            "in chat yet. I can show measured sleep interval coverage, including awake and "
+            "in-bed records. Try: Show daily sleep last week."
+        )
     if re.search(
         r"\b(?:why|improve|badly|quality|score|diagnos\w*|compare|insomnia|healthy|normal)\b", lower
     ):
@@ -259,22 +307,14 @@ def _sleep_plan(question: str, profile: DataProfile) -> dict[str, Any]:
             "I can show measured sleep interval coverage, including awake and "
             "in-bed records. Ask for a sleep trend with a date range."
         )
-    explicit_dates = re.search(r"\d{4}-\d{2}-\d{2}|\b\d{1,2}\s*[-\u2013]", lower)
-    period = (
-        _period_for_question(question, profile.latest_date)
-        if profile.latest_date is not None and not explicit_dates
-        else None
-    )
-    if len(ranges) == 1:
-        start, end = ranges[0]
-    elif period is not None and not ranges:
-        start, end, _label = period
-    else:
+    period = _sleep_date_range(intent, profile.latest_date)
+    if period is None:
         return _fallback_plan(
             "Give a sleep trend date range, such as Show daily sleep last week "
             "or Show sleep from 2026-06-01 to 2026-06-07.",
             "clarification_needed",
         )
+    start, end = period
     return {
         "tool_name": "get_sleep_trend",
         "arguments": {
