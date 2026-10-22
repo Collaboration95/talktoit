@@ -298,7 +298,9 @@ export function SettingsView() {
             <span className="font-medium">{providerLabel(activeProvider)}</span>
           </Row>
           <Row label="Provider mode">
-            <span className="font-medium">{modeLabel(settings.provider.mode)}</span>
+            <span className="font-medium">
+              {modeLabel(activeProvider === 'local' ? 'local_only' : settings.provider.mode)}
+            </span>
           </Row>
           {settings.provider.model && <Row label="Model">{settings.provider.model}</Row>}
           {settings.provider.base_url && <Row label="Base URL">{settings.provider.base_url}</Row>}
@@ -472,7 +474,7 @@ export function SettingsView() {
           {providerError && <p className="text-xs text-red-600">{providerError}</p>}
           {providerSaved && (
             <p className="text-xs text-green-600">
-              Provider saved — next chat will use {providerLabel(provider)}.
+              Provider saved — next chat will use {providerLabel(activeProvider)}.
             </p>
           )}
           <button

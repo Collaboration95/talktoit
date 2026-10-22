@@ -254,3 +254,19 @@ it('distinguishes a reachable external endpoint with a missing model from a stop
   ).toBeInTheDocument()
   expect(screen.queryByText(/Stopped — chat uses/i)).not.toBeInTheDocument()
 })
+
+it('shows effective local privacy when a previously saved hosted mode remains in configuration', async () => {
+  seedSuccess({
+    ...SETTINGS,
+    provider: {
+      ...SETTINGS.provider,
+      provider: 'local',
+      mode: 'remote_planning_and_narration',
+      egress_categories: [],
+    },
+  })
+  render(<SettingsView />)
+  const privacy = await screen.findByRole('region', { name: 'Privacy' })
+  expect(privacy).toHaveTextContent('Local only — no network egress')
+  expect(privacy).not.toHaveTextContent('Remote planning + narration')
+})
