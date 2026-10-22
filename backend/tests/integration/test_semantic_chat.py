@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import duckdb
 from httpx import ASGITransport, AsyncClient
 
-from app.db.migrate import migrate
-from app.db.schema import SQL_CREATE_TABLES
+from app.llm.cache_keys import snapshot_plan
 from app.main import create_app
 from app.state.app_state import AppStateRepository
 
@@ -26,38 +24,15 @@ LAST_RUN_PLAN = {
 
 
 def _seed(monkeypatch, tmp_path) -> AppStateRepository:
-    monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
-    db_path = tmp_path / "health.duckdb"
-    monkeypatch.setenv("TTI_DB_PATH", str(db_path))
+    from tests.integration.test_dataset_crash_recovery import _child, _export
 
-
-def _seed(monkeypatch, tmp_path) -> AppStateRepository:
     monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
-    db_path = tmp_path / "health.duckdb"
-    monkeypatch.setenv("TTI_DB_PATH", str(db_path))
-    conn = duckdb.connect(str(db_path))
-    conn.execute(SQL_CREATE_TABLES)
-    # A single record gives local coverage so the planner has a reference date.
-    conn.execute(
-        """
-        INSERT INTO records (id, type, source_name, start_date, end_date, value, unit)
-        VALUES (1, 'HKQuantityTypeIdentifierStepCount', 'Phone',
-                TIMESTAMP '2026-08-05 08:00:00', TIMESTAMP '2026-08-05 08:10:00', 100, 'count')
-        """
-    )
-    conn.close()
-    migrate(str(db_path))
+    monkeypatch.setenv("TTI_DB_PATH", str(tmp_path / "health.duckdb"))
+    export = _export(tmp_path, "semantic-root", 100, 1)
+    export.write_text(export.read_text().replace("2024-01-01", "2026-08-05"))
+    _child(tmp_path, "import", export)
     repo = AppStateRepository()
-    active = repo.activate(
-        source_bytes=b"",
-        source_size_bytes=0,
-        parser_version="v2",
-        schema_version="1",
-        worker_count=2,
-        coverage_start="2026-01-01",
-        coverage_end="2026-08-31",
-        counts={"records": 1},
-    )
+    active = repo.get_active()
     assert active is not None
     conversation_id = repo.create_conversation("Runs", active.id)
     repo.add_completed_turn(
@@ -66,7 +41,7 @@ def _seed(monkeypatch, tmp_path) -> AppStateRepository:
         PRIOR_RESPONSE,
         "default",
         "deterministic_local",
-        canonical_plan=LAST_RUN_PLAN,
+        canonical_plan=snapshot_plan(LAST_RUN_PLAN),
     )
     return repo
 

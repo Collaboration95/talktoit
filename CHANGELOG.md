@@ -26,6 +26,12 @@ in `make check` and CI).
 
 ### Fixed
 
+- Queries, caches, provenance and workout routes now share a leased generation.
+  Empty installs return useful dashboard/chat guidance without creating a database.
+- Health deletion commits a durable inactive state before waiting for readers or
+  removing files; retryable cleanup preserves independent history and settings.
+- Interrupted import jobs and owned temporary files now reconcile on startup;
+  unknown artifacts and caller-owned export/GPX files remain preserved.
 - Imports now commit immutable dataset generations through a durable atomic
   pointer. HTTP and managed CLI startup recover matching data, manifest and
   route roots after process interruption while preserving previous copies.

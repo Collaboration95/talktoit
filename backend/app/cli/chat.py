@@ -7,19 +7,25 @@ import asyncio
 import json
 import logging
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 
-from app.db.connection import connect, resolve_db_path
+from app.db.connection import dataset_snapshot, resolve_db_path
 from app.db.data_profile import get_data_profile
-from app.db.dataset_lifecycle import DatasetLifecycle, DatasetRecoveryError
+from app.db.dataset_lifecycle import DatasetBusyError, DatasetLifecycle, DatasetRecoveryError
 from app.db.migrate import migrate
-from app.llm.cache_keys import build_cache_key, generation_identity, matches_managed_database
+from app.llm.cache_keys import (
+    build_cache_key,
+    generation_identity,
+    snapshot_plan,
+    trusted_snapshot_plan,
+)
 from app.llm.cache_policy import cacheable_envelope, cacheable_response
 from app.llm.followups import FollowupContext, resolve_followup
 from app.llm.local_planner import plan_local_question
 from app.llm.orchestrator import ChatOrchestrator
 from app.llm.provider_gateway import get_gateway_for_config
-from app.models.chat import ChatResponse
+from app.models.chat import ChatResponse, ResponseMetadata
 from app.observability import configure_logging
 from app.state.app_state import AppStateRepository
 
@@ -142,172 +148,227 @@ async def _ask_question(
     repository = AppStateRepository()
     managed_request = effective_path == managed_path
     generation = None
+    lifecycle = DatasetLifecycle(managed_path)
     if managed_request:
-        lifecycle = DatasetLifecycle(managed_path)
         # A pre-lifecycle DB with no identity remains an unassociated local
         # query source. Never invent a manifest for it or use shared caches.
         if lifecycle.root.exists() or repository.get_active() is not None:
             generation = lifecycle.recover(repository)
         if generation is not None:
-            managed_path = effective_path = generation.database_path
-    if generation is None:
+            effective_path = managed_path
+    if generation is None and not (managed_request and lifecycle.has_pointer()):
         migrate(effective_path)
-    conn = connect(effective_path, read_only=True)
-    repository.migrate()
-    config = repository.get_provider_config()
-    cache_identity = generation_identity(config)
-    _ensure_local_server(config)
-    gateway = get_gateway_for_config(config)
-    turn_id: str | None = None
-    context_hint: str | None = None
-    try:
-        # One session connection for the whole CLI call, mirroring the HTTP
-        # prephase/finalize batching so a question opens a bounded number of
-        # SQLite connections instead of one per accessor (GH-3).
-        with repository.session() as store:
-            active = (
-                repository.get_active(conn=store)
-                if managed_request and matches_managed_database(effective_path, managed_path)
-                else None
+    with ExitStack() as snapshot_stack:
+        snapshot = snapshot_stack.enter_context(dataset_snapshot(effective_path, allow_legacy=True))
+        conn = snapshot.connection
+        if snapshot.database_path is None:
+            text = "Import your Apple Health export in Settings, then ask about your measurements."
+            return ChatResponse(
+                template_id="fallback",
+                data={
+                    "question": question,
+                    "table": None,
+                    "text": text,
+                    "reason": "no_matching_data",
+                },
+                narrative=text,
+                metadata=ResponseMetadata(provenance="deterministic_local"),
             )
-            if active is None:
-                # An external database has no durable identity here. Do not
-                # read or write another dataset's cache or conversation state.
-                if conversation_id or parent_turn_id:
-                    context_hint = (
-                        "Conversation history and follow-ups are unavailable for this database. "
-                        "Ask a complete question or use the configured imported database "
-                        "to continue a conversation."
-                    )
-                    print(f"tti: {context_hint} Asking independently.", file=sys.stderr)
-                conversation_id = None
-                parent_turn_id = None
-            if conversation_id:
-                turn_id = repository.create_pending_turn(
-                    conversation_id, question, cache_mode, conn=store
-                )
-            exact_key = build_cache_key("exact", question, generation_identity=cache_identity)
-            use_exact_cache = parent_turn_id is None
-            cached: str | None = None
-            canonical_plan: dict[str, object] | None = None
-            if active is not None and cache_mode != "fresh" and use_exact_cache:
-                entry = repository.get_cached_entry(exact_key, active.id, conn=store)
-                if entry is not None:
-                    candidate, candidate_plan = entry
-                    if cacheable_envelope(candidate):
-                        cached, canonical_plan = candidate, candidate_plan
-            canonical_key: str | None = None
-            followup_plan: dict[str, object] | None = None
-            if cached is None:
-                # ── Cache miss: only this path pays for the profile scan ────
-                local_plan = plan_local_question(question, get_data_profile(conn))
-                if conversation_id and parent_turn_id and active is not None:
+        repository.migrate()
+        config = repository.get_provider_config()
+        cache_identity = generation_identity(config)
+        _ensure_local_server(config)
+        gateway = get_gateway_for_config(config)
+        turn_id: str | None = None
+        context_hint: str | None = None
+        invalid_parent = False
+        try:
+            # One session connection for the whole CLI call, mirroring the HTTP
+            # prephase/finalize batching so a question opens a bounded number of
+            # SQLite connections instead of one per accessor (GH-3).
+            with repository.session() as store:
+                active = snapshot.dataset
+                if active is None:
+                    # An external database has no durable identity here. Do not
+                    # read or write another dataset's cache or conversation state.
+                    if conversation_id or parent_turn_id:
+                        context_hint = (
+                            "Conversation history and follow-ups are unavailable "
+                            "for this database. "
+                            "Ask a complete question or use the configured imported database "
+                            "to continue a conversation."
+                        )
+                        print(f"tti: {context_hint} Asking independently.", file=sys.stderr)
+                    conversation_id = None
+                    parent_turn_id = None
+                if conversation_id and active is not None:
                     conversation = repository.get_conversation(conversation_id, conn=store)
-                    parent = repository.get_conversation_turn(
-                        conversation_id, parent_turn_id, conn=store
+                    if conversation is None or conversation.get("dataset_version_id") != active.id:
+                        context_hint = (
+                            "This conversation belongs to a different import. "
+                            "Start a new conversation; this question will be "
+                            "answered independently."
+                        )
+                        print(f"tti: {context_hint}", file=sys.stderr)
+                        conversation_id = None
+                        parent_turn_id = None
+                if conversation_id:
+                    turn_id = repository.create_pending_turn(
+                        conversation_id, question, cache_mode, conn=store
                     )
-                    raw_plan = parent.get("canonical_plan_json") if parent else None
-                    if (
-                        conversation
-                        and conversation.get("dataset_version_id") == active.id
-                        and isinstance(raw_plan, str)
-                    ):
-                        try:
-                            plan = json.loads(raw_plan)
-                            if isinstance(plan, dict) and isinstance(plan.get("arguments"), dict):
-                                followup_plan = resolve_followup(
-                                    question,
-                                    [
-                                        FollowupContext(
-                                            active.id,
-                                            str(plan.get("tool_name", "")),
-                                            dict(plan["arguments"]),
-                                            parent_turn_id,
-                                        )
-                                    ],
-                                    active.id,
-                                )
-                        except (TypeError, ValueError, json.JSONDecodeError):
-                            followup_plan = None
-                canonical_plan = local_plan or followup_plan
-                canonical_key = (
-                    build_cache_key("canonical", canonical_plan, generation_identity=cache_identity)
-                    if canonical_plan
-                    else None
-                )
-                if active is not None and canonical_key and cache_mode != "fresh":
-                    hit = repository.get_cached_entry(canonical_key, active.id, conn=store)
-                    if hit is not None:
-                        candidate, candidate_plan = hit
+                exact_key = build_cache_key("exact", question, generation_identity=cache_identity)
+                use_exact_cache = parent_turn_id is None
+                cached: str | None = None
+                canonical_plan: dict[str, object] | None = None
+                if active is not None and cache_mode != "fresh" and use_exact_cache:
+                    entry = repository.get_cached_entry(exact_key, active.id, conn=store)
+                    if entry is not None:
+                        candidate, candidate_plan = entry
                         if cacheable_envelope(candidate):
                             cached, canonical_plan = candidate, candidate_plan
-            else:
-                canonical_key = (
-                    build_cache_key("canonical", canonical_plan, generation_identity=cache_identity)
-                    if canonical_plan
-                    else None
-                )
-            if cached is not None:
-                response = ChatResponse.model_validate_json(cached)
-                response.metadata.provenance = "cached"
-            else:
-                orchestrator = ChatOrchestrator(
-                    client=gateway.client, conn=conn, model=gateway.model, gateway=gateway
-                )
-                response = await orchestrator.answer(question, plan_override=followup_plan)
-                executed_plan = getattr(orchestrator, "executed_plan", None)
-                if isinstance(executed_plan, dict):
-                    canonical_plan = executed_plan
-                    canonical_key = build_cache_key(
-                        "canonical", canonical_plan, generation_identity=cache_identity
+                canonical_key: str | None = None
+                followup_plan: dict[str, object] | None = None
+                if cached is None:
+                    # ── Cache miss: only this path pays for the profile scan ────
+                    local_plan = plan_local_question(question, get_data_profile(conn))
+                    if conversation_id and parent_turn_id and active is not None:
+                        conversation = repository.get_conversation(conversation_id, conn=store)
+                        parent = repository.get_conversation_turn(
+                            conversation_id, parent_turn_id, conn=store
+                        )
+                        raw_plan = parent.get("canonical_plan_json") if parent else None
+                        invalid_parent = not trusted_snapshot_plan(raw_plan)
+                        if invalid_parent:
+                            context_hint = (
+                                "This earlier answer cannot be reused safely. "
+                                "Ask a complete question about the current import."
+                            )
+                        if (
+                            not invalid_parent
+                            and conversation
+                            and conversation.get("dataset_version_id") == active.id
+                            and isinstance(raw_plan, str)
+                        ):
+                            try:
+                                plan = json.loads(raw_plan)
+                                if isinstance(plan, dict) and isinstance(
+                                    plan.get("arguments"), dict
+                                ):
+                                    followup_plan = resolve_followup(
+                                        question,
+                                        [
+                                            FollowupContext(
+                                                active.id,
+                                                str(plan.get("tool_name", "")),
+                                                dict(plan["arguments"]),
+                                                parent_turn_id,
+                                            )
+                                        ],
+                                        active.id,
+                                    )
+                            except (TypeError, ValueError, json.JSONDecodeError):
+                                followup_plan = None
+                    canonical_plan = local_plan or followup_plan
+                    canonical_key = (
+                        build_cache_key(
+                            "canonical", canonical_plan, generation_identity=cache_identity
+                        )
+                        if canonical_plan
+                        else None
                     )
-            if context_hint is not None and response.template_id == "fallback":
-                response.narrative = context_hint
-                response.data["text"] = context_hint
-            if active is not None:
-                response.metadata.dataset_version_id = active.id
-                response.metadata.coverage_start = active.coverage_start
-                response.metadata.coverage_end = active.coverage_end
-                response.metadata.generated_at = active.activated_at
-                cacheable = (
-                    cache_mode != "fresh" and followup_plan is None and cacheable_response(response)
-                )
-                if cacheable:
-                    encoded = response.model_dump_json()
-                    if use_exact_cache:
-                        repository.put_cached_response(
-                            exact_key,
-                            active.id,
-                            encoded,
-                            canonical_plan=canonical_plan,
-                            conn=store,
+                    if (
+                        not invalid_parent
+                        and active is not None
+                        and canonical_key
+                        and cache_mode != "fresh"
+                    ):
+                        hit = repository.get_cached_entry(canonical_key, active.id, conn=store)
+                        if hit is not None:
+                            candidate, candidate_plan = hit
+                            if cacheable_envelope(candidate):
+                                cached, canonical_plan = candidate, candidate_plan
+                else:
+                    canonical_key = (
+                        build_cache_key(
+                            "canonical", canonical_plan, generation_identity=cache_identity
                         )
-                    if canonical_key:
-                        repository.put_cached_response(
-                            canonical_key,
-                            active.id,
-                            encoded,
-                            canonical_plan=canonical_plan,
-                            conn=store,
+                        if canonical_plan
+                        else None
+                    )
+                if invalid_parent:
+                    text = context_hint or "Ask a complete question about the current import."
+                    response = ChatResponse(
+                        template_id="fallback",
+                        narrative=text,
+                        data={
+                            "question": question,
+                            "table": None,
+                            "text": text,
+                            "reason": "clarification_needed",
+                        },
+                        metadata=ResponseMetadata(provenance="deterministic_local"),
+                    )
+                elif cached is not None:
+                    response = ChatResponse.model_validate_json(cached)
+                    response.metadata.provenance = "cached"
+                else:
+                    orchestrator = ChatOrchestrator(
+                        client=gateway.client, conn=conn, model=gateway.model, gateway=gateway
+                    )
+                    response = await orchestrator.answer(question, plan_override=followup_plan)
+                    executed_plan = getattr(orchestrator, "executed_plan", None)
+                    if isinstance(executed_plan, dict):
+                        canonical_plan = executed_plan
+                        canonical_key = build_cache_key(
+                            "canonical", canonical_plan, generation_identity=cache_identity
                         )
+                if context_hint is not None and response.template_id == "fallback":
+                    response.narrative = context_hint
+                    response.data["text"] = context_hint
+                if active is not None:
+                    response.metadata.dataset_version_id = active.id
+                    response.metadata.coverage_start = active.coverage_start
+                    response.metadata.coverage_end = active.coverage_end
+                    response.metadata.generated_at = active.activated_at
+                    cacheable = (
+                        cache_mode != "fresh"
+                        and followup_plan is None
+                        and cacheable_response(response)
+                    )
+                    if cacheable:
+                        encoded = response.model_dump_json()
+                        if use_exact_cache:
+                            repository.put_cached_response(
+                                exact_key,
+                                active.id,
+                                encoded,
+                                canonical_plan=canonical_plan,
+                                conn=store,
+                            )
+                        if canonical_key:
+                            repository.put_cached_response(
+                                canonical_key,
+                                active.id,
+                                encoded,
+                                canonical_plan=canonical_plan,
+                                conn=store,
+                            )
+                if turn_id:
+                    response.metadata.turn_id = turn_id
+                    repository.finish_turn(
+                        turn_id,
+                        response_json=response.model_dump_json(),
+                        cache_outcome=response.metadata.provenance,
+                        canonical_plan=snapshot_plan(canonical_plan),
+                        conn=store,
+                    )
+            return response
+        except Exception:
             if turn_id:
-                response.metadata.turn_id = turn_id
-                repository.finish_turn(
-                    turn_id,
-                    response_json=response.model_dump_json(),
-                    cache_outcome=response.metadata.provenance,
-                    canonical_plan=canonical_plan,
-                    conn=store,
+                repository.terminate_turn(
+                    turn_id, state="failed", message="The answer could not be completed."
                 )
-        return response
-    except Exception:
-        if turn_id:
-            repository.terminate_turn(
-                turn_id, state="failed", message="The answer could not be completed."
-            )
-        raise
-    finally:
-        conn.close()
+            raise
 
 
 def _print_response(response: ChatResponse, json_output: bool) -> None:
@@ -337,7 +398,7 @@ def main(argv: list[str] | None = None) -> int:
                 cache_mode=args.cache_mode,
             )
         )
-    except DatasetRecoveryError as exc:
+    except (DatasetRecoveryError, DatasetBusyError) as exc:
         print(f"tti: {exc}", file=sys.stderr)
         return 1
     _print_response(response, args.json)

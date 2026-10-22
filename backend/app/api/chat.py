@@ -17,9 +17,15 @@ import duckdb
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.api.deps import get_app_state_repository, get_diagnostics_repository
-from app.db.connection import connect, lease_connection
+from app.db.connection import connection_dataset, dataset_snapshot, snapshot_for_connection
 from app.db.data_profile import DataProfile, get_data_profile
-from app.llm.cache_keys import build_cache_key, generation_identity
+from app.db.dataset_lifecycle import DatasetBusyError, DatasetRecoveryError
+from app.llm.cache_keys import (
+    build_cache_key,
+    generation_identity,
+    snapshot_plan,
+    trusted_snapshot_plan,
+)
 from app.llm.cache_policy import cacheable_envelope, cacheable_response
 from app.llm.followups import FollowupContext, followup_disambiguation, resolve_followup
 from app.llm.local_planner import plan_local_question
@@ -52,14 +58,11 @@ def _get_conn() -> Generator[duckdb.DuckDBPyConnection, None, None]:
     Yields:
         An open DuckDB connection that is closed after the request completes.
     """
-    conn = connect(read_only=True)
     try:
-        # Leased for the request so a concurrent import/deletion never closes
-        # the connection while this handler is still reading from it.
-        with lease_connection(conn):
-            yield conn
-    finally:
-        conn.close()
+        with dataset_snapshot() as snapshot:
+            yield snapshot.connection
+    except (DatasetBusyError, DatasetRecoveryError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 def _get_gateway(request: Request) -> ProviderGateway:
@@ -184,13 +187,23 @@ def _prepare_chat(
     with repository.session() as store:
         provider_config = repository.get_provider_config(conn=store)
         cache_identity = generation_identity(provider_config)
+        active = connection_dataset(conn, repository)
         if request.conversation_id:
+            conversation = repository.get_conversation(request.conversation_id, conn=store)
+            if conversation is None or conversation.get("dataset_version_id") != (
+                active.id if active else None
+            ):
+                raise _problem(
+                    409,
+                    "data_unavailable",
+                    "This conversation belongs to a different import. Start a new conversation.",
+                    request.request_id or f"req_{uuid.uuid4().hex[:12]}",
+                )
             pending_turn_id = repository.create_pending_turn(
                 request.conversation_id, request.question, request.cache_mode, conn=store
             )
             if handle is not None:
                 handle.turn_id = pending_turn_id
-        active = repository.get_active(conn=store)
         cache_key = build_cache_key("exact", request.question, generation_identity=cache_identity)
         use_exact_cache = request.parent_turn_id is None
         cached: str | None = None
@@ -225,6 +238,13 @@ def _prepare_chat(
                         if turn is None:
                             continue
                         raw_plan = turn.get("canonical_plan_json")
+                        if not trusted_snapshot_plan(raw_plan):
+                            if request.parent_turn_id:
+                                disambiguation = (
+                                    "This earlier answer cannot be reused safely. "
+                                    "Ask a complete question about the current import."
+                                )
+                            continue
                         if not isinstance(raw_plan, str):
                             continue
                         try:
@@ -242,7 +262,7 @@ def _prepare_chat(
                                 )
                             )
                     followup_plan = resolve_followup(request.question, contexts, active.id)
-                    if followup_plan is None:
+                    if followup_plan is None and disambiguation is None:
                         disambiguation = followup_disambiguation(
                             request.question, contexts, active.id
                         )
@@ -299,7 +319,12 @@ def _prepare_chat(
             if response is None and disambiguation is not None:
                 response = ChatResponse(
                     template_id="fallback",
-                    data={"question": request.question, "table": None, "text": disambiguation},
+                    data={
+                        "question": request.question,
+                        "table": None,
+                        "text": disambiguation,
+                        "reason": "clarification_needed",
+                    },
                     narrative=disambiguation,
                     metadata=ResponseMetadata(provenance="deterministic_local"),
                 )
@@ -386,7 +411,7 @@ def _finalize_chat(
                 prepared.pending_turn_id,
                 response_json=encoded,
                 cache_outcome=response.metadata.provenance,
-                canonical_plan=prepared.canonical_plan,
+                canonical_plan=snapshot_plan(prepared.canonical_plan),
                 conn=store,
             ):
                 raise RuntimeError("Pending chat turn could not be completed")
@@ -434,6 +459,20 @@ async def chat(
     Raises:
         HTTPException: A stable, privacy-safe problem envelope for runtime failures.
     """
+    snapshot = snapshot_for_connection(conn)
+    if snapshot is not None and snapshot.dataset is None:
+        text = "Import your Apple Health export in Settings, then ask about your measurements."
+        return ChatResponse(
+            template_id="fallback",
+            data={
+                "question": request.question,
+                "table": None,
+                "text": text,
+                "reason": "no_matching_data",
+            },
+            narrative=text,
+            metadata=ResponseMetadata(provenance="deterministic_local"),
+        )
     prepared: _ChatPreparation | None = None
     pending_handle = _PendingTurnHandle()
     prepare_task: asyncio.Task[_ChatPreparation] | None = None
@@ -642,7 +681,11 @@ def _semantic_cached_answer(
     rows carry no response envelopes; the full envelope is fetched lazily only
     for the single proven-identical turn.
     """
-    records = repository.semantic_turns(active.id, conn=conn)
+    records = [
+        row
+        for row in repository.semantic_turns(active.id, conn=conn)
+        if trusted_snapshot_plan(row.get("canonical_plan_json"))
+    ]
     if not records:
         return None
     arguments = canonical_plan.get("arguments")

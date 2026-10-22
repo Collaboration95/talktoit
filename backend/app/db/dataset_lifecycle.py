@@ -1,7 +1,7 @@
 """Durable local dataset publication; the versioned pointer is authoritative.
 
-This module never retires generations or cleans unknown artifacts. Readers and
-deletion will add cross-process leases around these primitives in #160-#163.
+Readers bind immutable generations through cross-process leases. Retirement and
+explicit deletion preserve unknown artifacts and never unlink leased data.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import stat
+import time
 import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -48,6 +49,20 @@ class DatasetRecoveryError(RuntimeError):
     def __init__(self) -> None:
         """Use a safe message without local paths, health values or SQL."""
         super().__init__("Dataset recovery is required. Your local data has been preserved.")
+
+
+class DatasetBusyError(RuntimeError):
+    """A bounded writer/reader wait or safe physical cleanup needs retrying."""
+
+    def __init__(self, *, inactive: bool = False) -> None:
+        """Use safe guidance without filesystem or health details."""
+        message = (
+            "Health data is inactive, but some files could not be removed. "
+            "Let active requests finish and retry health deletion."
+            if inactive
+            else "Health data is busy. Wait for the current import or request and retry."
+        )
+        super().__init__(message)
 
 
 class _StrictModel(BaseModel):
@@ -99,6 +114,12 @@ class _Journal(_StrictModel):
     previous: _Pointer | None
     next: _Pointer
     legacy_adoption: bool = False
+
+
+class _Deletion(_StrictModel):
+    format_version: Literal[1] = 1
+    generations: list[_Pointer]
+    legacy: bool
 
 
 @dataclass(frozen=True)
@@ -157,7 +178,7 @@ class DatasetLifecycle:
         _fsync_directory(self.root.parent)
 
     @contextmanager
-    def writer_lock(self) -> Generator[None, None, None]:
+    def writer_lock(self, timeout: float | None = None) -> Generator[None, None, None]:
         """Take the stable mandatory POSIX writer lock before any other locks."""
         import fcntl
 
@@ -168,11 +189,134 @@ class DatasetLifecycle:
         try:
             if not stat.S_ISREG(os.fstat(fd).st_mode):
                 raise DatasetRecoveryError()
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            self._lock(fd, fcntl.LOCK_EX, timeout)
             yield
         finally:
             # Closing the descriptor also releases the lock after exceptions.
             os.close(fd)
+
+    @staticmethod
+    def _lock(fd: int, operation: int, timeout: float | None) -> None:
+        import fcntl
+
+        if timeout is None:
+            fcntl.flock(fd, operation)
+            return
+        deadline = time.monotonic() + max(0, timeout)
+        while True:
+            try:
+                fcntl.flock(fd, operation | fcntl.LOCK_NB)
+                return
+            except BlockingIOError as exc:
+                if time.monotonic() >= deadline:
+                    raise DatasetBusyError() from exc
+                time.sleep(min(0.005, max(0, deadline - time.monotonic())))
+
+    def has_pointer(self) -> bool:
+        """Return whether activation or explicit deletion has a durable record."""
+        return self._safe(self.root / "active.json").exists()
+
+    @contextmanager
+    def legacy_lease(self) -> Generator[bool, None, None]:
+        """Serialize unassociated legacy CLI reads with import and deletion."""
+        import fcntl
+
+        self._layout()
+        fd = os.open(
+            self._safe(self.root / "lifecycle.lock"),
+            os.O_CREAT | os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+            0o600,
+        )
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise DatasetRecoveryError()
+            self._lock(fd, fcntl.LOCK_SH, 0.25)
+            yield not self.has_pointer()
+        finally:
+            os.close(fd)
+
+    @contextmanager
+    def lease(self, *, timeout: float = 0.25) -> Generator[Generation | None, None, None]:
+        """Acquire one immutable generation with a pointer/lease/reread protocol.
+
+        Never create a lease inode here. Retirement may win before acquisition;
+        release and retry from the pointer instead of mixing generation parts.
+        """
+        import fcntl
+
+        for _ in range(4):
+            pointer = self._pointer()
+            self._boundary("snapshot_pointer_read")
+            if pointer is None or pointer.generation_id is None:
+                if self._pointer() == pointer:
+                    yield None
+                    return
+                continue
+            fd = None
+            try:
+                path = self._safe(self.root / "leases" / f"{pointer.generation_id}.lock")
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                if not stat.S_ISREG(os.fstat(fd).st_mode):
+                    raise DatasetRecoveryError()
+                self._lock(fd, fcntl.LOCK_SH, timeout)
+                self._boundary("snapshot_leased")
+                if self._pointer() != pointer:
+                    continue
+                generation = self._generation(pointer)
+                self._boundary("snapshot_validated")
+                yield generation
+                return
+            except FileNotFoundError as exc:
+                if self._pointer() == pointer:
+                    raise DatasetRecoveryError() from exc
+            finally:
+                if fd is not None:
+                    os.close(fd)
+        raise DatasetBusyError()
+
+    def protected_generation_ids(self) -> frozenset[str]:
+        """Return references cleanup must preserve; callers hold the writer lock."""
+        pointers = [self._pointer()]
+        retained = self._safe(self.root / "retained.json")
+        if retained.exists():
+            pointers.append(self._read_pointer(retained))
+        journal = self._safe(self.root / "transaction.json")
+        if journal.exists():
+            record = self._read(journal, _Journal)
+            assert isinstance(record, _Journal)  # noqa: S101
+            pointers.extend([record.previous, record.next])
+        deletion = self._safe(self.root / "deletion.json")
+        if deletion.exists():
+            intent = self._read(deletion, _Deletion)
+            assert isinstance(intent, _Deletion)  # noqa: S101
+            pointers.extend(intent.generations)
+        return frozenset(p.generation_id for p in pointers if p and p.generation_id)
+
+    def _validate_retained(self) -> None:
+        retained = self._safe(self.root / "retained.json")
+        if retained.exists() and self._read_pointer(retained).generation_id is None:
+            raise DatasetRecoveryError()
+
+    def generation_is_leased(self, generation_id: str) -> bool:
+        """Conservatively test a stable lease inode without creating/replacing it."""
+        import fcntl
+
+        if not _ID.fullmatch(generation_id):
+            raise DatasetRecoveryError()
+        try:
+            fd = os.open(
+                self._safe(self.root / "leases" / f"{generation_id}.lock"),
+                os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+            )
+            try:
+                if not stat.S_ISREG(os.fstat(fd).st_mode):
+                    return True
+                self._lock(fd, fcntl.LOCK_EX, 0)
+                return False
+            finally:
+                os.close(fd)
+        except (OSError, DatasetBusyError, DatasetRecoveryError):
+            return True
 
     def new_staging(self) -> Path:
         """Create a unique private staging child while the writer lock is held."""
@@ -346,13 +490,189 @@ class DatasetLifecycle:
         return Generation(dataset, destination / "health.duckdb", export_root.resolve())
 
     def _finish_journal(self) -> None:
+        self._validate_retained()
         path = self._safe(self.root / "transaction.json")
         if not path.exists():
             return
+        journal = self._read(path, _Journal)
+        assert isinstance(journal, _Journal)  # noqa: S101
+        if self._pointer() == journal.next:
+            retained = self._safe(self.root / "retained.json")
+            if journal.next.generation_id and journal.previous and journal.previous.generation_id:
+                self._replace_record(retained, journal.previous, "retained")
+            else:
+                retained.unlink(missing_ok=True)
+                self._boundary("retained_cleared")
+                _fsync_directory(self.root)
         path.unlink()
         self._boundary("journal_unlinked")
         _fsync_directory(self.root)
         self._boundary("journal_removed")
+
+    def _replace_record(self, path: Path, record: _StrictModel, phase: str) -> None:
+        temporary = self.root / f"{path.name}.tmp.{uuid.uuid4().hex}"
+        self._write(temporary, record, phase)
+        os.replace(temporary, self._safe(path))
+        self._boundary(f"{phase}_replaced")
+        _fsync_directory(self.root)
+        self._boundary(f"{phase}_committed")
+
+    def _remove_generation(self, pointer: _Pointer, timeout: float) -> int:
+        import fcntl
+
+        if pointer.generation_id is None:
+            return 0
+        directory = self._safe(self.root / "generations" / pointer.generation_id)
+        if not directory.exists():
+            return 0
+        if any(p.name not in {"health.duckdb", "manifest.json"} for p in directory.iterdir()):
+            raise DatasetBusyError(inactive=True)
+        fd = os.open(
+            self._safe(self.root / "leases" / f"{pointer.generation_id}.lock"),
+            os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+        )
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise DatasetRecoveryError()
+            self._lock(fd, fcntl.LOCK_EX, timeout)
+            manifest_path = self._safe(directory / "manifest.json")
+            database = self._safe(directory / "health.duckdb")
+            if manifest_path.exists():
+                if _hash_file(manifest_path) != pointer.manifest_sha256:
+                    raise DatasetRecoveryError()
+                record = self._read(manifest_path, _Manifest)
+                assert isinstance(record, _Manifest)  # noqa: S101
+                if record.dataset.id != pointer.generation_id:
+                    raise DatasetRecoveryError()
+                if database.exists() and (
+                    not database.is_file() or _hash_file(database) != record.database_sha256
+                ):
+                    raise DatasetRecoveryError()
+            elif database.exists():
+                raise DatasetRecoveryError()
+            # Close only idle handles; OS leases exclude all snapshot readers.
+            from app.db.connection import close_open_connections
+
+            close_open_connections(database)
+            removed = int(database.exists())
+            database.unlink(missing_ok=True)
+            self._boundary("deletion_database_unlinked")
+            manifest_path.unlink(missing_ok=True)
+            directory.rmdir()
+            _fsync_directory(self.root / "generations")
+            return removed
+        finally:
+            os.close(fd)
+
+    def retire_generation(self, generation_id: str, *, timeout: float = 0.0) -> bool:
+        """Retire a superseded copy only after leases drain; retain rollback data."""
+        if not _ID.fullmatch(generation_id):
+            raise DatasetRecoveryError()
+        try:
+            current = self._pointer()
+            if current is not None and current.generation_id == generation_id:
+                return False
+            with self.writer_lock(timeout=timeout):
+                if generation_id in self.protected_generation_ids():
+                    return False
+                path = self._safe(self.root / "generations" / generation_id / "manifest.json")
+                if not path.exists():
+                    return not path.parent.exists()
+                pointer = _Pointer(generation_id=generation_id, manifest_sha256=_hash_file(path))
+                self._remove_generation(pointer, timeout)
+                return True
+        except (OSError, DatasetBusyError, DatasetRecoveryError):
+            return False
+
+    def delete(self, repository: AppStateRepository, *, timeout: float = 0.5) -> int:
+        """Commit inactivity before bounded, lease-protected physical deletion.
+
+        An unresolved file remains inactive and retryable; unrelated SQLite
+        history, saved views, diagnostics and cache entries are independent.
+        """
+        with self.writer_lock(timeout=timeout):
+            pointer = self._pointer()
+            intent_path = self._safe(self.root / "deletion.json")
+            intent = self._read(intent_path, _Deletion) if intent_path.exists() else None
+            if intent is not None:
+                assert isinstance(intent, _Deletion)  # noqa: S101
+            candidates = {p.generation_id: p for p in intent.generations} if intent else {}
+            if pointer is not None and pointer.generation_id:
+                candidates[pointer.generation_id] = pointer
+            retained = self._safe(self.root / "retained.json")
+            if retained.exists():
+                previous = self._read_pointer(retained)
+                if previous.generation_id:
+                    candidates[previous.generation_id] = previous
+            for directory in (self.root / "generations").iterdir():
+                if not _ID.fullmatch(directory.name):
+                    continue
+                path = self._safe(directory / "manifest.json")
+                if directory.name in candidates:
+                    continue
+                # A recognized complete manifest proves an exact managed child;
+                # unknown or extra content is never recursively traversed.
+                record = self._read(path, _Manifest)
+                assert isinstance(record, _Manifest)  # noqa: S101
+                if record.dataset.id != directory.name:
+                    raise DatasetRecoveryError()
+                candidates[directory.name] = _Pointer(
+                    generation_id=directory.name, manifest_sha256=_hash_file(path)
+                )
+            intent = _Deletion(
+                generations=list(candidates.values()),
+                legacy=self.target.exists() or bool(intent and intent.legacy),
+            )
+            self._replace_record(intent_path, intent, "deletion_intent")
+            if pointer is None or pointer.generation_id is not None:
+                tombstone = _Pointer(generation_id=None, manifest_sha256=None)
+                journal = _Journal(previous=pointer, next=tombstone)
+                self._replace_record(self.root / "transaction.json", journal, "deletion_journal")
+                self._replace_record(self.root / "active.json", tombstone, "deletion_pointer")
+                self._boundary("deletion_pointer_committed")
+            repository.deactivate_active_dataset()
+            self._boundary("deletion_projected")
+            self._finish_journal()
+            return self._complete_deletion(intent, timeout)
+
+    def _complete_deletion(self, intent: _Deletion, timeout: float) -> int:
+        removed = 0
+        failed = False
+        deadline = time.monotonic() + timeout
+        for pointer in intent.generations:
+            try:
+                removed += self._remove_generation(pointer, max(0, deadline - time.monotonic()))
+            except (OSError, DatasetRecoveryError, DatasetBusyError):
+                failed = True
+        if intent.legacy:
+            from app.db.connection import close_open_connections
+
+            close_open_connections(self.target)
+            try:
+                if self.target.exists():
+                    # Explicit health scope authorizes the imported DB, not an
+                    # export/GPX or unrelated file under a misconfigured name.
+                    with duckdb.connect(str(self.target), read_only=True) as legacy:
+                        tables = {
+                            str(row[0])
+                            for row in legacy.execute(
+                                "SELECT table_name FROM information_schema.tables "
+                                "WHERE table_schema = 'main'"
+                            ).fetchall()
+                        }
+                        if not set(_TABLES).issubset(tables):
+                            raise DatasetRecoveryError()
+                    self.target.unlink()
+                    _fsync_directory(self.target.parent)
+                    removed += 1
+            except (OSError, duckdb.Error, DatasetRecoveryError):
+                failed = True
+        if failed:
+            raise DatasetBusyError(inactive=True)
+        self._safe(self.root / "deletion.json").unlink(missing_ok=True)
+        _fsync_directory(self.root)
+        self._boundary("deletion_finished")
+        return removed
 
     def recover(self, repository: AppStateRepository) -> Generation | None:
         """Recover before health migrations or provider startup; repeat safely."""
@@ -366,6 +686,7 @@ class DatasetLifecycle:
         adopt_legacy: bool = True,
     ) -> Generation | None:
         """Recover under an already-held writer lock (also used by the importer)."""
+        self._validate_retained()
         pointer = self._pointer()
         journal_path = self._safe(self.root / "transaction.json")
         journal = self._read(journal_path, _Journal) if journal_path.exists() else None
@@ -401,6 +722,15 @@ class DatasetLifecycle:
             repository.project_generation(generation.dataset, generation.export_root)
         self._boundary("recovery_projected")
         self._finish_journal()
+        if generation is None:
+            deletion = self._safe(self.root / "deletion.json")
+            if deletion.exists():
+                intent = self._read(deletion, _Deletion)
+                assert isinstance(intent, _Deletion)  # noqa: S101
+                try:
+                    self._complete_deletion(intent, 0)
+                except DatasetBusyError:
+                    pass
         self._boundary("recovery_finished")
         return generation
 

@@ -17,6 +17,7 @@ from httpx import ASGITransport, AsyncClient
 from app.ingest.coordinator import ingest_v2 as ingest
 from app.main import create_app
 from app.state.app_state import AppStateRepository
+from tests.dataset_support import fixture_connection
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "sample.xml"
 
@@ -63,7 +64,7 @@ def _app_with_db(db: duckdb.DuckDBPyConnection):
     from app.llm.provider_gateway import ProviderGateway
 
     app = create_app()
-    app.dependency_overrides[_get_conn] = lambda: (yield db)
+    app.dependency_overrides[_get_conn] = lambda: (yield from fixture_connection(db))
     app.dependency_overrides[_get_gateway] = lambda: ProviderGateway(
         MagicMock(), mode="remote_planning_and_narration"
     )

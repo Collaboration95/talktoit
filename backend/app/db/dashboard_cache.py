@@ -22,6 +22,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from app.db.connection import connection_dataset
 from app.db.data_profile import DataProfile, get_data_profile
 from app.state.app_state import AppStateRepository, DatasetVersion
 
@@ -84,7 +85,7 @@ def resolve_dashboard_context(
     FastAPI injection) falls back to the default path.
     """
     repository = repo if isinstance(repo, AppStateRepository) else AppStateRepository()
-    active = repository.get_active()
+    active = connection_dataset(conn, repository)
     if active is None:
         return DashboardContext(profile=get_data_profile(conn), active=None)
     with _cache_lock:

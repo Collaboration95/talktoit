@@ -283,7 +283,22 @@ health data.
   SQLite manifest/root projection. `resolve_db_path()` identifies the configured namespace;
   `resolve_effective_db_path()` follows the pointer. Published DBs open read-only. See
   `docs/decisions/dataset-lifecycle.md` for the wire format, crash boundaries, legacy adoption,
-  and the remaining snapshot/deletion/cleanup integration boundaries.
+  leases, tombstone deletion, and owned import recovery.
+- **Request snapshots** — use `dataset_snapshot()` for a leased connection, immutable
+  manifest and export root. Readers take a stable cross-process shared generation lock and
+  reread the pointer before opening DuckDB. HTTP, CLI, dashboard caches, routes and status
+  use that tuple; they do not borrow identity from SQLite. Explicit external CLI sources
+  remain unassociated. No active pointer yields an empty in-memory schema and no identity;
+  dashboard resources are empty, Settings metrics unavailable, and chat offers import
+  guidance without model execution. Never create a configured health file for onboarding.
+- **Deletion and retirement** — deletion uses the same writer lock as import, commits an
+  inactive pointer, clears the projection, then waits a bounded time for exclusive generation
+  leases. Busy/unremovable data stays inactive and returns a safe retryable 409. Recovery
+  retries cleanup without resurrecting it. Retain the newest rollback pointer; retire older
+  copies only after leases drain. Unknown entries and changed contents are preserved.
+- **Owned import recovery** — after lifecycle recovery returns with no locks held, startup
+  runs `recover_import_jobs(repository)` on a worker thread before providers/migrations.
+  See `docs/decisions/import-artifact-ownership.md` for ownership/liveness and durable jobs.
 - **SQLite app-state** — `backend/data/app_state.sqlite` (override via `TTI_APP_STATE_PATH`):
   dataset manifests, conversations/turns, saved views, and the validated chat cache. Opened
   with `PRAGMA journal_mode = WAL`, `synchronous = NORMAL`, and a bounded
@@ -292,7 +307,10 @@ health data.
   `ds_*` id in `dataset_versions`; chat cache entries are scoped by `(cache_key,
   dataset_version_id)` so a re-ingested export (changed file, changed coverage dates)
   automatically misses and refetches fresh answers. `cache_mode="fresh"` forces the same
-  refetch on demand.
+  refetch on demand. Cache-v5 invalidates pre-snapshot answers; semantic reuse and selected
+  follow-ups require a persisted `leased-generation-v1` intent marker. History remains
+  readable independently. Synthetic dependency overrides must bind their tuple explicitly
+  with `bind_dataset_snapshot`; unbound connections never borrow a dataset identity.
 - **Diagnostics store** — privacy-safe performance/event telemetry in the same SQLite file:
   allowlisted metadata per category (no question text, health values, paths, or SQL), a
   retention cap (`max_events`, default 5000, oldest evicted), and summaries computed in SQL

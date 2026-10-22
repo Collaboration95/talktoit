@@ -70,6 +70,7 @@ async def test_import_job_reports_safe_completion(monkeypatch, tmp_path) -> None
                 break
             await asyncio.sleep(0.01)
 
+    await asyncio.gather(*list(imports.import_jobs._tasks))
     assert job["state"] == "succeeded"
     assert job["progress"] == 100
     assert job["report"]["dataset_version_id"] == "ds_test"
@@ -77,7 +78,7 @@ async def test_import_job_reports_safe_completion(monkeypatch, tmp_path) -> None
 
 
 @pytest.mark.asyncio
-async def test_cancelled_import_releases_slot_and_removes_the_upload(monkeypatch, tmp_path) -> None:
+async def test_cancelled_import_keeps_live_upload_until_worker_exit(monkeypatch, tmp_path) -> None:
     """A cancelled import stops the worker, clears the slot, and drops the upload."""
     monkeypatch.setenv("TTI_DB_PATH", str(tmp_path / "health.duckdb"))
     entered = threading.Event()
@@ -103,15 +104,22 @@ async def test_cancelled_import_releases_slot_and_removes_the_upload(monkeypatch
         cancelled = await client.delete(f"/api/imports/{job_id}")
         assert cancelled.status_code == 200
         body = cancelled.json()
-        assert body["state"] == "failed"
-        assert body["error"] == "The import was cancelled."
-        # The upload is removed even though the worker is still blocked.
+        assert body["state"] == "running"
+        assert body["progress"] == 0
+        assert upload_path.exists()
+        # A cancellation request cannot erase files still in use or release
+        # the slot before the importer has actually stopped.
+        next_job = await client.post("/api/imports?filename=export.xml", content=b"<HealthData />")
+        assert next_job.status_code == 409
+        release.set()
+        await asyncio.gather(*list(imports.import_jobs._tasks))
+        job = (await client.get(f"/api/imports/{job_id}")).json()
+        assert job["state"] == "failed"
+        assert job["error"] == "The import was cancelled."
         assert not upload_path.exists()
-
-        # The freed slot must accept the next import.
         next_job = await client.post("/api/imports?filename=export.xml", content=b"<HealthData />")
         assert next_job.status_code == 202
-        release.set()
+        await asyncio.gather(*list(imports.import_jobs._tasks))
 
 
 def test_cancellation_racing_registration_kills_the_importer(monkeypatch, tmp_path) -> None:
