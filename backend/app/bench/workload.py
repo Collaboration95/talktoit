@@ -1,0 +1,384 @@
+"""Fresh-process local query and ASGI workloads with all providers denied."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import socket
+import time
+from collections.abc import Callable
+from contextlib import ExitStack
+from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
+from typing import Any, Literal, NoReturn, cast
+from unittest.mock import Mock, patch
+
+import duckdb
+from httpx import ASGITransport, AsyncClient
+
+from app.bench.report import ClosedModel, Join, MetricName, Panel, PlanEvidence, PlanVariant
+from app.db import queries
+from app.db.aggregations import to_local_dt
+from app.db.connection import (
+    DatasetSnapshot,
+    close_open_connections,
+    dataset_snapshot,
+)
+from app.llm.provider_gateway import ProviderGateway, ProviderUnavailableError
+from app.models.templates import RankedListData, WorkoutCardData
+
+
+class WorkloadResult(ClosedModel):
+    """Allowlisted subprocess payload; no answer bodies or plans are emitted."""
+
+    metrics: dict[MetricName, float]
+    dashboard_requests: dict[Panel, int]
+    explain_analyze: dict[Join, bool]
+    plan_variants: dict[PlanVariant, PlanEvidence]
+    provider_network_calls: Literal[0]
+    cold_cache_verified: Literal[True]
+    managed_generation_verified: Literal[True]
+
+
+class _Trace:
+    def __init__(self, conn: duckdb.DuckDBPyConnection) -> None:
+        self.conn = conn
+        self.sql = ""
+        self.params: list[Any] = []
+
+    def execute(self, sql: str, params: list[Any]) -> duckdb.DuckDBPyConnection:
+        self.sql, self.params = sql, params
+        return self.conn.execute(sql, params)
+
+
+def _join_queries(conn: duckdb.DuckDBPyConnection) -> dict[Join, Callable[[], object]]:
+    return {
+        "latest": lambda: queries.get_last_workout(conn, activity_type="Running"),
+        "ranked": lambda: queries.get_top_workouts(conn, "Running", "distance", n=5),
+        "paged": lambda: queries.get_workout_collection(
+            conn, date(2024, 1, 1), date(2024, 6, 30), "Running", None, None, None, 20
+        ),
+    }
+
+
+PlanData = WorkoutCardData | RankedListData | list[tuple[Any, ...]] | None
+
+
+@dataclass(frozen=True)
+class WorkoutPlanRun:
+    """Private result and raw plan; only evidence may cross publication boundaries."""
+
+    result: PlanData
+    raw_plan: str
+    evidence: PlanEvidence
+
+
+def _capture_plan(
+    conn: duckdb.DuckDBPyConnection, query: Callable[[duckdb.DuckDBPyConnection], PlanData]
+) -> WorkoutPlanRun:
+    trace = _Trace(conn)
+    result = query(cast(duckdb.DuckDBPyConnection, trace))
+    row = conn.execute("EXPLAIN ANALYZE " + trace.sql, trace.params).fetchone()
+    if row is None or "EXPLAIN_ANALYZE" not in str(row[1]):
+        raise RuntimeError("explain_missing")
+    count = (
+        len(result.rows)
+        if isinstance(result, RankedListData)
+        else len(result)
+        if isinstance(result, list)
+        else int(result is not None)
+    )
+    return WorkoutPlanRun(result, str(row[1]), PlanEvidence(success=True, result_rows=count))
+
+
+def workout_plan_variants(conn: duckdb.DuckDBPyConnection) -> dict[PlanVariant, WorkoutPlanRun]:
+    """Run a fixed bounded matrix through actual helpers, with real result cursors.
+
+    Latest/ranked helpers have no source filter; pagination exercises source-only
+    and combined filters. No operator cardinality is inferred from plan text.
+    All scopes derive from an actual result within the fixed synthetic date span.
+    """
+    runs: dict[PlanVariant, WorkoutPlanRun] = {}
+    broad_start, broad_end = date(2000, 1, 1), date(2100, 12, 31)
+
+    def page(
+        start: date,
+        end: date,
+        activity: str | None,
+        source: str | None,
+        cursor: tuple[Any, ...] | None = None,
+    ) -> WorkoutPlanRun:
+        return _capture_plan(
+            conn,
+            lambda traced: queries.get_workout_collection(
+                traced,
+                start=start,
+                end=end,
+                activity_type=activity,
+                source=source,
+                cursor_date=cursor[2] if cursor else None,
+                cursor_id=cursor[0] if cursor else None,
+                limit=1,
+            ),
+        )
+
+    runs["paged_broad_first"] = page(broad_start, broad_end, None, None)
+    first = runs["paged_broad_first"].result
+    if not isinstance(first, list) or not first:
+        raise RuntimeError("synthetic_plan_scope_empty")
+    anchor = first[0]
+    day = to_local_dt(anchor[2]).date()
+    activity, source = str(anchor[1]), str(anchor[5])
+    scopes = (
+        ("broad", broad_start, broad_end, None, None),
+        ("date", day, day, None, None),
+        ("type", broad_start, broad_end, activity, None),
+        ("source", broad_start, broad_end, None, source),
+        ("selective", day, day, activity, source),
+    )
+    for scope, start, end, activity_filter, source_filter in scopes:
+        first_id = cast(PlanVariant, f"paged_{scope}_first")
+        next_id = cast(PlanVariant, f"paged_{scope}_next")
+        if first_id not in runs:
+            runs[first_id] = page(start, end, activity_filter, source_filter)
+        rows = runs[first_id].result
+        if not isinstance(rows, list) or not rows:
+            raise RuntimeError("synthetic_plan_scope_empty")
+        runs[next_id] = page(start, end, activity_filter, source_filter, rows[-1])
+    runs["latest_broad"] = _capture_plan(
+        conn,
+        lambda traced: queries.get_last_workout(traced, activity_type=None, start=None, end=None),
+    )
+    runs["latest_selective"] = _capture_plan(
+        conn,
+        lambda traced: queries.get_last_workout(traced, activity_type=activity, start=day, end=day),
+    )
+    runs["ranked_broad"] = _capture_plan(
+        conn,
+        lambda traced: queries.get_top_workouts(
+            traced, activity_type=activity, metric="distance", n=5, start=None, end=None
+        ),
+    )
+    runs["ranked_selective"] = _capture_plan(
+        conn,
+        lambda traced: queries.get_top_workouts(
+            traced, activity_type=activity, metric="distance", n=5, start=day, end=day
+        ),
+    )
+    return runs
+
+
+def explain_workout_joins(conn: duckdb.DuckDBPyConnection) -> dict[Join, str]:
+    """Return representative raw plans privately, preserving the original inspector."""
+    runs = workout_plan_variants(conn)
+    return {
+        "latest": runs["latest_broad"].raw_plan,
+        "ranked": runs["ranked_broad"].raw_plan,
+        "paged": runs["paged_broad_first"].raw_plan,
+    }
+
+
+def _timed(fn: Callable[[], object]) -> float:
+    started = time.perf_counter()
+    fn()
+    return (time.perf_counter() - started) * 1000
+
+
+def run_queries(
+    *, include_plans: bool = True
+) -> tuple[dict[MetricName, float], dict[Join, bool], dict[PlanVariant, PlanEvidence]]:
+    """Time new-connection and repeated local queries separately from HTTP."""
+    metrics: dict[MetricName, float] = {}
+    for name in ("latest", "ranked", "paged", "trend"):
+        with dataset_snapshot() as snapshot:
+            _verify_generation(snapshot)
+            conn = snapshot.connection
+            query = (
+                _join_queries(conn)[name]
+                if name != "trend"
+                else lambda conn=conn: queries.get_trend(
+                    conn,
+                    "HKQuantityTypeIdentifierStepCount",
+                    "week",
+                    date(2024, 1, 1),
+                    date(2024, 6, 30),
+                )
+            )
+            metrics[cast(MetricName, f"query_{name}_cold")] = _timed(query)
+            metrics[cast(MetricName, f"query_{name}_warm")] = _timed(query)
+    runs: dict[PlanVariant, WorkoutPlanRun] = {}
+    if include_plans:
+        with dataset_snapshot() as snapshot:
+            _verify_generation(snapshot)
+            runs = workout_plan_variants(snapshot.connection)
+    summaries: dict[Join, bool] = {}
+    for name in ("latest", "ranked", "paged"):
+        if not runs:
+            break
+        summaries[name] = all(
+            run.evidence.success for variant, run in runs.items() if variant.startswith(name + "_")
+        )
+    return metrics, summaries, {variant: run.evidence for variant, run in runs.items()}
+
+
+def _verify_generation(snapshot: DatasetSnapshot) -> None:
+    manifest = snapshot.dataset
+    if (
+        manifest is None
+        or manifest.id != os.environ.get("TTI_BENCH_GENERATION_ID")
+        or snapshot.generation is None
+    ):
+        raise RuntimeError("synthetic_generation_mismatch")
+
+
+def _forbidden(*_args: object, **_kwargs: object) -> NoReturn:
+    raise RuntimeError("network_or_provider_denied")
+
+
+async def run_http() -> tuple[dict[MetricName, float], dict[Panel, int], int]:
+    """Exercise real lifespan/routes, denying network, inference and model startup.
+
+    HTTP is ASGI in-process, so socket/browser/transfer cost is explicitly absent.
+    The first chat request is cold relative to app caches, not the OS page cache.
+    """
+    if Path(os.environ["TTI_APP_STATE_PATH"]).exists():
+        raise RuntimeError("synthetic_app_state_not_fresh")
+    from app import main
+    from app.api import chat
+    from app.db.dashboard_cache import clear_dashboard_cache
+    from app.llm import litert
+
+    gateway = Mock(spec=ProviderGateway)
+    gateway.client = Mock()
+    gateway.model = "denied-synthetic"
+    gateway.complete.side_effect = ProviderUnavailableError("synthetic_provider_denied")
+    network_calls = 0
+
+    def deny_network(*_args: object, **_kwargs: object) -> NoReturn:
+        nonlocal network_calls
+        network_calls += 1
+        return _forbidden()
+
+    metrics: dict[MetricName, float] = {}
+    counts: dict[Panel, int] = {}
+    with ExitStack() as stack:
+        stack.enter_context(patch.object(main, "make_provider_gateway", return_value=gateway))
+        stack.enter_context(patch.object(chat, "get_gateway_for_config", return_value=gateway))
+        for method in ("ensure_running", "health", "stop"):
+            stack.enter_context(patch.object(litert, method, side_effect=_forbidden))
+        for method in ("connect", "connect_ex"):
+            stack.enter_context(patch.object(socket.socket, method, side_effect=deny_network))
+        stack.enter_context(patch.object(socket, "create_connection", side_effect=deny_network))
+        stack.enter_context(patch.object(socket, "getaddrinfo", side_effect=deny_network))
+        profile = stack.enter_context(
+            patch.object(chat, "get_data_profile", wraps=chat.get_data_profile)
+        )
+        app = main.create_app()
+        async with app.router.lifespan_context(app):
+            with dataset_snapshot() as snapshot:
+                _verify_generation(snapshot)
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://synthetic"
+            ) as client:
+                for label, question, mode, expected in (
+                    ("cold", "show my last run", "default", "workout_card"),
+                    ("fresh", "show my last run", "fresh", "workout_card"),
+                    ("distinct_fresh", "show my last workout", "fresh", "workout_card"),
+                    ("cached", "show my last run", "default", "workout_card"),
+                    ("denied", "invent a synthetic fable", "fresh", "fallback"),
+                ):
+                    before_calls = gateway.complete.call_count
+                    before_profiles = profile.call_count
+                    started = time.perf_counter()
+                    response = await client.post(
+                        "/api/chat", json={"question": question, "cache_mode": mode}
+                    )
+                    metrics[cast(MetricName, f"chat_http_{label}")] = (
+                        time.perf_counter() - started
+                    ) * 1000
+                    if (
+                        response.status_code != 200
+                        or response.json().get("template_id") != expected
+                    ):
+                        raise RuntimeError("synthetic_chat_failed")
+                    if (
+                        response.json()["metadata"]["dataset_version_id"]
+                        != os.environ["TTI_BENCH_GENERATION_ID"]
+                    ):
+                        raise RuntimeError("synthetic_generation_mismatch")
+                    expected_scans = 0 if label == "cached" else 1
+                    if profile.call_count != before_profiles + expected_scans:
+                        raise RuntimeError("synthetic_cache_isolation_failed")
+                    if (
+                        label in {"cold", "fresh", "distinct_fresh"}
+                        and response.json()["metadata"]["provenance"] != "deterministic_local"
+                    ):
+                        raise RuntimeError("synthetic_cold_or_fresh_cache_hit")
+                    if label != "denied" and gateway.complete.call_count != before_calls:
+                        raise RuntimeError("deterministic_provider_used")
+                    if label == "denied" and (
+                        gateway.complete.call_count != before_calls + 1
+                        or response.json()["data"].get("reason") != "provider_unavailable"
+                    ):
+                        raise RuntimeError("synthetic_denial_reason_failed")
+                    if label == "cached" and response.json()["metadata"]["provenance"] != "cached":
+                        raise RuntimeError("synthetic_cache_missed")
+                metrics["profile_calls"] = float(profile.call_count)
+                clear_dashboard_cache()
+                panels: dict[Panel, str] = {
+                    "summary": "/api/dashboard/summary",
+                    "workouts": "/api/dashboard/workouts",
+                    "volume": "/api/dashboard/volume",
+                    "steps": "/api/dashboard/steps",
+                    "heart": "/api/dashboard/heart",
+                    "sleep": "/api/dashboard/sleep",
+                    "sleep_stages": "/api/dashboard/sleep/stages",
+                    "capabilities": "/api/dashboard/capabilities",
+                    "status": "/api/status",
+                }
+                for temperature in ("cold", "warm"):
+                    started = time.perf_counter()
+                    responses = await asyncio.gather(*(client.get(url) for url in panels.values()))
+                    metrics[cast(MetricName, f"dashboard_http_{temperature}")] = (
+                        time.perf_counter() - started
+                    ) * 1000
+                    if any(response.status_code != 200 for response in responses):
+                        raise RuntimeError("synthetic_dashboard_failed")
+                    counts = dict.fromkeys(panels, 1)
+        close_open_connections()
+    if network_calls:
+        raise RuntimeError("network_attempt_detected")
+    return metrics, counts, network_calls
+
+
+def main() -> None:
+    """Emit only a validated metric payload to the private parent pipe."""
+    if os.environ.get("TTI_BENCH_SYNTHETIC") != "1":
+        raise RuntimeError("synthetic_environment_required")
+    # HTTP runs first so local query scans cannot prewarm app-level caches.
+    http_metrics, requests, network_calls = asyncio.run(run_http())
+    query_metrics, plans, variants = run_queries(
+        include_plans=os.environ.get("TTI_BENCH_PLAN_MATRIX", "1") == "1"
+    )
+    print(
+        WorkloadResult(
+            metrics={**http_metrics, **query_metrics},
+            dashboard_requests=requests,
+            explain_analyze=plans,
+            plan_variants=variants,
+            provider_network_calls=cast(Literal[0], network_calls),
+            cold_cache_verified=True,
+            managed_generation_verified=True,
+        ).model_dump_json()
+    )
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        # Child logs are discarded by the parent. Do not emit request/SQL details.
+        print(json.dumps({"status": "workload_failed"}))
+        raise SystemExit(1) from None

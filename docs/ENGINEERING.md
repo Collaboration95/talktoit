@@ -233,6 +233,13 @@ them explicitly with `make test-bench` (= `pytest -m benchmark --no-cov`) or `ma
 (＝ `pytest tests/bench -m benchmark --no-cov -q`). Benchmarks run against synthetic data
 only, record privacy-safe `benchmark` diagnostics events, and assert documented thresholds.
 
+`make bench-synthetic` is the separate, slow generated-only baseline runner. It builds a
+Node 20 production manifest, then reports small/representative fixed-seed cases using
+median/nearest-rank p95, full official CLI import wall time and sampled process-tree RSS.
+It is never part of the default tests or tiny `make bench` policy suite. Run only after
+other agents stop CPU-heavy work. See [the measurement protocol](decisions/performance-baseline.md)
+for sampling options, privacy boundaries, HTTP/browser limitations and pending decisions.
+
 **Test split:**
 - `tests/unit/` — pure logic only; no DuckDB, no filesystem, no network. Fast.
 - `tests/integration/` — real DuckDB (in-memory DB seeded from `tests/fixtures/sample.xml`
