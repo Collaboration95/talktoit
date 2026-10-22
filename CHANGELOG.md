@@ -39,6 +39,9 @@ in `make check` and CI).
   leases until actual worker exit, including repeated cancellation.
 - Superseded rollback generations retire through durable ownership records;
   protected, leased, changed and ambiguous data remain preserved.
+- Generation and import-artifact cleanup capture entries into durable private claims
+  before validating and disposing of them. Replacements stay preserved, and older
+  deletion intents cannot acquire missing ownership proof through recovery.
 - Settings' XML import command wraps within phone-width screens while import and
   recovery controls remain visible.
 - Numeric trends aggregate in DuckDB before transferring buckets to Python,

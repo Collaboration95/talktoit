@@ -47,7 +47,12 @@ native uploads, cancellation/restart, keyboard and phone-width acceptance.
   cleanup. History, settings and other independent scopes remain separate.
 - Off-thread chat/profile/dashboard work drains before cancellation releases its
   connection and lease. Retirement validates recorded ownership after the exclusive
-  lease and unlinks through directory descriptors; replacement paths do not grant authority.
+  lease. Shared durable claims capture entries on the same filesystem before
+  validating and disposing of private captured objects. Public replacements remain
+  preserved; older deletion intents cannot gain missing authority during retries.
+  Empty metadata/completion records remain, and quarantined mismatches require
+  manual recovery. Private claim contents are trusted; this is a bounded local
+  POSIX protocol. See [the response and limits](ownership-claim-response.md).
 - Import artifacts have operation locks and explicit ownership metadata. Startup
   reconciles lifecycle state before abandoned jobs/artifacts. Stable ownership
   records, unknown files and ambiguous artifacts are intentionally preserved.

@@ -31,3 +31,24 @@ remains unchanged in the local review archive, SHA-256
 [anchored cleanup](../safety-review-corrections-round-2.md) record the new failing
 regressions, responses, combined gates and conservative compatibility limits.
 Fresh round-three acceptance is required; none is implied by these reports.
+
+## Round 3
+
+Round 3 reviewed candidate `5105dc583d9de3a76eb8cf2e99a8810134f05387`, tree
+`098c5fa79d6aeda1bf8d2fa64d451cd131bb74f3`. The reports retain their original
+findings and scope; internal citation footers are excluded from public copies.
+
+- [Safety: REVISE](round-3-safety.md): child-file replacement before unlink and artifact-directory replacement after validation.
+- [UX/analytics: premerge PASS](round-3-ux-analytics.md): bounded sleep intent, local-only aliases, numeric validity and cache controls pass.
+- [Maintenance/performance: REVISE](round-3-maintenance-performance.md): an older identity-less deletion intent can acquire replacement ownership proof on retries.
+
+[The legacy fence](../legacy-deletion-authority.md) and
+[shared capture protocol response](../ownership-claim-response.md) record the
+regressions, implementation, recovery rules and limits. Fresh independent
+acceptance and current-source Ubuntu CI remain required.
+
+Original report SHA-256 values:
+
+- `round-3-safety.md`: `6b570dca76b16056fcb24adf955a34172570dd7afa2c82a82a77271e4c6753fc`.
+- `round-3-ux-analytics.md`: `9e1fed032e84cff34f39b8ad55b7dc9d4d5fd7453b7db90e0350ba9759b057f4`.
+- `round-3-maintenance-performance.md`: `7802ea5eee4966328580d1e2de80e63b881ff67a9ae7bc30d29337452cd8c1d3`.

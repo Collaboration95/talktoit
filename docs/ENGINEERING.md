@@ -303,11 +303,16 @@ health data.
   Versioned `retirement.json` records proven former rollback pointers and directory
   identities before their reference is replaced. Publication, recovery and snapshot
   release retry this queue; an unreferenced directory name alone grants no cleanup authority.
-  Cleanup validates recorded identity after the exclusive lease and unlinks through
-  the held directory descriptor. Empty allocation directories and lease files remain;
-  portable cleanup never issues a pathname `rmdir` that could target a replacement.
-  Deletion intents also retain directory identities; older intents without proof
-  preserve present files for local recovery.
+  Cleanup validates recorded identity after the exclusive lease, then uses the shared
+  `app.state.cleanup_claims` format-2 protocol: persist original authority, atomically
+  capture on the same filesystem, validate the captured object, persist validation,
+  then dispose only within the held private namespace. A parent descriptor alone
+  does not prove child-file identity. Public source names are never unlinked after
+  validation. Replacements and mismatched claims retain durable proof for manual
+  recovery. Empty allocation/claim directories, completion records and stable locks
+  remain. Older deletion intents cannot gain missing authority through journal,
+  retirement-queue or claim recovery. This protocol trusts private claim contents
+  and targets local POSIX filesystems; see `ownership-claim-response.md` for limits.
 - **Owned import recovery** — after lifecycle recovery returns with no locks held, startup
   runs `recover_import_jobs(repository)` on a worker thread before providers/migrations.
   See `docs/decisions/import-artifact-ownership.md` for ownership/liveness and durable jobs.

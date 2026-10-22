@@ -68,6 +68,35 @@ the UI explains the existing local import route. Historical issues remain
 unchanged: 28 repaired, 8 residual and 19 unverified; classification does not claim
 acceptance or close them.
 
+## Current corrected candidate
+
+Round three passed UX/analytics but reproduced three cleanup gaps: missing legacy
+ownership proof could be manufactured on retry, a child file could be replaced
+between validation and unlink, and artifact recursion could resolve a replacement
+path. [Original reports](reviews/README.md#round-3) remain historical.
+
+Product source `86296497b6063d8148e43a73a7d621c0ed6ba154` integrates all three
+responses in [the legacy fence](legacy-deletion-authority.md) and
+[shared format-2 capture protocol](ownership-claim-response.md). Original authority
+is persisted before same-filesystem capture; captured objects are validated before
+private disposal. Replacements, ambiguous state and original proof remain preserved.
+Private claim contents are trusted. Empty metadata/completion tombstones remain;
+quarantine, changed locators and ambiguous preparation require manual recovery.
+
+The exact combined app/test trees passed `make check-full`: **1,390 backend and
+224 frontend tests**, overall **89.01%**, ingestion **91.55%**, LLM **82.30%**;
+all thresholds unchanged. Parent verified the same trees, production build exit 0,
+real macOS browser **47/47**, actual hard stop -9 and recovery exit 0, then quiet
+small `make bench` **11 passed**, exit 0. This is premerge evidence, not actual-main
+qualification. Earlier production timings retain their original source identities.
+
+The Ubuntu browser job at obsolete `5105dc5` was cancelled after its unchanged
+15-minute budget: dependency setup consumed 14m22s on a slow Azure APT mirror.
+The new workflow pins Ubuntu 24.04, caches the locked headless shell, avoids
+unconditional APT upgrades and verifies libraries by actually launching Chromium.
+All scenarios, artifact assertions and the timeout remain enabled. Updated-source
+Ubuntu execution and fresh independent acceptance are pending. No gate is Done.
+
 ## Final review corrections
 
 Independent round 1 at `476bbd2` returned maintenance/performance PASS and safety
@@ -87,7 +116,7 @@ owner's full gate: **1,106 backend /224 frontend tests**, unchanged coverage gat
 88.80% overall backend coverage, ingestion 92% and LLM 82% (rounded module output).
 The parent rebuilt and reran the real macOS browser journey: **47/47 pass**, exit 0,
 including actual SIGKILL/recovery. Quiet `make bench`: **11 pass**, exit 0.
-Fresh independent review and corrected-source CI remain pending. Earlier production
+That source was superseded by subsequent review corrections. Earlier production
 timings retain their exact source identities; main qualification must rerun the
 required performance cases after these backend changes.
 
@@ -102,7 +131,7 @@ No real provider transport ran. [Round-two reports](reviews/README.md#round-2)
 retain the observations; [sleep corrections](review-corrections-round-2.md) and
 [anchored cleanup](safety-review-corrections-round-2.md) record the responses.
 
-Current combined product source `7d398f0` consumes a bounded complete sleep
+Historical combined product source `7d398f0` consumes a bounded complete sleep
 request/date grammar, shares known category/stage aliases with projection guards,
 and uses cache v8 to reject prior v7 answers. Cleanup validates persisted directory
 identity after the exclusive lease and uses descriptor-relative unlinks. Empty
@@ -112,8 +141,7 @@ present files for local recovery.
 The combined gate passed **1,238 backend /224 frontend tests**, overall **88.90%**,
 ingestion **91.55%**, LLM **82.30%**, with thresholds unchanged. Parent-confirmed
 app/test trees match that gate. Rebuilt real macOS browser journey: **47/47 pass**,
-exit 0; quiet small `make bench`: **11 pass**, exit 0. Source `7d398f0` needs new
-CI and independent round-three acceptance. Main and all outcome gates remain open;
+exit 0; quiet small `make bench`: **11 pass**, exit 0. Round three subsequently found the cleanup gaps recorded below. Main and all outcome gates remain open;
 earlier production timings stay pinned to their original source identities.
 
 - [Baseline](maintenance-baseline-2026-10.md), [dependency decision](dependency-remediation.md)
@@ -174,8 +202,8 @@ Playwright browser-tooling audit exits 0 with no findings.
 
 T3 preview twice failed with `Preview automation snapshot timed out after 15000ms.`
 Native Chrome/standalone Playwright subsequently supplied actual desktop/390 px
-screenshots and browser checks. These do not yet establish the complete final
-journey on the combined candidate. Functional failed-chunk testing found Chrome
+screenshots and browser checks. The documented portable harness now supplies the combined candidate journey;
+actual-main and current-source Ubuntu qualification remain required. Functional failed-chunk testing found Chrome
 retains a failed dynamic import on retry; formatted data remains usable.
 
 Primary frozen baseline matrices ran on battery, later supplements on AC. Those
@@ -186,5 +214,5 @@ across 20 retained trials per head. That original result and its outliers remain
 archived. The explicit-loading-state repair preserves deferred dependencies and
 now passes quiet paired requalification against the original margins. Its source
 `a91e884` includes the corrected Settings wrapping and portable browser harness.
-The first-chart blocker is cleared. Actual Ubuntu browser CI, final independent
-verdicts and merged-main acceptance remain open.
+The historical first-chart blocker is cleared. Current-source Ubuntu CI, fresh
+independent verdicts and merged-main acceptance remain open.
