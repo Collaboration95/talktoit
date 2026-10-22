@@ -6,6 +6,37 @@ on:
   pull_request:
 
 jobs:
+  macos-lifecycle-smoke:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    env:
+      TTI_LOCAL_AUTOSTART: '0'
+      TTI_LOCAL_STOP_ON_EXIT: '0'
+      PYTEST_XDIST_AUTO_NUM_WORKERS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm', cache-dependency-path: frontend/package-lock.json }
+      - run: uv sync --directory backend --dev --locked --python 3.12
+      - run: npm --prefix frontend ci
+      - name: Verify supported runtimes
+        run: |
+          node --version
+          npm --version
+          node -e 'if (process.versions.node.split(".")[0] !== "20") process.exit(1)'
+          uv run --directory backend python -c 'import sys; print(sys.version); assert sys.version_info >= (3, 12)'
+      - name: Synthetic import, restart and readiness (providers forbidden)
+        shell: bash
+        run: |
+          smoke_dir=$(mktemp -d "${RUNNER_TEMP}/tti-lifecycle.XXXXXX")
+          trap 'rm -rf "$smoke_dir"' EXIT
+          export TTI_DB_PATH="$smoke_dir/health.duckdb"
+          export TTI_APP_STATE_PATH="$smoke_dir/state.sqlite"
+          uv run --directory backend pytest tests/integration/test_maintenance_lifecycle.py \
+            --basetemp="$smoke_dir/pytest" -n 0 -q --no-cov
+          npm --prefix frontend run test -- --run tests/api/maintenance-fetch.test.ts --maxWorkers=2
+
   version-consistency:
     runs-on: ubuntu-latest
     steps:
