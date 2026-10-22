@@ -9,11 +9,10 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
-import duckdb
 from httpx import ASGITransport, AsyncClient
 
 from app import main
-from app.db.connection import close_open_connections
+from app.db.connection import close_open_connections, connect
 from app.llm import litert
 from app.llm.provider_gateway import ProviderGateway
 from app.state.app_state import AppStateRepository
@@ -82,7 +81,7 @@ async def test_synthetic_cli_import_survives_app_restart(monkeypatch, tmp_path) 
     assert manifest.id == report["dataset_version_id"]
     assert manifest.parser_version == "v2"
 
-    with duckdb.connect(str(db_path)) as conn:
+    with connect(read_only=True) as conn:
         for table, count in EXPECTED_COUNTS.items():
             # Identifiers are closed fixture constants, never user input.
             count_sql = f"SELECT count(*) FROM {table}"  # noqa: S608

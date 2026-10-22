@@ -22,6 +22,9 @@ in `make check` and CI).
 
 ### Fixed
 
+- Imports now commit immutable dataset generations through a durable atomic
+  pointer. HTTP and managed CLI startup recover matching data, manifest and
+  route roots after process interruption while preserving previous copies.
 - Chat cache entries are now re-associated with the producing dataset: after a
   re-import mints a new `ds_*` id, re-pushing the same key updates the row's
   `dataset_version_id`, so the refreshed dataset's answers become cacheable
