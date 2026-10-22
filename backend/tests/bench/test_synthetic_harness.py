@@ -200,3 +200,11 @@ async def test_http_rejects_reused_app_state_before_startup(tmp_path, monkeypatc
     with pytest.raises(RuntimeError, match="synthetic_app_state_not_fresh"):
         await run_http()
     startup.assert_not_called()
+
+
+def test_summary_discloses_spread_without_best_of_selection():
+    spread = summarize([1.0, 2.0, 3.0])
+    assert spread.minimum == 1
+    assert spread.maximum == 3
+    assert spread.stddev == pytest.approx((2 / 3) ** 0.5)
+    assert summarize([7.0]).stddev == 0

@@ -107,6 +107,9 @@ class Summary(ClosedModel):
     samples: int = Field(ge=1)
     median: float = Field(ge=0)
     p95: float = Field(ge=0)
+    minimum: float = Field(ge=0)
+    maximum: float = Field(ge=0)
+    stddev: float = Field(ge=0)
 
 
 def summarize(values: list[float]) -> Summary:
@@ -118,6 +121,9 @@ def summarize(values: list[float]) -> Summary:
         samples=len(values),
         median=statistics.median(values),
         p95=ordered[math.ceil(0.95 * len(values)) - 1],
+        minimum=ordered[0],
+        maximum=ordered[-1],
+        stddev=statistics.pstdev(values),
     )
 
 

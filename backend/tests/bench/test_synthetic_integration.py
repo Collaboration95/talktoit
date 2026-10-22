@@ -203,7 +203,7 @@ async def test_workload_leases_fresh_state_retention_ownership_and_no_active(tmp
     from app.llm.cache_keys import CACHE_KEY_VERSION
     from app.state.app_state import AppStateRepository
 
-    assert CACHE_KEY_VERSION == "chat-cache-v5"
+    assert CACHE_KEY_VERSION == "chat-cache-v6"
     env = isolated_environment(tmp_path)
     source = tmp_path / "synthetic.xml"
     ids = []

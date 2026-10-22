@@ -394,3 +394,64 @@ addition. No representative pilot, baseline, live provider/network, timing/benef
 claim, PR, CI polling, subagent or wait for another writer was involved. The functional
 selective/subsequent-plan limitation in older receipts is now superseded by this section;
 quiet representative analysis and measured candidate dispositions remain with the parent.
+
+## Measurement protocol declared before viewing results
+
+Analytics #208 is consumed through integrated dev `aef8b4b` / head `b334e644`.
+The current cache contract is v6; sleep/date/comparison production behavior is retained.
+The measurement source and both locks must be committed and the worktree clean before
+pilot/matrix timing. Summaries now include minimum/maximum and population standard
+ deviation, alongside median/nearest-rank p95 and actual retained counts.
+
+The following selection criteria are declared before pilot or representative results.
+They prioritize work on this reference machine; they are not product SLAs or loosened CI
+gates. The only inherited numeric roadmap response target is #183's proposed 250 ms writer
+budget. Existing tiny-policy 500 ms query/chat and 200 ms cache ceilings remain unchanged.
+
+- Repeatability/noise: compare both independent matrices; flag median drift above 10% or
+  p95 drift above 15% (with a 5 ms absolute floor). For memory comparisons require both
+  >=15% and >=10 MiB reduction. A useful latency experiment requires >=10% and >=10 ms
+  reduction, reproduced; wall regressions above 10% reject a memory candidate unless the
+  parent explicitly selects the tradeoff. Inspect outliers rather than choose best-of.
+- #180/#181: go if an isolated, parity-checked validation/range-scan prototype establishes
+  the above memory benefit and the baseline shows that allocation contributes >=5% of
+  total importer tree peak. Otherwise a measured no-go must establish no useful gain;
+  no unobserved importer memory budget will be invented. Worker/throughput guidance is
+  calibrated only after seeing runs and remains reference-specific.
+- #183: use actual conversation pending-turn requests plus an independent state writer.
+  A controlled 500 ms profile barrier diagnoses lock scope; it is never natural p95.
+  Go if the unrelated writer is blocked until release, or natural writer p95 exceeds the
+  proposed 250 ms target. Report natural and injected observations separately.
+- #184: go if different uncached questions repeat immutable-generation profiling and
+  profile time is >=10 ms and >=10% of normal chat time; exact hits must perform zero
+  profile scans. A measured below-margin no-go retains identity-safe behavior.
+- #186: request budget is exactly one volume request for a granularity-only toggle;
+  any observed unrelated panel request selects the narrow effect-splitting candidate.
+- #187: go if chart dependencies are demonstrably in initial static JS and browser
+  coverage shows >=100 KiB of initially loaded function code unused at cold chat ready.
+  Record real cold chat, first visible chart canvas and cached navigation, including
+  first-use cost. Bytes/coverage select a bounded lazy-boundary experiment, not a claimed
+  latency gain; actual benefit and chart regressions need post-change measurement.
+- #188: go if transferred raw observations exceed output buckets by >=10x and numeric
+  trend query p95 is >=20 ms; verify a scratch SQL aggregate against the real series.
+  Retain only with the latency margin above and parity; do not modify production SQL now.
+- Workout joins: reference selection budget is 50 ms per latest/ranked/paged query
+  (stricter than the existing 500 ms tiny query ceiling). If both matrices meet it and
+  private actual plans show no correctness drift, no import summary table is justified
+  now. Any failed budget gets a bounded filtered-aggregate experiment before disposition;
+  actual scan cardinalities may be extracted only from locally verified profiler support.
+
+Cost bound: first run make bench and one representative/137/worker-1 pilot (one import,
+2+20 workload trials). If two complete 12-configuration matrices are estimated <=45
+minutes, run both full matrices sequentially. Otherwise declare a reduced six-config
+matrix before execution: small (137/1,271/2,137/4), representative (271/1,137/2,271/4),
+retaining both sizes/seeds, all workers and 3+1 imports / 20+2 workload counts; disclose
+seed/worker confounding. Do not overlap measurements with builds/tests/browser runs.
+
+All browser traffic is loopback-only in an isolated Chrome context with providers denied.
+Use 2 warmups + 20 retained browser scenarios when practical. First-chart time ends at a
+visible nonzero canvas plus two animation frames, not animation completion. CDP coverage
+is collected separately from timed scenarios. No TCP overhead is fabricated by subtracting
+unrelated ASGI/query timings. Reference background app/process names, power and load are
+recorded without usernames, hostnames, arguments or credentials. Existing user apps are
+not stopped; only this task's positively identified server is stopped.
