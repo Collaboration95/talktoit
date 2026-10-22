@@ -455,3 +455,12 @@ is collected separately from timed scenarios. No TCP overhead is fabricated by s
 unrelated ASGI/query timings. Reference background app/process names, power and load are
 recorded without usernames, hostnames, arguments or credentials. Existing user apps are
 not stopped; only this task's positively identified server is stopped.
+
+Before the pilot, the tiny suite exposed an embedded-fixture mismatch with the leased
+identity contract: its conversation connection-budget test had no bound snapshot. The
+fixture is now bound through public `bind_dataset_snapshot()` and seeds a real cacheable
+workout envelope, explicitly asserting miss then hit. Initial make bench exited 2 (10
+passed/1 failed); corrected make bench exited 0 (11 passed). All ceilings are unchanged.
+Reference inspection found battery power at 94%, low-power mode off; AC is unavailable
+in this session. Comparisons therefore describe this battery-powered reference session,
+with before/after power/load observations, and are not machine-independent limits.
