@@ -52,9 +52,9 @@ until final independent review, merged-main receipts and completion comments exi
 | --- | --- | --- |
 | #148 maintenance | Supported Python 3.12.11/Node 20.20.2; locked installs; audit dispositions; Ubuntu suites/macOS lifecycle CI; 55 historical issues classified | Fresh audits, integrated review and main CI |
 | #164 data safety | Process-death activation/deletion/retention matrices; two-dataset identity/cache tests; leases; simultaneous import/query/delete; owned-artifact recovery | Final integrated fault matrix and main/platform receipts |
-| #176 daily use | Native upload and browser DOM checks; desktop/390 px screenshots; visible question; scoped dashboard; persistent empty filters | Final real-browser reconnect/cancel/restart/keyboard journey and Ubuntu browser receipt |
+| #176 daily use | Combined real-browser journey passes all 47 criteria: native upload, reconnect/cancel/SIGKILL recovery, keyboard, scoped dashboard, empty-filter Reset and desktop/390 px screenshots | Actual Ubuntu browser CI, review and main receipts |
 | #189 performance | Frozen matrices; production portfolio; implementation parity; quiet branch benchmark gates | BLOCKED on #187 first-chart regression, then quiet repair qualification, review and main rerun |
-| #199 analytics | Shared sleep union/stages; independent HTTP/CLI/query oracles; coverage/missing/zero states; provider-denied browser render | Final integrated oracle/browser rerun, review and main receipts |
+| #199 analytics | Shared sleep union/stages; independent HTTP/CLI/query oracles; fresh combined browser coverage/missing/zero states and provider-denied rendering pass | Review and main/platform receipts |
 | #150 whole roadmap | Eleven cohesive batches integrated; architecture/issue map and reproducible setup | All five gates, final checks/build, independent review, main integration and handoff |
 
 No gate is closed at this checkpoint. Optional companion/ZIP discovery #198 is
@@ -76,6 +76,13 @@ acceptance or close them.
   Ambiguous artifacts are preserved rather than guessed safe to delete.
 - [Daily-use acceptance](daily-use-acceptance.md): component/API regressions, native
   import, truthful starters/fallbacks and saved provider disclosures.
+- [Portable browser acceptance](browser-acceptance.md): real FastAPI/Chromium,
+  official XML importer, actual cancellation and SIGKILL restart, independent
+  analytics oracles, 47 passing local criteria and a new Ubuntu CI job. Its
+  phone-width checks first caught Settings expanding to 451 px; wrapping the
+  displayed command fixed the issue without disabling assertions.
+- [Handoff](roadmap-handoff.md): reproducible setup, architecture constraints,
+  safe continuation, measurements and deliberately deferred scope.
 - [Sleep](sleep-chat.md) and [comparison](metric-comparisons.md) contracts: measured
   semantics, interval unions and coverage. The parent's independent synthetic
   oracle verified 14.5 hours across the two sample sleep days, 90,954 steps,
@@ -105,8 +112,8 @@ Fresh audits on 23 October match the maintenance inventory: Python and
 production-only Node exit 0 with no findings. Full Node audit exits 1 with seven
 development packages (five high, two moderate) from two documented Tailwind 3
 advisories. Audit gates remain enabled; a clean all-dependency audit is not claimed.
-The existing Tremor/React peer mismatch remains documented. The separate portable
-browser tooling must also be audited when its lock is added.
+The existing Tremor/React peer mismatch remains documented. The separate pinned
+Playwright browser-tooling audit exits 0 with no findings.
 
 T3 preview twice failed with `Preview automation snapshot timed out after 15000ms.`
 Native Chrome/standalone Playwright subsequently supplied actual desktop/390 px

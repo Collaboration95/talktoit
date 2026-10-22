@@ -113,7 +113,7 @@ Readiness uses state predicates with deadlines. The only fixed browser wait is
 made. Layout failures accumulate while lifecycle checks continue, and still make
 the final command exit 1. Fatal prerequisite failures stop dependent scenarios.
 
-## Local receipt and remaining blocker
+## Original local receipt and discovered blocker
 
 23 October 2026 local macOS run against product code `51bc6dc`, checked out at
 parent documentation head `e33545b3885542ed9e056c764d5339b5f369ef06`:
@@ -146,6 +146,38 @@ was not rerun for this test-only change.
 
 ## CI and parent handoff
 
+### Combined parent replay — local PASS
+
+The original overflow assertions remain enabled. Parent commit
+`0cf870fbf531472f40c8cf6ed1bd2667664f35dd` wraps the displayed Settings command
+with `break-all`; command text and import behavior are unchanged. It also includes
+the explicit chart-loading repair. After rebuilding, the same supervisor passed
+**all 47 criteria**, exit **0**, in 26.31 seconds on macOS, Python 3.12.11,
+Node 20.20.2 and bundled Chromium 153.0.8010.12/Playwright 1.63.0. Journey and
+recovery exited 0; the deliberately killed backend exited -9. Process and temporary
+storage cleanup passed. The exact-head receipt and synthetic screenshots are
+archived locally under `/tmp/tti-final-20261023/browser-0cf870f/`.
+
+The parent inspected recovered-job and comparison phone screenshots. Settings
+fits 390 px with its recovery instructions and controls visible; the complete
+comparison question, measured values, coverage and neutral changes remain readable.
+This is desktop Chromium at a phone viewport, not a physical-phone test.
+
+At the same product head, affected Settings tests, full frontend coverage
+(222 tests), `make check`, production build, actionlint and both sensitivity/safety
+self-tests exited 0. Browser-tooling audit exits 0 with no findings. The complete
+backend/coverage gate had already passed on identical backend source (995 tests;
+89.30% overall, 91.55% ingestion, 85.32% LLM). An initial parent run's global
+`TTI_LOCAL_AUTOSTART=0` override contradicted four mocked-autostart unit tests;
+the failed receipt is archived, and removing that override passed all 27 lifecycle
+unit tests and the full gate without test or application changes.
+
+No timing qualification is inferred from this functional run. Quiet paired chart
+requalification, actual Ubuntu execution, final review and merged-main acceptance
+remain separate requirements.
+
+### Hosted qualification
+
 `ubuntu-browser-acceptance` is a new independent, 15-minute Ubuntu job. It installs
 both existing application locks and the separate browser lock, audits the browser
 package, installs bundled Chromium and Ubuntu libraries through the official
@@ -157,8 +189,7 @@ audit gates are unchanged.
 
 **Ubuntu execution is pending the parent's batched PR.** Local macOS evidence is
 not Linux evidence or a green acceptance gate. The parent must cherry-pick this
-standalone commit with the chart repair, resolve the Settings overflow in its
-authorized frontend scope, rebuild/replay the combined head, obtain the actual
+standalone commit with the chart repair and corrected Settings wrapping, obtain the actual
 Ubuntu artifact/check receipt, and complete independent review and integrated
 acceptance. No PR, watcher, review loop, merge, issue closure or quiet-window
 benchmark is performed by this follow-up.

@@ -56,6 +56,7 @@ tti/
 │   └── package.json
 ├── scripts/
 │   ├── check-versions.sh    # version-consistency gate (backend, frontend, runtime)
+│   ├── browser-acceptance/  # pinned synthetic real-browser/import/restart harness
 │   └── groq_smoke.sh        # quick end-to-end LLM smoke against the CLI
 ├── experiments/             # one-off explorations; not production code
 │   └── chart-comparison/    # chart-library evaluation gallery (DONE)

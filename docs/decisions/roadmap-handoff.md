@@ -17,7 +17,7 @@ From the repository root:
 ```sh
 uv sync --directory backend --dev --locked --python 3.12
 npm --prefix frontend ci
-PYTEST_XDIST_AUTO_NUM_WORKERS=2 VITEST_MAX_WORKERS=2 make check-full
+env -u TTI_LOCAL_AUTOSTART -u TTI_LOCAL_STOP_ON_EXIT PYTEST_XDIST_AUTO_NUM_WORKERS=2 VITEST_MAX_WORKERS=2 make check-full
 make build
 make dev
 ```
@@ -27,6 +27,10 @@ Use disposable absolute `TTI_DB_PATH`, `TTI_APP_STATE_PATH` and
 providers in synthetic harnesses. Keep generated XML, databases, route files,
 reports, screenshots and build output outside commits. `uv --directory backend`
 changes the working directory; resolve fixture and output paths explicitly.
+The full suite controls mocked autostart itself; the standalone browser harness
+disables actual autostart in its isolated child environment. Follow the
+[portable browser instructions](browser-acceptance.md) for pinned Chromium,
+native uploads, cancellation/restart, keyboard and phone-width acceptance.
 
 ## Preserve the selected architecture
 
