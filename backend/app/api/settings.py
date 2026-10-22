@@ -26,6 +26,7 @@ from app.db.connection import (
     delete_health_database,
 )
 from app.db.dataset_lifecycle import DatasetBusyError, DatasetRecoveryError
+from app.db.migrate import table_has_column
 from app.state.app_state import AppStateRepository
 from app.state.diagnostics import DiagnosticsRepository
 
@@ -103,16 +104,29 @@ def _metric_states(snapshot: DatasetSnapshot) -> dict[str, str]:
     conn = snapshot.connection
     states: dict[str, str] = {}
     try:
+        # Match dashboard capability validity: numeric zero counts, category labels use text.
+        sql = (
+            "SELECT type, COUNT(*), COUNT(value), COUNT(text_value) FROM records GROUP BY type"
+            if table_has_column(conn, "records", "text_value")
+            else "SELECT type, COUNT(*), COUNT(value), 0 FROM records GROUP BY type"
+        )
         record_counts = {
-            str(row[0]): int(row[1])
-            for row in conn.execute("SELECT type, COUNT(*) FROM records GROUP BY type").fetchall()
+            str(row[0]): (int(row[1]), int(row[2]), int(row[3]))
+            for row in conn.execute(sql).fetchall()
         }
         for metric_id, definition in METRIC_CATALOG.items():
             if definition.availability_source == "records":
-                total = sum(
-                    record_counts.get(apple_type, 0) for apple_type in definition.apple_types
-                )
-                states[metric_id] = "available" if total > 0 else "out_of_range"
+                counts = [
+                    record_counts.get(apple_type, (0, 0, 0))
+                    for apple_type in definition.apple_types
+                ]
+                valid_index = 2 if definition.value_kind == "category" else 1
+                if any(count[valid_index] > 0 for count in counts):
+                    states[metric_id] = "available"
+                else:
+                    states[metric_id] = (
+                        "malformed" if any(count[0] > 0 for count in counts) else "out_of_range"
+                    )
             elif definition.availability_source == "activity_summaries":
                 count = _row_count(conn, "SELECT COUNT(*) FROM activity_summaries")
                 states[metric_id] = "available" if count > 0 else "out_of_range"
