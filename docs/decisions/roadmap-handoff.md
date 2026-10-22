@@ -81,9 +81,11 @@ timings; model inference is unmeasured.
 
 The production portfolio caught the original lazy chart's React 300 ms Suspense
 commit delay. The repair uses explicit loading state with the same dynamic
-imports and error/data fallbacks. Its diagnostic trace does not qualify timing:
-quiet paired browser trials must satisfy the unchanged first-chart/navigation
-margins. Record repair qualification separately from the failed original result.
+imports and error/data fallbacks. [Quiet paired qualification](performance-chart-requalification.md)
+passes the unchanged first-chart/navigation margins: first-chart median/p95 is
+179.10/181.00 ms versus reference 190.75/196.10 ms, with all 44 raw trials retained.
+The failed original result remains separate; the concurrent diagnostic trace is
+not qualification evidence.
 
 ## Known limits and deferred work
 

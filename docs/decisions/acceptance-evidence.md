@@ -53,7 +53,7 @@ until final independent review, merged-main receipts and completion comments exi
 | #148 maintenance | Supported Python 3.12.11/Node 20.20.2; locked installs; audit dispositions; Ubuntu suites/macOS lifecycle CI; 55 historical issues classified | Fresh audits, integrated review and main CI |
 | #164 data safety | Process-death activation/deletion/retention matrices; two-dataset identity/cache tests; leases; simultaneous import/query/delete; owned-artifact recovery | Final integrated fault matrix and main/platform receipts |
 | #176 daily use | Combined real-browser journey passes all 47 criteria: native upload, reconnect/cancel/SIGKILL recovery, keyboard, scoped dashboard, empty-filter Reset and desktop/390 px screenshots | Actual Ubuntu browser CI, review and main receipts |
-| #189 performance | Frozen matrices; production portfolio; implementation parity; quiet branch benchmark gates | BLOCKED on #187 first-chart regression, then quiet repair qualification, review and main rerun |
+| #189 performance | Frozen matrices; production portfolio; implementation parity; repaired charts pass quiet paired browser qualification | Final review and merged-main rerun; original chart blocker is cleared |
 | #199 analytics | Shared sleep union/stages; independent HTTP/CLI/query oracles; fresh combined browser coverage/missing/zero states and provider-denied rendering pass | Review and main/platform receipts |
 | #150 whole roadmap | Eleven cohesive batches integrated; architecture/issue map and reproducible setup | All five gates, final checks/build, independent review, main integration and handoff |
 
@@ -99,6 +99,12 @@ acceptance or close them.
   RSS falls 13.3–28.2% with a 0.95–6.67% wall tradeoff; numeric trend median falls
   106.42 to 5.79 ms while transferring 125,000 to 26 rows. These gains do not waive
   the first-chart failure described below.
+- [Chart repair qualification](performance-chart-requalification.md) and
+  [raw numeric trials](performance-chart-requalification-results.json): exact
+  repaired source `a91e884` versus the original reference, two discarded plus
+  20 retained trials per head. First-chart median/p95 is 190.75/196.10 versus
+  179.10/181.00 ms; cached navigation passes unchanged margins. Initial static
+  JS/gzip is 230,763/71,199 bytes with zero ECharts sources; requests remain 9/1/8.
 
 Profile caching (#184) was rejected: 2.61 ms prototype gain missed the predeclared
 10 ms floor. Workout join summaries were rejected: worst tested helper p95
@@ -125,7 +131,9 @@ Primary frozen baseline matrices ran on battery, later supplements on AC. Those
 latencies are not pooled. The completed production portfolio uses matching AC
 conditions for both reference and candidate. Its actual first-visible nonzero
 canvas plus two frames regressed from 179.60/196.20 to 479.20/495.90 ms median/p95
-across 20 retained trials per head. #187 is back In progress, and #189/main
-acceptance remain blocked. The original result and outliers remain archived;
-repair must preserve deferred dependencies and qualify against the original
-margins. Final checks, independent verdicts and merged-main acceptance remain open.
+across 20 retained trials per head. That original result and its outliers remain
+archived. The explicit-loading-state repair preserves deferred dependencies and
+now passes quiet paired requalification against the original margins. Its source
+`a91e884` includes the corrected Settings wrapping and portable browser harness.
+The first-chart blocker is cleared. Actual Ubuntu browser CI, final independent
+verdicts and merged-main acceptance remain open.
