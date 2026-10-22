@@ -321,3 +321,25 @@ These are local POSIX macOS/Ubuntu operations, without Linux-only syscalls or
 `/proc` paths. Process-death/fsync tests do not establish physical power-loss,
 network-filesystem durability, or safety against arbitrary non-cooperating writes
 inside immutable generation files outside the writer/lease protocol.
+
+### Legacy deletion authority (round-three maintenance R3-F1)
+
+An existing deletion intent's member without an original directory identity stays
+unproven. This absence applies by generation ID throughout retry, activation or
+deletion journal finalization and startup. `_queue_retirement` cannot mint proof
+for that member; explicit deletion cannot backfill it from any preexisting or
+newly poisoned retirement candidate. Fully proven members retain their original
+identities, including when copied into retirement records. New members outside
+the existing intent may acquire ordinary independently proven authority.
+
+Present unproven files and their side-channel records remain preserved behind
+the inactive retryable conflict. If all unproven allocations become empty or
+missing, cleanup first durably removes their disqualified retirement records,
+then removes/fsyncs the deletion intent. Otherwise clearing that negative fence
+would leave poisoned proof usable later. No present file is removed by this
+disqualification. The four `retirement_disqualified_*` boundaries cover its
+write/fsync/replace/root-fsync order and repeated startup after process death.
+
+No record format or lock protocol changes. The exact historical writer and
+expanded regression evidence are described in
+[legacy deletion authority](legacy-deletion-authority.md).
