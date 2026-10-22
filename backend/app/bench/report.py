@@ -6,12 +6,13 @@ import math
 import statistics
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 MetricName = Literal[
     "ingest_full_wall",
     "ingest_tree_peak_rss",
     "ingest_rows_per_second",
+    "workload_process_wall",
     "query_latest_cold",
     "query_latest_warm",
     "query_ranked_cold",
@@ -22,6 +23,7 @@ MetricName = Literal[
     "query_trend_warm",
     "chat_http_cold",
     "chat_http_fresh",
+    "chat_http_distinct_fresh",
     "chat_http_cached",
     "chat_http_denied",
     "dashboard_http_cold",
@@ -83,6 +85,7 @@ class Measurement(ClosedModel):
     """One fixed metric with explicit units."""
 
     name: MetricName
+    group: Literal["ingestion", "workload"] = "workload"
     unit: Literal["ms", "bytes", "rows/s", "calls"]
     summary: Summary
 
@@ -95,6 +98,22 @@ class Bundle(ClosedModel):
     gzip_bytes: int = Field(ge=1)
 
 
+class Sampling(ClosedModel):
+    """Independent warmup and retained trial counts for one metric group."""
+
+    warmups: int = Field(ge=0)
+    samples: int = Field(ge=1)
+
+
+INGESTION_METRICS: frozenset[MetricName] = frozenset(
+    {
+        "ingest_full_wall",
+        "ingest_tree_peak_rss",
+        "ingest_rows_per_second",
+    }
+)
+
+
 class CaseReport(ClosedModel):
     """Public synthetic result; no health values or unrestricted string fields."""
 
@@ -105,9 +124,11 @@ class CaseReport(ClosedModel):
     source_bytes: int = Field(ge=1)
     counts: dict[Table, int]
     workers: int = Field(ge=1)
-    warmups: int = Field(ge=0)
-    samples: int = Field(ge=1)
+    ingestion_sampling: Sampling
+    workload_sampling: Sampling
     measurements: list[Measurement]
+    cold_cache_isolated: Literal[True]
+    managed_generation_verified: Literal[True]
     parity_verified: bool
     provider_mode: Literal["denied_stub"] = "denied_stub"
     provider_network_calls: Literal[0] = 0
@@ -127,6 +148,24 @@ class CaseReport(ClosedModel):
     )
     memory_interval_ms: float = Field(gt=0)
     memory_samples: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def matching_sampling(self) -> CaseReport:
+        """Reject ambiguous groups, duplicate metrics or incompatible sample counts."""
+        seen: set[MetricName] = set()
+        for measurement in self.measurements:
+            group = "ingestion" if measurement.name in INGESTION_METRICS else "workload"
+            expected = self.ingestion_sampling if group == "ingestion" else self.workload_sampling
+            if (
+                measurement.group != group
+                or measurement.summary.samples != expected.samples
+                or measurement.name in seen
+            ):
+                raise ValueError("sampling_mismatch")
+            seen.add(measurement.name)
+        if not INGESTION_METRICS <= seen:
+            raise ValueError("ingestion_samples_missing")
+        return self
 
 
 class Runtime(ClosedModel):
@@ -151,7 +190,7 @@ class Runtime(ClosedModel):
 class Report(ClosedModel):
     """The sole published artifact of a representative run."""
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     runtime: Runtime
     bundle: Bundle
     cases: list[CaseReport]

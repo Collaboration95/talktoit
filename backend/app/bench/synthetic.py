@@ -11,15 +11,18 @@ import platform
 import subprocess
 import sys
 import tempfile
+from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
 from typing import Literal, cast
+from unittest.mock import patch
 
 import duckdb
 
-from app.bench.corpus import CASES, CorpusSpec, verify_database, write_corpus
+from app.bench.corpus import CASES, Corpus, CorpusSpec, verify_database, write_corpus
 from app.bench.process import measure_process
 from app.bench.report import (
+    INGESTION_METRICS,
     Bundle,
     CaseReport,
     Join,
@@ -28,10 +31,12 @@ from app.bench.report import (
     Panel,
     Report,
     Runtime,
+    Sampling,
     Table,
     summarize,
 )
 from app.bench.workload import WorkloadResult
+from app.db.connection import connect, resolve_db_path, resolve_effective_db_path
 from app.state.app_state import AppStateRepository
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -88,17 +93,50 @@ def initial_js_bytes(dist: Path) -> Bundle:
     return Bundle(chunks=len(files), raw_bytes=raw, gzip_bytes=compressed)
 
 
+def _verify_import(
+    env: dict[str, str], output: str, spec: CorpusSpec, corpus: Corpus, workers: int
+) -> str:
+    # Scope the public default-path APIs to this generated-only subprocess configuration.
+    with patch.dict(os.environ, env, clear=True):
+        private_report = json.loads(output.splitlines()[-1])
+        manifest = AppStateRepository().get_active()
+        if (
+            private_report["mode"] != "v2"
+            or private_report["resolved_workers"] != workers
+            or manifest is None
+            or private_report["dataset_version_id"] != manifest.id
+            or any(manifest.counts.get(key) != value for key, value in corpus.counts.items())
+            or resolve_effective_db_path() == resolve_db_path()
+        ):
+            raise RuntimeError("synthetic_activation_failed")
+        with connect(read_only=True) as conn:
+            verify_database(conn, spec, corpus)
+        return manifest.id
+
+
 def run_case(
     directory: Path,
     spec: CorpusSpec,
     *,
     workers: int,
-    warmups: int,
-    samples: int,
+    ingestion_warmups: int = 1,
+    ingestion_samples: int = 3,
+    warmups: int = 2,
+    samples: int = 20,
     timeout: float = 1800,
 ) -> CaseReport:
-    """Run full CLI imports and fresh-process workloads; discard warmup trials."""
-    if workers < 1 or warmups < 0 or samples < 1:
+    """Sample imports independently, then reuse one verified immutable generation.
+
+    Every workload subprocess has fresh app state. Its real application startup
+    projects the same committed generation through the production lifecycle API.
+    No pointer, generation manifest or SQLite lifecycle protocol is duplicated.
+    """
+    if (
+        workers < 1
+        or min(warmups, ingestion_warmups) < 0
+        or min(samples, ingestion_samples) < 1
+        or timeout <= 0
+    ):
         raise ValueError("run_options_invalid")
     directory.mkdir(parents=True, exist_ok=True)
     source = (directory / "synthetic.xml").resolve()
@@ -107,9 +145,13 @@ def run_case(
     requests: dict[Panel, int] = {}
     plans: dict[Join, bool] = {}
     memory_samples = 0
-    for trial in range(warmups + samples):
-        with tempfile.TemporaryDirectory(prefix="trial-", dir=directory) as trial_name:
-            trial_dir = Path(trial_name)
+    shared_env: dict[str, str] = {}
+    generation_id = ""
+    with ExitStack() as owned:
+        import_trials = ingestion_warmups + ingestion_samples
+        for trial in range(import_trials):
+            temporary = tempfile.TemporaryDirectory(prefix="import-", dir=directory)
+            trial_dir = Path(owned.enter_context(temporary))
             env = isolated_environment(trial_dir)
             ingestion = measure_process(
                 [
@@ -126,48 +168,55 @@ def run_case(
                 interval=INTERVAL,
                 timeout=timeout,
             )
-            private_report = json.loads(ingestion.stdout.splitlines()[-1])
-            manifest = AppStateRepository(Path(env["TTI_APP_STATE_PATH"])).get_active()
-            if (
-                private_report["mode"] != "v2"
-                or private_report["resolved_workers"] != workers
-                or manifest is None
-                or private_report["dataset_version_id"] != manifest.id
-                or any(manifest.counts.get(key) != value for key, value in corpus.counts.items())
-            ):
-                raise RuntimeError("synthetic_activation_failed")
-            with duckdb.connect(env["TTI_DB_PATH"], read_only=True) as conn:
-                verify_database(conn, spec, corpus)
-            workload = measure_process(
-                [
-                    sys.executable,
-                    "-m",
-                    "app.bench.workload",
-                ],
-                cwd=BACKEND,
-                env=env,
-                interval=INTERVAL,
-                timeout=timeout,
-            )
-            measured = WorkloadResult.model_validate_json(workload.stdout.splitlines()[-1])
-            if measured.provider_network_calls:
-                raise RuntimeError("network_attempt_detected")
-            if trial < warmups:
-                continue
-            observed: dict[MetricName, float] = {
-                **measured.metrics,
-                "ingest_full_wall": ingestion.elapsed_ms,
-                "ingest_tree_peak_rss": float(ingestion.peak_rss_bytes),
-                "ingest_rows_per_second": sum(corpus.counts.values())
-                / (ingestion.elapsed_ms / 1000),
-            }
-            for key, value in observed.items():
-                values.setdefault(key, []).append(value)
-            requests, plans = measured.dashboard_requests, measured.explain_analyze
-            memory_samples += ingestion.memory_samples
+            generation_id = _verify_import(env, ingestion.stdout, spec, corpus, workers)
+            if trial >= ingestion_warmups:
+                observed: dict[MetricName, float] = {
+                    "ingest_full_wall": ingestion.elapsed_ms,
+                    "ingest_tree_peak_rss": float(ingestion.peak_rss_bytes),
+                    "ingest_rows_per_second": sum(corpus.counts.values())
+                    / (ingestion.elapsed_ms / 1000),
+                }
+                for key, value in observed.items():
+                    values.setdefault(key, []).append(value)
+                memory_samples += ingestion.memory_samples
+            if trial < import_trials - 1:
+                temporary.cleanup()
+            else:
+                shared_env = env
+        for trial in range(warmups + samples):
+            with tempfile.TemporaryDirectory(prefix="request-", dir=directory) as trial_name:
+                env = isolated_environment(Path(trial_name))
+                # Keep the configured managed target; never dereference its legacy file.
+                env["TTI_DB_PATH"] = shared_env["TTI_DB_PATH"]
+                env["TTI_BENCH_GENERATION_ID"] = generation_id
+                workload = measure_process(
+                    [
+                        sys.executable,
+                        "-m",
+                        "app.bench.workload",
+                    ],
+                    cwd=BACKEND,
+                    env=env,
+                    interval=INTERVAL,
+                    timeout=timeout,
+                )
+                measured = WorkloadResult.model_validate_json(workload.stdout.splitlines()[-1])
+                if (
+                    measured.provider_network_calls
+                    or not measured.cold_cache_verified
+                    or not measured.managed_generation_verified
+                ):
+                    raise RuntimeError("synthetic_workload_isolation_failed")
+                if trial < warmups:
+                    continue
+                values.setdefault("workload_process_wall", []).append(workload.elapsed_ms)
+                for key, value in measured.metrics.items():
+                    values.setdefault(key, []).append(value)
+                requests, plans = measured.dashboard_requests, measured.explain_analyze
     measurements = [
         Measurement(
             name=name,
+            group="ingestion" if name in INGESTION_METRICS else "workload",
             unit=(
                 "bytes"
                 if name == "ingest_tree_peak_rss"
@@ -188,10 +237,12 @@ def run_case(
         source_bytes=corpus.source_bytes,
         counts=cast(dict[Table, int], corpus.counts),
         workers=workers,
-        warmups=warmups,
-        samples=samples,
+        ingestion_sampling=Sampling(warmups=ingestion_warmups, samples=ingestion_samples),
+        workload_sampling=Sampling(warmups=warmups, samples=samples),
         measurements=measurements,
         parity_verified=True,
+        cold_cache_isolated=True,
+        managed_generation_verified=True,
         dashboard_requests=requests,
         explain_analyze=plans,
         memory_interval_ms=INTERVAL * 1000,
@@ -235,18 +286,32 @@ def runtime_metadata() -> Runtime:
     )
 
 
-def main() -> None:
-    """Print a single validated report, using disposable generated-only storage."""
+def parse_options(argv: list[str] | None = None) -> argparse.Namespace:
+    """Validate independent import and inexpensive workload sampling options."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cases", nargs="+", choices=tuple(CASES), default=list(CASES))
     parser.add_argument("--seeds", nargs="+", type=int, default=[137, 271])
     parser.add_argument("--workers", nargs="+", type=int, default=[1, 2])
-    parser.add_argument("--warmups", type=int, default=1)
-    parser.add_argument("--samples", type=int, default=5)
+    parser.add_argument("--ingestion-warmups", type=int, default=1)
+    parser.add_argument("--ingestion-samples", type=int, default=3)
+    parser.add_argument("--warmups", type=int, default=2)
+    parser.add_argument("--samples", type=int, default=20)
     parser.add_argument("--timeout", type=float, default=1800)
-    args = parser.parse_args()
-    if min(args.workers) < 1 or args.warmups < 0 or args.samples < 1 or args.timeout <= 0:
-        parser.error("invalid sampling options")
+    args = parser.parse_args(argv)
+    if (
+        min(args.workers) < 1
+        or min(args.warmups, args.ingestion_warmups) < 0
+        or args.samples < 20
+        or args.ingestion_samples < 1
+        or args.timeout <= 0
+    ):
+        parser.error("require >=20 workload samples, >=1 import sample, nonnegative warmups")
+    return args
+
+
+def main() -> None:
+    """Print a single validated report, using disposable generated-only storage."""
+    args = parse_options()
     runtime = runtime_metadata()  # validates Node 20 before expensive work
     bundle = initial_js_bytes(ROOT / "frontend/dist")
     cases: list[CaseReport] = []
@@ -260,6 +325,8 @@ def main() -> None:
                             directory,
                             replace(CASES[name], seed=seed),
                             workers=workers,
+                            ingestion_warmups=args.ingestion_warmups,
+                            ingestion_samples=args.ingestion_samples,
                             warmups=args.warmups,
                             samples=args.samples,
                             timeout=args.timeout,

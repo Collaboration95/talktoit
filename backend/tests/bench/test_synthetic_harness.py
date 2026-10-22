@@ -153,3 +153,50 @@ def test_top_level_publication_rejects_unstructured_input():
             model.model_validate(
                 {"question": "PRIVATE", "sql": "SELECT health", "path": "/private"}
             )
+
+
+def test_import_and_workload_sampling_defaults_and_overrides():
+    from app.bench.synthetic import parse_options
+
+    defaults = parse_options([])
+    assert (defaults.ingestion_samples, defaults.ingestion_warmups) == (3, 1)
+    assert (defaults.samples, defaults.warmups) == (20, 2)
+    pilot = parse_options(
+        [
+            "--cases",
+            "small",
+            "--seeds",
+            "137",
+            "--workers",
+            "1",
+            "--ingestion-samples",
+            "1",
+            "--ingestion-warmups",
+            "0",
+        ]
+    )
+    assert pilot.cases == ["small"]
+    assert (pilot.ingestion_samples, pilot.samples) == (1, 20)
+    with pytest.raises(SystemExit):
+        parse_options(["--samples", "19"])
+    with pytest.raises(SystemExit):
+        parse_options(["--ingestion-samples", "0"])
+    assert summarize([3, 1, 2]).p95 == 3
+
+
+async def test_http_rejects_reused_app_state_before_startup(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    from app import main
+    from app.bench.workload import run_http
+    from app.state.app_state import AppStateRepository
+
+    monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "already-used.sqlite"))
+    repository = AppStateRepository()
+    repository.migrate()
+    repository.put_cached_response("synthetic", "ds_synthetic", "{}")
+    startup = Mock(side_effect=AssertionError("must reject before app startup"))
+    monkeypatch.setattr(main, "create_app", startup)
+    with pytest.raises(RuntimeError, match="synthetic_app_state_not_fresh"):
+        await run_http()
+    startup.assert_not_called()

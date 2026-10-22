@@ -5,12 +5,15 @@ Preparation starts at `475e67347a1fce1c8fe7be96143782f276923c38` (supported #140
 maintenance #204). The preparation branch also includes the supplied
 #203/#206 integrations through `c4613413594dd84b4ab9d79dee08487d2c1e8522`.
 The denied-provider HTTP probe asserts the additive `fallback.reason=provider_unavailable`
-contract while keeping answer contents out of the report.
+contract while keeping answer contents out of the report. Follow-up merges latest dev
+through #205 (`d2d33b9`, PR head `bbc269a`) and uses its public effective-path/connection APIs.
+The acceptance evidence index is preserved from that merge. Active #160–163 writers retain
+ownership of core lifecycle files; this follow-up changes only the harness boundaries.
 Sibling agents are using the machine. Functional test durations are not baseline evidence.
 No throughput, benefit, calibrated budget, go or no-go is claimed in this preparation batch.
 Parent owns quiet measurement, integrated browser acceptance, final review and batching.
 
-## Reproduce after the parent declares the machine quiet
+## Pilot first, after the parent declares the machine quiet
 
 Use Python 3.12+ and the committed backend/frontend locks. On the reference Mac:
 
@@ -20,20 +23,51 @@ export PYTEST_XDIST_AUTO_NUM_WORKERS=2
 uv sync --directory backend --dev --locked --python 3.12
 npm --prefix frontend ci
 make bench
-make bench-synthetic BENCH_ARGS="--warmups 2 --samples 20 --workers 1 2 4" > /tmp/tti-synthetic-baseline-a.json
-make bench-synthetic BENCH_ARGS="--warmups 2 --samples 20 --workers 1 2 4" > /tmp/tti-synthetic-baseline-b.json
+/usr/bin/time -p make bench-synthetic BENCH_ARGS="--cases representative --seeds 137 --workers 1 --ingestion-warmups 0 --ingestion-samples 1" > /tmp/tti-synthetic-pilot.json
 ```
 
-Run sequentially. Both slow invocations generate both sizes and seeds 137/271; compare
-runtime, revision, locks, seed, source SHA-256/bytes/counts, workers and sample metadata
-before comparing results. Default slow settings are one discarded warmup and five retained
-samples, workers 1/2; this is smoke sampling, with p95 equal to the maximum. Twenty retained
-samples make nearest-rank p95 the nineteenth ordered observation. Use at least twenty for
-candidate disposition; report variability across both independent runs. Do not select the
-fastest trial. Do not run under coverage, xdist, concurrent builds/tests or other imports.
-Use AC power, disclose power mode, CPU/RAM, OS, toolchain and competing workloads. The
-report records CPU model, physical memory, logical CPUs, architecture, OS release, Python,
-Node/npm, DuckDB, commit and lock hashes. A dirty worktree is disclosed.
+This pilot performs **one** full representative import, then 2 discarded and 20 retained
+query/HTTP workload processes against its one verified generation. It establishes plumbing
+and an initial execution-cost estimate, not a performance baseline or SLA. The outer `time`
+includes build, corpus generation, harness parity checks and cleanup. The separate
+`workload_process_wall` metric includes app startup/recovery validation, state projection,
+request/query/EXPLAIN work and shutdown; do not budget the matrix using HTTP timings alone.
+Inspect this pilot before authorizing a whole quiet matrix. No pilot is run during this
+concurrent-agent preparation phase.
+
+When the pilot's cost is acceptable, run the matrix sequentially:
+
+```sh
+make bench-synthetic BENCH_ARGS="--workers 1 2 4" > /tmp/tti-synthetic-baseline-a.json
+make bench-synthetic BENCH_ARGS="--workers 1 2 4" > /tmp/tti-synthetic-baseline-b.json
+```
+
+Both matrices use both sizes, seeds 137/271, and independent sampling groups:
+
+- **Ingestion:** `--ingestion-warmups 1 --ingestion-samples 3`. Median and nearest-rank p95
+  use only 3 retained full CLI imports, so **p95 is the maximum**, with no tail-latency or
+  SLA claim. This applies to import wall, rows/s and aggregate peak RSS.
+- **Workload:** `--warmups 2 --samples 20`. All cheap query/HTTP metrics and workload process
+  wall use 20 retained processes against one committed generation per case/seed/worker.
+  Every cold app gets fresh state/cache. Nearest-rank p95 is the nineteenth ordered sample.
+  CLI `--samples` below 20 is rejected; tiny functional tests call the Python API directly
+  with fewer trials and make no performance claims.
+
+The explicit three-worker matrix has 12 configurations: **48 imports and 264 workload
+processes per run**, including discarded warmups. Two runs have 96 imports, not 20 imports
+per configuration merely to sample HTTP. Default workers are 1/2 (8 configurations).
+These are arithmetic invocation counts, not measured budgets. Increase import samples
+(e.g. `--ingestion-samples 5`) only if the pilot/repeated comparisons show inconclusive
+noise; record why the extra cost is needed. Never automatically escalate full imports to
+20 or apply the workload count to ingestion. Compare like group/counts across variants.
+
+Schema v2 reports `ingestion_sampling`, `workload_sampling`, a group and actual retained
+sample count on every metric. A model validator rejects mixed counts/groups and duplicates.
+Warmups never contribute to summaries or retained RSS snapshot counts. Compare runtime,
+revision, locks, seed, source SHA-256/bytes/counts, workers and sampling metadata before
+comparing results. Do not select the fastest trial. Do not run under coverage, xdist,
+concurrent builds/tests or other imports. Use AC power and disclose power mode and competing
+workloads. CPU/RAM, OS, Python, Node/npm, DuckDB, commit/locks and dirty status are recorded.
 
 A bounded check of plumbing, when needed after changes, is:
 
@@ -57,21 +91,33 @@ events, elevation metadata, and three statistics per workout with distance/energ
 conversion. It contains no GPS routes or beat children; their expected counts are zero.
 Dates are fixed synthetic dates, independent of the computer clock.
 
-Each warmup/sample starts a new official `python -m app.ingest.run ... --workers N
---report-json` subprocess with owned DB, state and shard paths. Legacy fallback is disabled.
-The outer wall timer spans process launch through exit: syntax validation, byte scanning,
-reconciliation, final compatibility gate, fsync/swap, profile, manifest activation and
-process shutdown. It deliberately does not trust the coordinator's earlier `total` field.
-The subsequent benchmark parity verification is outside that timer. Generation and the
-frontend build are also outside it. Rows/s uses all nine table row counts divided by that
-full wall duration; it is not just top-level XML records/s.
+Each ingestion warmup/sample starts a new official
+`python -m app.ingest.run ... --workers N --report-json` subprocess with owned configured
+DB, state and shard paths. Legacy fallback is disabled. The outer wall timer spans process
+launch through exit: syntax validation, byte scanning, reconciliation, final compatibility
+gate, durable immutable generation validation/publication, manifest projection and shutdown.
+It does not trust the coordinator's earlier `total` field. Extra harness parity verification,
+XML generation and frontend build are outside this timer. Rows/s uses all nine table row
+counts divided by full wall duration, not just top-level XML records/s.
 
-Every trial, including warmups, verifies V2 mode/worker count, all nine exact table counts,
+Every import trial, including warmups, verifies V2 mode/worker count, all nine exact counts,
 active/report generation identity, six child-parent anti-joins, known step sum and workout
-duration sum. The generator keeps these health-value oracles private. The tiny regression
-also verifies the generated corpus at workers 1/2/4 and rejects broken child counts.
-Import failure, fallback, wrong identity/parity, nonfinite observations, attempted network
-or missing memory samples rejects the run rather than publishing partial success.
+duration sum. Verification calls public `resolve_effective_db_path()` and `connect()` under
+the isolated configuration; it never opens a configured legacy file directly. All but the
+final verified import directory are cleaned before cheap sampling. The final generation is
+shared read-only by every workload process; it is never re-imported to collect HTTP samples.
+
+Each workload gets a new app-state path, and real app startup recovers/projects that same
+committed generation through the existing lifecycle APIs. No pointer/manifest formats,
+projection protocol, directory naming or generation files are cloned/reimplemented here.
+Every workload checks the expected generation id and rejects pre-existing app state. Cold
+and fresh requests must profile once and remain local; exact cache hits must profile zero
+times. The tiny regression deliberately creates an incorrect configured legacy DB after
+import to prove both parity verification and queries follow the managed generation.
+It also checks independent invocation counts, injected summary/memory oracles, and exact
+sample-group validation. Other fixture tests verify corpus parity at workers 1/2/4 and
+reject broken child counts. Import/fallback/identity/parity/network/isolation failures,
+nonfinite observations or unobserved memory reject the run rather than publishing success.
 
 ## Memory and cost boundaries
 
@@ -86,16 +132,17 @@ process peaks; it is a sampled lower bound on peak summed RSS, not PSS, USS or a
 allocation measurement. The monitor adds overhead consistently to baseline and variants.
 No platform-dependent `ru_maxrss` interpretation or unobserved child memory is substituted.
 
-Each trial then starts a new workload process. It boots the real app lifespan, calls real
-ASGI routes and denies socket connect/DNS, model startup/health/stop and inference via
+After the ingestion group, each workload trial starts a new process. It boots the real
+app lifespan, calls real ASGI routes and denies socket connect/DNS, model startup/health/stop and inference via
 injected gateway stubs. Child environment inherits only tool discovery/locale, discarding
 user credentials, provider config and app paths. Unsupported chat returns a denied-provider
 fallback. Deterministic/cached chat must never invoke the stub provider. Provider latency
 is **unmeasured: no inference**, not a fabricated zero-duration model call.
 
-Chat costs separately identify first request in a fresh app process, a distinct fresh
-uncached deterministic question, an exact cache hit, and denied-provider fallback. Profile
-call count is instrumented. Cold/warm local latest/ranked/paged/trend queries are timed
+Chat costs separately identify the first request in a fresh app/state/cache, a forced
+`fresh` request for that now-cached question, a distinct fresh deterministic question,
+an exact cache hit, and denied-provider fallback. Profile call count is instrumented and
+checked per request (one scan for uncached/fresh, zero for exact). Cold/warm local latest/ranked/paged/trend queries are timed
 separately using new vs repeated DuckDB connections. HTTP runs before those local scans;
 OS filesystem caches are not flushed or controlled. HTTP metrics include middleware,
 validation, serialization, route state and query work but use in-process ASGI: they exclude
@@ -138,8 +185,9 @@ change is authorized by this preparation alone.
 
 All candidate rows below are **pending measurement**, including no-change dispositions.
 Use identical seeds/counts/workers/toolchain and interleaved baseline/variant runs with
-warmups, >=20 retained samples and two independent repetitions. State an acceptable
-regression/noise margin before examining variant results, grounded in baseline variability.
+independent warmups/counts: >=20 cheap workload trials and initially 3 full imports.
+Repeat independently; escalate full import counts only for demonstrated inconclusive noise.
+State an acceptable regression/noise margin before examining variant results, grounded in baseline variability.
 Go requires repeatable benefit beyond that variability plus all parity/privacy gates;
 no-go requires measurements showing the budget already holds or no useful gain, with a
 concrete future trigger. Inconclusive evidence stays pending; source inspection cannot
@@ -155,7 +203,11 @@ establish a no-go. Proposed roadmap p95/worker/memory budgets remain uncalibrate
 | #187 initial charts | Fresh manifest closure/gzip plus browser cold chat, first chart, cached navigation; exact loading/empty/error/fallback, original question and chunk-failure recovery. Bundle byte reduction alone is insufficient. |
 | #188 SQL buckets | Scratch parameterized numeric SQL vs current get_trend; day/week/month, offsets/DST, sparse/null/zero/empty windows, SUM/AVG and unit equality; transferred row count, memory and median/p95. Do not alter sleep interval semantics. |
 
-## Preparation verification receipt
+## Original preparation verification receipt (historical, schema v1)
+
+The receipt below records `ac44f47` before durable activation. Current schema/defaults and
+commands above supersede the old coupled sampling design; these historical passes do not
+verify the follow-up or the current development branch.
 
 Tests were written before the new harness modules; initial focused collection exited 2
 with missing-module errors. Final functional/quality results are recorded with the
@@ -184,3 +236,49 @@ of the new process-tree sampler, representative runs twice, deeper selective/sub
 plans, candidate prototypes/dispositions, browser load/toggle evidence, calibrated budgets,
 and the parent's final integrated review remain outstanding. Existing macOS/Ubuntu CI
 success from the maintenance batch is not execution evidence for this new harness.
+
+## Follow-up preparation receipt (schema v2, durable generations)
+
+Merged `origin/codex/dev-roadmap-20261022` through `d2d33b9` (#205, head `bbc269a`)
+into the harness branch. The acceptance evidence index matches that base exactly; no
+core lifecycle, connection, ingestion, HTTP, frontend or ENGINEERING edits were made
+for this follow-up beyond merging existing content.
+
+New regressions preceded implementation: the first focused run exited 1 with 3 failures
+and 15 passes (missing independent options, no stale-state rejection, coupled signature).
+An additional budget-metric regression also failed before that metric was added. Final
+focused invocation of both harness test files with `--no-cov -n 2 -q` exited 0: **18 passed**.
+They run tiny generated data only; injected timings/RSS values are statistical oracles,
+not observations to publish as a baseline.
+
+The integration oracle observes exactly 3 imports (1 discarded/2 retained) independently
+of 4 workload subprocesses (1 discarded/3 retained). All workloads receive different fresh
+state paths and the final import's one generation id. A deliberately wrong legacy DB is
+ignored by managed-path verification and query lookup. Retained import wall/RSS and
+workload summaries have their own expected medians/p95/counts; the warmup RSS snapshot
+count is excluded. Wrong sample metadata is rejected. HTTP checks cover cold/fresh/exact
+behavior, zero real provider/network use and the additive denied-provider fallback reason.
+CLI defaults and the minimum 20 cheap samples are tested separately from the reduced-count
+functional Python-API fixture.
+
+`make check` with supported Node 20, Ruff lint/format and Pyright all exited 0. The pilot
+root command was inspected with `make --dry-run` (exit 0); it was **not executed**. No quiet
+pilot/matrix, candidate disposition, browser acceptance, new Ubuntu sampler execution,
+PR, CI polling, issue closure or production optimization was performed. Parent owns the
+next generation/cleanup integration, quiet pilot and measured candidate batch.
+
+Final broader commands on the merged #205 base, with CPython 3.12.11, Node 20.20.2,
+`PYTEST_XDIST_AUTO_NUM_WORKERS=2`, disposable DB/state paths and autostart unset for the
+explicitly mocked lifecycle tests:
+
+| Command | Exit | Evidence |
+| --- | ---: | --- |
+| `env -u TTI_LOCAL_AUTOSTART make test-backend` | 0 | 635 passed; global coverage 86.86% |
+| `uv run --directory backend coverage report '--include=app/ingest/*' --fail-under=90` | 0 | 924/1,015 statements, 91.03% |
+| `uv run --directory backend coverage report '--include=app/llm/*' --fail-under=70` | 0 | 1,270/1,532 statements, 82.90% |
+| `make check` with Node 20 on PATH | 0 | Backend/frontend lint, format, type and version gates |
+
+No coverage/test/CI threshold or production code was changed. Backend gates were run once
+after the focused regressions passed; functional suite wall times under sibling load are
+not baseline evidence. The retained unresolved measurement/browser/EXPLAIN limitations in
+the original receipt remain, plus rerunning the pilot after #160–163 integration.

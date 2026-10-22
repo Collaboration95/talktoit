@@ -10,7 +10,8 @@ import time
 from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import date
-from typing import Any, NoReturn, cast
+from pathlib import Path
+from typing import Any, Literal, NoReturn, cast
 from unittest.mock import Mock, patch
 
 import duckdb
@@ -18,8 +19,14 @@ from httpx import ASGITransport, AsyncClient
 
 from app.bench.report import ClosedModel, Join, MetricName, Panel
 from app.db import queries
-from app.db.connection import close_open_connections
+from app.db.connection import (
+    close_open_connections,
+    connect,
+    resolve_db_path,
+    resolve_effective_db_path,
+)
 from app.llm.provider_gateway import ProviderGateway, ProviderUnavailableError
+from app.state.app_state import AppStateRepository
 
 
 class WorkloadResult(ClosedModel):
@@ -28,7 +35,9 @@ class WorkloadResult(ClosedModel):
     metrics: dict[MetricName, float]
     dashboard_requests: dict[Panel, int]
     explain_analyze: dict[Join, bool]
-    provider_network_calls: int
+    provider_network_calls: Literal[0]
+    cold_cache_verified: Literal[True]
+    managed_generation_verified: Literal[True]
 
 
 class _Trace:
@@ -78,9 +87,9 @@ def _timed(fn: Callable[[], object]) -> float:
 def run_queries() -> tuple[dict[MetricName, float], dict[Join, bool]]:
     """Time new-connection and repeated local queries separately from HTTP."""
     metrics: dict[MetricName, float] = {}
-    path = os.environ["TTI_DB_PATH"]
+    _verify_generation()
     for name in ("latest", "ranked", "paged", "trend"):
-        with duckdb.connect(path, read_only=True) as conn:
+        with connect(read_only=True) as conn:
             query = (
                 _join_queries(conn)[name]
                 if name != "trend"
@@ -94,9 +103,19 @@ def run_queries() -> tuple[dict[MetricName, float], dict[Join, bool]]:
             )
             metrics[cast(MetricName, f"query_{name}_cold")] = _timed(query)
             metrics[cast(MetricName, f"query_{name}_warm")] = _timed(query)
-    with duckdb.connect(path, read_only=True) as conn:
+    with connect(read_only=True) as conn:
         plans = explain_workout_joins(conn)
     return metrics, {name: bool(plan) for name, plan in plans.items()}
+
+
+def _verify_generation() -> None:
+    manifest = AppStateRepository().get_active()
+    if (
+        manifest is None
+        or manifest.id != os.environ.get("TTI_BENCH_GENERATION_ID")
+        or resolve_effective_db_path() == resolve_db_path()
+    ):
+        raise RuntimeError("synthetic_generation_mismatch")
 
 
 def _forbidden(*_args: object, **_kwargs: object) -> NoReturn:
@@ -109,6 +128,8 @@ async def run_http() -> tuple[dict[MetricName, float], dict[Panel, int], int]:
     HTTP is ASGI in-process, so socket/browser/transfer cost is explicitly absent.
     The first chat request is cold relative to app caches, not the OS page cache.
     """
+    if Path(os.environ["TTI_APP_STATE_PATH"]).exists():
+        raise RuntimeError("synthetic_app_state_not_fresh")
     from app import main
     from app.api import chat
     from app.db.dashboard_cache import clear_dashboard_cache
@@ -141,16 +162,19 @@ async def run_http() -> tuple[dict[MetricName, float], dict[Panel, int], int]:
         )
         app = main.create_app()
         async with app.router.lifespan_context(app):
+            _verify_generation()
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://synthetic"
             ) as client:
                 for label, question, mode, expected in (
                     ("cold", "show my last run", "default", "workout_card"),
-                    ("fresh", "show my last workout", "fresh", "workout_card"),
+                    ("fresh", "show my last run", "fresh", "workout_card"),
+                    ("distinct_fresh", "show my last workout", "fresh", "workout_card"),
                     ("cached", "show my last run", "default", "workout_card"),
                     ("denied", "invent a synthetic fable", "fresh", "fallback"),
                 ):
                     before_calls = gateway.complete.call_count
+                    before_profiles = profile.call_count
                     started = time.perf_counter()
                     response = await client.post(
                         "/api/chat", json={"question": question, "cache_mode": mode}
@@ -163,6 +187,19 @@ async def run_http() -> tuple[dict[MetricName, float], dict[Panel, int], int]:
                         or response.json().get("template_id") != expected
                     ):
                         raise RuntimeError("synthetic_chat_failed")
+                    if (
+                        response.json()["metadata"]["dataset_version_id"]
+                        != os.environ["TTI_BENCH_GENERATION_ID"]
+                    ):
+                        raise RuntimeError("synthetic_generation_mismatch")
+                    expected_scans = 0 if label == "cached" else 1
+                    if profile.call_count != before_profiles + expected_scans:
+                        raise RuntimeError("synthetic_cache_isolation_failed")
+                    if (
+                        label in {"cold", "fresh", "distinct_fresh"}
+                        and response.json()["metadata"]["provenance"] != "deterministic_local"
+                    ):
+                        raise RuntimeError("synthetic_cold_or_fresh_cache_hit")
                     if label != "denied" and gateway.complete.call_count != before_calls:
                         raise RuntimeError("deterministic_provider_used")
                     if label == "denied" and (
@@ -212,7 +249,9 @@ def main() -> None:
             metrics={**http_metrics, **query_metrics},
             dashboard_requests=requests,
             explain_analyze=plans,
-            provider_network_calls=network_calls,
+            provider_network_calls=cast(Literal[0], network_calls),
+            cold_cache_verified=True,
+            managed_generation_verified=True,
         ).model_dump_json()
     )
 

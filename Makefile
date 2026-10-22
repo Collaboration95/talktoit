@@ -59,7 +59,9 @@ bench:
 
 # Slow generated-only baseline; run on a quiet machine, never in ordinary CI.
 # Sampling/limitations/protocol: docs/decisions/performance-baseline.md
-# Usage: make bench-synthetic BENCH_ARGS="--samples 20 --warmups 2"
+# Default per config: imports 3+1 warmup; workloads 20+2 warmups, one verified generation.
+# Pilot (quiet machine only): BENCH_ARGS="--cases representative --seeds 137 --workers 1 --ingestion-samples 1 --ingestion-warmups 0"
+# Import sample counts can grow only if measured comparison noise is inconclusive.
 bench-synthetic:
 	@node -e 'if (process.versions.node.split(".")[0] !== "20") process.exit(1)'
 	@npm --prefix frontend run build -- --manifest >&2
