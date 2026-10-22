@@ -130,8 +130,8 @@ relies on 3.13-only syntax — keep it that way so the two stay interchangeable.
 binary (pydocstyle via the `D` rules).
 
 Version comes from `uv.lock` (currently **0.15.20**, floor `>=0.11.0` in `pyproject.toml`).
-The pre-commit hook pins its own copy in `.pre-commit-config.yaml`; see §6 for why those two
-numbers can differ.
+The pre-commit hook pins the same version in `.pre-commit-config.yaml`; keep both pins
+aligned when updating Ruff (§6).
 
 ```toml
 # backend/pyproject.toml
@@ -313,8 +313,8 @@ holds the resolved versions — the lockfile is the source of truth for reviews:
 | Tool | Range in `package.json` | Resolved in `package-lock.json` |
 |---|---|---|
 | TypeScript | `~5.8.0` | 5.8.3 |
-| Vite | `^6.3.0` | 6.4.3 |
-| Vitest | `^3.1.0` | 3.2.6 |
+| Vite | `^6.4.5` | 6.4.5 |
+| Vitest / coverage-v8 | `4.1.12` (both) | 4.1.12 |
 | oxlint | `^1.8.0` | 1.71.0 |
 | Prettier | `^3.5.0` | 3.8.4 |
 
@@ -623,8 +623,8 @@ matching their file; `useXxx.ts` hooks; PascalCase types (no `I` prefix).
 
 ```yaml
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit     # rev v0.11.0
-    hooks: [id: ruff (--fix), id: ruff-format]
+  - repo: https://github.com/astral-sh/ruff-pre-commit     # rev v0.15.20
+    hooks: [id: ruff-check (--fix), id: ruff-format]
   - repo: local
     hooks:                  # system hooks call the canonical commands
       - pyright: uv run --directory backend pyright
@@ -645,10 +645,9 @@ this). Check whether a clone has it with `test -x .git/hooks/pre-commit`.
 Two other things worth knowing about the hook set:
 
 - **Hook versions are pinned by git tag, independently of `uv.lock`/`package-lock.json`.**
-  `ruff-pre-commit` is pinned at `rev: v0.11.0` while the lockfile resolves Ruff **0.15.20**.
-  Both run real Ruff, but a rule added or changed between the two releases can lint
-  differently in the hook (pre-commit) and in `make lint`/CI (locked venv). Bump the `rev` to
-  match the lockfile whenever that matters; pre-commit fetches the hook env on first run.
+  `ruff-pre-commit` and the backend lockfile both use **0.15.20**. Keep the hook revision
+  aligned with the locked Ruff version so staged checks and CI use the same rules.
+  Pre-commit fetches the hook environment on first run.
 - **The Python and Node hooks use `pass_filenames: false`**, so they run the project-wide
   command on every commit that touches a matching file rather than just the staged paths.
   Ruff (via the `ruff-pre-commit` repo, whose hooks do receive filenames) is the staged-only
@@ -680,10 +679,34 @@ jobs:
   build:                 # depends on the frontend gates → npm run build
 ```
 
+The additional `macos-lifecycle-smoke` job pins Python 3.12 and Node 20, logs/asserts
+the runtime versions, installs both committed locks, and runs
+`tests/integration/test_maintenance_lifecycle.py` plus the real MSW fetch/cancellation
+regression. It imports the synthetic fixture through the official V2 CLI, checks all nine
+row counts and six child relationships, verifies the 45.5-minute run and 90,954 steps, and
+boots the real ASGI lifespan before/after import to assert `/health` and `/api/status`.
+All state lives in a disposable runner temp directory, gateway inference and health
+probes are forbidden mocks, and local autostart/stop are disabled. No background web server
+is started. This is a smoke job, not the full macOS matrix. Existing Ubuntu coverage gates
+remain in place. Remote Actions acceptance must be recorded separately from local success.
+
 ### `audit.yml` — runs weekly (Mon 08:00 UTC) + `workflow_dispatch`
 
-- `audit-python` → `uv sync --directory backend --dev` → `uv run --directory backend pip-audit`
-- `audit-node` → `npm --prefix frontend audit --audit-level=moderate`
+- `audit-python` → `uv sync --directory backend --dev --locked --python 3.12` → `uv run --directory backend pip-audit`
+- `audit-node` → Node 20 / `npm --prefix frontend ci` → `npm --prefix frontend audit --audit-level=moderate`
+
+The audit severity threshold is unchanged. The remaining Tailwind 3 dependency findings
+stay visible and failing; see [the remediation decision](decisions/dependency-remediation.md)
+and [fresh dispositions](decisions/dependency-disposition-2026-10.md). Production-only
+audits do not substitute for the complete dependency gate. Vitest and coverage-v8 must
+remain on exactly the same version; the migration preserves the coverage thresholds and
+source include/exclude patterns.
+
+For concurrent local agents use `PYTEST_XDIST_AUTO_NUM_WORKERS=2` and Vitest
+`--maxWorkers=2`. Full backend tests leave `TTI_LOCAL_AUTOSTART` unset because the
+explicitly mocked autostart lifecycle tests exercise both settings. The dedicated smoke
+sets it to 0. Keep health and app-state paths in disposable temp storage for all local
+verification; see [the Node 20 baseline](decisions/maintenance-baseline-2026-10.md).
 
 Notes: jobs are independent except `build` waits on the frontend gates; the per-module
 coverage gates live in the `test-backend` job; the benchmark exclude (`-m \"not benchmark\"`)
