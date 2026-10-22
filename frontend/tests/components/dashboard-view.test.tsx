@@ -995,3 +995,13 @@ describe('App tab navigation', () => {
     await waitFor(() => expect(window.location.search).toContain('tab=chat'))
   })
 })
+
+it('labels sleep interval coverage separately from measured asleep stages', async () => {
+  setupHandlers()
+  render(<DashboardView />)
+  expect(
+    await screen.findByRole('heading', { name: /Sleep Interval Coverage/ }),
+  ).toBeInTheDocument()
+  expect(screen.getByText(/Includes awake and in-bed records/)).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: /Measured Sleep Stages/ })).toBeInTheDocument()
+})

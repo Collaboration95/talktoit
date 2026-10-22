@@ -167,14 +167,10 @@ def test_returns_an_honest_fallback_for_unsupported_requested_metrics() -> None:
     }
     comparison_question = "Compare resting heart rate this month vs last month"
     comparison = plan_local_question(comparison_question, _profile())
-    assert comparison == {
-        "tool_name": "get_fallback_answer",
-        "arguments": {
-            "text": "Comparing health metrics between periods is not supported yet. "
-            "I can show a trend for that metric instead.",
-            "reason": "unsupported",
-        },
-    }
+    assert comparison is not None
+    assert comparison["tool_name"] == "get_fallback_answer"
+    assert comparison["arguments"]["reason"] == "clarification_needed"
+    assert "two complete date ranges" in comparison["arguments"]["text"]
 
 
 def test_does_not_treat_a_period_only_workout_request_as_latest() -> None:

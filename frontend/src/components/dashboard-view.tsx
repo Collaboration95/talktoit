@@ -1022,11 +1022,12 @@ export function DashboardView() {
         )}
       </Section>
 
-      <Section title={`Sleep Duration (${periodLabel(30)})`}>
+      <Section title={`Sleep Interval Coverage (${periodLabel(30)})`}>
+        <p className="mb-2 text-xs text-gray-500">Includes awake and in-bed records.</p>
         {state.loadingPanels.sleep && state.sleep === null ? (
           <PanelSkeleton panel="sleep" />
         ) : (
-          <TrendPanel trend={state.sleep} title="Sleep" />
+          <TrendPanel trend={state.sleep} title="Sleep interval coverage" />
         )}
       </Section>
 

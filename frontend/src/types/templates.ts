@@ -92,6 +92,12 @@ export interface ComparisonMetric {
   delta: number | null
   unit: string
   direction: 'up' | 'down' | 'flat'
+  this_observed_days?: number | null
+  this_requested_days?: number | null
+  last_observed_days?: number | null
+  last_requested_days?: number | null
+  value_basis?: 'observed_day_mean' | 'observation_mean' | null
+  direction_tone?: 'neutral' | null
 }
 
 export interface ComparisonData {

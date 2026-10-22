@@ -36,6 +36,7 @@ export function formatNumber(value: number, fractionDigits = 0): string {
 
 export function formatMetricValue(value: number | null, unit: string): string | null {
   if (value === null) return null
+  if (unit === 'hours') return formatDurationMinutes(value * 60)
   return `${formatNumber(value, unit === 'km' ? 1 : 0)} ${unit}`
 }
 

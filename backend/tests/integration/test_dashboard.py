@@ -207,6 +207,7 @@ def test_sleep_endpoint_converts_each_interval_endpoint_once(
 ) -> None:
     """Sleep bucketing converts each interval's start and end only once."""
     from app.api import dashboard
+    from app.db import queries
 
     row_count = db.execute(
         """
@@ -219,14 +220,14 @@ def test_sleep_endpoint_converts_each_interval_endpoint_once(
         [*utc_bounds(date(2026, 6, 1), date(2026, 6, 10), DEFAULT_TZ)],
     ).fetchone()[0]
     calls = 0
-    original_to_local_dt = dashboard.to_local_dt
+    original_to_local_dt = queries.to_local_dt
 
     def counted_to_local_dt(value, tz):
         nonlocal calls
         calls += 1
         return original_to_local_dt(value, tz)
 
-    monkeypatch.setattr(dashboard, "to_local_dt", counted_to_local_dt)
+    monkeypatch.setattr(queries, "to_local_dt", counted_to_local_dt)
     response = dashboard.get_sleep(
         granularity="day", start=date(2026, 6, 1), end=date(2026, 6, 10), conn=db, repo=None
     )
