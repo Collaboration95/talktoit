@@ -1007,7 +1007,7 @@ class DatasetLifecycle:
             return 0
         if self.target.with_suffix(self.target.suffix + ".wal").exists():
             raise DatasetRecoveryError()
-        authority = authority_key(f"legacy:{self.target}:{original.model_dump_json()}")
+        authority = authority_key(f"legacy:{original.model_dump_json()}")
         try:
             with _directory_fd(self.target.parent) as parent, _directory_fd(self.root) as namespace:
 

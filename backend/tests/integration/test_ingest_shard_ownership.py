@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier
@@ -33,6 +34,7 @@ def _assert_only_empty_claim_metadata(root, sibling):
     public = set()
     for path in root.iterdir():
         if path.name.startswith(".tti_claim_"):
+            assert re.fullmatch(r"\.tti_claim_[0-9a-f]{32}", path.name)
             assert {p.name for p in path.iterdir()} == {"payload"}
             assert (path / "payload").is_dir()
             assert list((path / "payload").iterdir()) == []
