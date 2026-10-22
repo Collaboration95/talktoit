@@ -217,7 +217,7 @@ export function SettingsView() {
           <p>
             XML uploads do not include companion GPX files. Route maps require those files from the
             original unpacked export. To include them, use the existing local command:
-            <code className="block rounded bg-gray-50 px-1">
+            <code className="block break-all rounded bg-gray-50 px-1">
               make ingest EXPORT_PATH=/path/to/apple_health_export/export.xml
             </code>
             Keep the companion folders alongside that XML. This screen accepts XML only.

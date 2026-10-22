@@ -31,6 +31,8 @@ in `make check` and CI).
 
 ### Fixed
 
+- Settings' XML import command wraps within phone-width screens while import and
+  recovery controls remain visible.
 - Numeric trends aggregate in DuckDB before transferring buckets to Python,
   preserving timezone, missing-value and zero semantics.
 - Conversation preparation releases committed pending-turn writes before profiling
