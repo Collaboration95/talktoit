@@ -281,7 +281,12 @@ def _prepare_chat(
             if canonical_plan
             else None
         )
-        if active is not None and canonical_key and request.cache_mode != "fresh":
+        if (
+            disambiguation is None
+            and active is not None
+            and canonical_key
+            and request.cache_mode != "fresh"
+        ):
             hit = repository.get_cached_entry(canonical_key, active.id)
             if hit is not None:
                 candidate, cached_plan = hit
@@ -305,6 +310,7 @@ def _prepare_chat(
             active is not None
             and request.cache_mode != "fresh"
             and request.parent_turn_id is None
+            and disambiguation is None
             and canonical_plan is not None
             and candidates_enabled()
         ):

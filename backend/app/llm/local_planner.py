@@ -66,16 +66,22 @@ def _period_for_question(question: str, as_of: date) -> tuple[date, date, str] |
 
 
 def _trend_metric(question: str) -> str | None:
+    metrics = _trend_metrics(question)
+    return metrics[0] if metrics else None
+
+
+def _trend_metrics(question: str) -> list[str]:
     lower = question.casefold()
-    if "resting heart" in lower or "resting hr" in lower:
-        return "HKQuantityTypeIdentifierRestingHeartRate"
-    if re.search(r"\bsteps?\b", lower):
-        return "steps"
-    if re.search(r"\bhrv\b", lower):
-        return "hrv"
-    if "active energy" in lower:
-        return "active_energy"
-    return None
+    return [
+        metric_id
+        for metric_id, pattern in (
+            ("HKQuantityTypeIdentifierRestingHeartRate", r"\bresting (?:heart|hr)\b"),
+            ("steps", r"\bsteps?\b"),
+            ("hrv", r"\bhrv\b"),
+            ("active_energy", r"\bactive energy\b"),
+        )
+        if re.search(pattern, lower)
+    ]
 
 
 def _requested_granularity(question: str) -> str:
@@ -150,6 +156,56 @@ _MONTHS = (
 _MONTH_PATTERN = "|".join(_MONTHS)
 
 
+def _general_date_clause(question: str) -> str | None:
+    """Find a temporal scope without mistaking 'last run' for a date clause."""
+    text = question.casefold().strip().rstrip(".?!")
+    scope = re.search(
+        rf"\b(?:from|between|since|before|after|until|through)\b"
+        rf"|\b(?:in|for|during|on)\s+(?:{_MONTH_PATTERN})\b"
+        rf"|\b(?:{_MONTH_PATTERN})\s+\d\w*\b"
+        r"|\b(?:(?:in|for|during|on)\s+)?(?:this|last|next|past|previous)\s+"
+        r"(?:\w+\s+)?(?:days?|weeks?|months?|years?|weekends?|fortnights?|quarters?)\b"
+        r"|\b(?:year to date|today|yesterday|tomorrow)\b"
+        r"|\b(?:(?:on|last|this|next)\s+)?"
+        r"(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"
+        r"|\b\d{1,4}[-/]\d{1,2}(?:[-/]\d{1,4})?\b"
+        r"|\b(?:(?:in|for|during|on)\s+)?\d{4}(?:[-/]\d{1,2})?\b",
+        text,
+    )
+    return text[scope.start() :] if scope is not None else None
+
+
+def _general_period(question: str, as_of: date) -> tuple[date, date, str] | None:
+    """Require one complete supported clause before using a general date scope.
+
+    An absent scope permits existing defaults. A present but unsupported scope
+    must request clarification instead of changing the meaning of the question.
+    """
+    clause = _general_date_clause(question)
+    if clause is None:
+        return None
+    if re.match(r"(?:from|between)\b", clause):
+        ranges = _explicit_ranges(clause)
+        if len(ranges) == 1:
+            start, end = ranges[0]
+            return start, end, f"{start.isoformat()} to {end.isoformat()}"
+    elif re.fullmatch(
+        rf"(?:(?:in|for|during)\s+)?(?:"
+        rf"(?:{_MONTH_PATTERN})\s+\d{{4}}|(?:this|last)\s+(?:week|month|year)|year to date)",
+        clause,
+    ):
+        return _period_for_question(clause, as_of)
+    raise ValueError("unsupported date clause")
+
+
+def _date_clarification() -> dict[str, Any]:
+    return _fallback_plan(
+        "Give one complete date range, such as from 2026-06-01 to 2026-06-07, "
+        "or a supported period such as last week or June 2026.",
+        "clarification_needed",
+    )
+
+
 def _explicit_ranges(question: str) -> list[tuple[date, date]]:
     """Parse only complete ISO or bounded English date ranges; never infer a year."""
     text = question.casefold().replace("\u2013", "-").replace("—", "-")
@@ -157,7 +213,7 @@ def _explicit_ranges(question: str) -> list[tuple[date, date]]:
     if len(suffix) != 2:
         return []
     date_text = suffix[1].strip().rstrip(".?!")
-    iso_range = r"\d{4}-\d{2}-\d{2}\s+(?:to|through)\s+\d{4}-\d{2}-\d{2}"
+    iso_range = r"\d{4}-\d{2}-\d{2}\s+(?:to|through|and)\s+\d{4}-\d{2}-\d{2}"
     day_range = rf"\d{{1,2}}\s*-\s*\d{{1,2}}\s+(?:{_MONTH_PATTERN})\s+\d{{4}}"
     month_range = rf"(?:{_MONTH_PATTERN})\s+\d{{1,2}}\s*-\s*\d{{1,2}}(?:,?\s+\d{{4}})?"
     # Require the entire date clause, so an extra/incomplete date is never discarded.
@@ -168,7 +224,7 @@ def _explicit_ranges(question: str) -> list[tuple[date, date]]:
     ):
         return []
     iso = re.findall(
-        r"(?<![\d-])(\d{4}-\d{2}-\d{2})\s+(?:to|through)\s+"
+        r"(?<![\d-])(\d{4}-\d{2}-\d{2})\s+(?:to|through|and)\s+"
         r"(\d{4}-\d{2}-\d{2})(?![\d-])",
         text,
     )
@@ -359,20 +415,43 @@ def plan_local_question(question: str, profile: DataProfile) -> dict[str, Any] |
     lower = question.lower()
     as_of = profile.latest_date
     activity_type = _activity_type(question)
-    period = _period_for_question(question, as_of)
+
+    # Workout comparisons have two relative scopes; the single-period parser
+    # must not select just one of them or discard extra constraints.
+    if contains_word(lower, "compare") and (
+        contains_word(lower, "month") or contains_word(lower, "week")
+    ):
+        clause = _general_date_clause(question)
+        match = re.fullmatch(
+            r"(?P<first>this|last) (?P<unit>week|month)\s+(?:vs\.?|versus|and|with|to)\s+"
+            r"(?P<second>this|last) (?P=unit)",
+            clause or "",
+        )
+        if match is None or match.group("first") == match.group("second"):
+            return _fallback_plan(
+                "Compare this week with last week, or this month with last month.",
+                "clarification_needed",
+            )
+        granularity = "week" if contains_word(lower, "week") else "month"
+        return _comparison_plan(question, as_of, activity_type, granularity)
+
+    try:
+        period = _general_period(question, as_of)
+    except (ValueError, OverflowError):
+        return _date_clarification()
 
     if "pace" in lower and any(word in lower for word in ("top", "rank", "fastest", "longest")):
         return _fallback_plan(
             "Ranking workouts by pace is not supported yet. Try: Top 5 longest runs this year."
         )
 
-    trend_metric = _trend_metric(question)
-
-    if contains_word(lower, "compare") and (
-        contains_word(lower, "month") or contains_word(lower, "week")
-    ):
-        granularity = "week" if contains_word(lower, "week") else "month"
-        return _comparison_plan(question, as_of, activity_type, granularity)
+    trend_metrics = _trend_metrics(question)
+    if len(trend_metrics) > 1:
+        return _fallback_plan(
+            "Choose one metric for a trend: steps, resting heart rate, HRV, or active energy.",
+            "clarification_needed",
+        )
+    trend_metric = trend_metrics[0] if trend_metrics else None
 
     if trend_metric is not None:
         start, end, _label = period or (as_of - timedelta(days=89), as_of, "Latest 90 days")

@@ -139,11 +139,19 @@ run:
 groq-smoke:
 	bash scripts/groq_smoke.sh "$(QUESTION)"
 
+# Continuous local chat: make run-cli INTERACTIVE=1 LOCAL=1 [LOCAL_MODEL=installed-id]
+# DB_PATH is interpreted from the repository root before uv changes directory.
+run-cli: export TTI_CLI_QUESTION = $(QUESTION)
+run-cli: export TTI_CLI_DB_PATH = $(if $(DB_PATH),$(if $(filter /%,$(DB_PATH)),$(DB_PATH),$(CURDIR)/$(DB_PATH)),)
+run-cli: export TTI_CLI_LOCAL_MODEL = $(LOCAL_MODEL)
 run-cli:
-	uv run --directory backend python -m app.cli.chat \
-	  $(if $(QUESTION),--question "$(QUESTION)",) \
+	@uv run --directory backend python -m app.cli.chat \
+	  $(if $(QUESTION),--question "$$TTI_CLI_QUESTION",) \
 	  $(if $(JSON),--json,) \
-	  $(if $(DB_PATH),--db-path "$(DB_PATH)",)
+	  $(if $(INTERACTIVE),--interactive,) \
+	  $(if $(LOCAL),--local,) \
+	  $(if $(LOCAL_MODEL),--local-model "$$TTI_CLI_LOCAL_MODEL",) \
+	  $(if $(DB_PATH),--db-path "$$TTI_CLI_DB_PATH",)
 
 status:
 	uv run --directory backend python -m app.cli.status --json

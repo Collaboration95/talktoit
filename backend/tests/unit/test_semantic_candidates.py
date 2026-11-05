@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from app.llm.semantic_candidates import (
     evaluate,
     normalize_question,
     plan_fingerprint,
     similarity,
 )
+from app.llm.tools import TOOL_SCHEMAS
 
 
 def _run_plan(activity_type: str = "Running", min_duration: int | None = None) -> dict[str, object]:
@@ -192,3 +195,86 @@ def test_semantic_turns_exposes_normalized_questions_per_dataset(tmp_path) -> No
     )
     assert other is not None
     assert repo.semantic_turns(other.id) == []
+
+
+@pytest.mark.parametrize(
+    "tool_name,base,slot,changed",
+    [
+        ("get_last_workout", {"activity_type": "Running"}, "start_date", "2026-06-01"),
+        ("get_last_workout", {"activity_type": "Running"}, "end_date", "2026-06-07"),
+        (
+            "get_last_workout",
+            {"activity_type": "Running", "start_date": "2026-06-01"},
+            "start_date",
+            "2026-06-02",
+        ),
+        (
+            "get_last_workout",
+            {"activity_type": "Running", "end_date": "2026-06-07"},
+            "end_date",
+            "2026-06-08",
+        ),
+        (
+            "get_period_summary",
+            {"start_date": "2026-06-01", "end_date": "2026-06-07"},
+            "activity_type",
+            "Running",
+        ),
+        (
+            "get_period_summary",
+            {
+                "start_date": "2026-06-01",
+                "end_date": "2026-06-07",
+                "activity_type": "Running",
+            },
+            "activity_type",
+            "Cycling",
+        ),
+        ("get_fallback_answer", {"text": "Choose a date range."}, "text", "Choose a metric."),
+        (
+            "get_fallback_answer",
+            {"text": "Choose a date range.", "reason": "unsupported"},
+            "reason",
+            "clarification_needed",
+        ),
+    ],
+)
+def test_answer_changing_slots_never_auto_hit(tool_name, base, slot, changed):
+    question = "Show my running activity summary"
+    prior = _turn("1", question, {"tool_name": tool_name, "arguments": base})
+    different = {**base, slot: changed}
+    assert plan_fingerprint(tool_name, base) != plan_fingerprint(tool_name, different)
+    verdict = evaluate([prior], question, (tool_name, different))
+    assert not verdict.auto_servable
+    assert verdict.similar
+
+
+@pytest.mark.parametrize("tool_name", ["get_last_workout", "get_period_summary"])
+def test_scoped_equivalent_plans_still_auto_hit(tool_name):
+    args = {"activity_type": "Running", "start_date": "2026-06-01", "end_date": "2026-06-07"}
+    prior = _turn(
+        "1", "Show my running activity summary", {"tool_name": tool_name, "arguments": args}
+    )
+    equivalent = {**args, "activity_type": " running "}
+    if tool_name == "get_period_summary":
+        equivalent["title"] = "A different display title"
+    verdict = evaluate([prior], "My running activity summary please", (tool_name, equivalent))
+    assert verdict.auto_servable
+
+
+@pytest.mark.parametrize("schema", TOOL_SCHEMAS, ids=lambda schema: schema["function"]["name"])
+def test_every_advertised_query_slot_participates_in_identity(schema):
+    """New tool constraints must not silently become invisible to semantic reuse."""
+    function = schema["function"]
+    tool_name = function["name"]
+    cosmetic = {"title", "this_label", "last_label"}
+    for slot, contract in function["parameters"]["properties"].items():
+        value = {"string": "different", "number": 30, "integer": 3, "array": ["steps"]}[
+            contract["type"]
+        ]
+        empty = plan_fingerprint(tool_name, {})
+        constrained = plan_fingerprint(tool_name, {slot: value})
+        if slot in cosmetic:
+            assert empty == constrained, slot
+        else:
+            assert empty != constrained, slot

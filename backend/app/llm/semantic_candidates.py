@@ -35,11 +35,11 @@ _STOPWORDS = frozenset(
 # do not change the query result are excluded so identical intents written in
 # different words still verify equal.
 _SIGNIFICANT_KEYS: dict[str, tuple[str, ...]] = {
-    "get_last_workout": ("activity_type", "min_duration_minutes"),
+    "get_last_workout": ("activity_type", "min_duration_minutes", "start_date", "end_date"),
     "get_top_workouts": ("activity_type", "metric", "n", "start_date", "end_date"),
     "get_trend": ("metric_id", "granularity", "start_date", "end_date"),
     "get_sleep_trend": ("granularity", "start_date", "end_date"),
-    "get_period_summary": ("start_date", "end_date"),
+    "get_period_summary": ("start_date", "end_date", "activity_type"),
     "get_comparison": (
         "this_start",
         "this_end",
@@ -48,7 +48,7 @@ _SIGNIFICANT_KEYS: dict[str, tuple[str, ...]] = {
         "activity_type",
         "metric_ids",
     ),
-    "get_fallback_answer": (),
+    "get_fallback_answer": ("text", "reason"),
 }
 
 

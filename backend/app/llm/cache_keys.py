@@ -8,25 +8,36 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
 
-CACHE_KEY_VERSION = "chat-cache-v8"
+CACHE_KEY_VERSION = "chat-cache-v9"
 """Bump when a local fact, formatter, privacy, or response contract changes."""
 SNAPSHOT_CONTRACT = "leased-generation-v1"
+PLANNER_CONTRACT = "typed-plan-v4"
+# Persisted plans also gate semantic answer reuse; v4 excludes summaries whose
+# deterministic narrative rendered missing totals as literal None values.
 
 
 def snapshot_plan(plan: Mapping[str, Any] | None) -> dict[str, Any] | None:
-    """Mark persisted intent as produced under the leased generation contract."""
-    return {**plan, "snapshot_contract": SNAPSHOT_CONTRACT} if plan is not None else None
+    """Mark persisted intent with its generation and planner contracts."""
+    return (
+        {**plan, "snapshot_contract": SNAPSHOT_CONTRACT, "planner_contract": PLANNER_CONTRACT}
+        if plan is not None
+        else None
+    )
 
 
 def trusted_snapshot_plan(raw: object) -> bool:
-    """Reject pre-snapshot semantic history without deleting independent history."""
+    """Reject history from older generation or planner contracts without deleting it."""
     if not isinstance(raw, str):
         return False
     try:
         plan = json.loads(raw)
     except (ValueError, TypeError):
         return False
-    return isinstance(plan, dict) and plan.get("snapshot_contract") == SNAPSHOT_CONTRACT
+    return (
+        isinstance(plan, dict)
+        and plan.get("snapshot_contract") == SNAPSHOT_CONTRACT
+        and plan.get("planner_contract") == PLANNER_CONTRACT
+    )
 
 
 def matches_managed_database(database_path: Path, managed_database_path: Path) -> bool:
@@ -66,7 +77,7 @@ def build_cache_key(
         "timezone": "Asia/Singapore",
         "response_contract": "chat-v1",
         "formatter_contract": "health-format-v3",
-        "planner_contract": "typed-plan-v2",
+        "planner_contract": PLANNER_CONTRACT,
         "narration_projection": "template-facts-v3",
         "generation_identity": generation_identity,
     }

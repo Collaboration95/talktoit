@@ -284,12 +284,30 @@ def deterministic_narrative(template_id: str, facts: dict[str, object]) -> str:
     if template_id == "period_summary":
         metrics = facts.get("metrics")
         if isinstance(metrics, list) and metrics:
+            if any(
+                isinstance(item, dict)
+                and item.get("label") == "Workouts"
+                and item.get("value") == 0
+                for item in metrics
+            ):
+                return (
+                    "No workouts were recorded for the requested period. "
+                    "Try a wider date range or another workout type."
+                )
             text = ", ".join(
-                f"{item.get('label')}: {item.get('value')} {item.get('unit')}"
+                (
+                    f"{item.get('label')}: unavailable"
+                    if item.get("value") is None
+                    else f"{item.get('label')}: {item.get('value')} {item.get('unit')}"
+                )
                 for item in metrics[:3]
                 if isinstance(item, dict)
             )
             return f"{facts.get('title', 'Training summary')}: {text}."
+        return (
+            "No summary measurements are available for this period. "
+            "Try a wider date range or another workout type."
+        )
     if template_id == "comparison":
         title = facts.get("title", "Comparison")
         current = facts.get("this_period_label", "the current period")

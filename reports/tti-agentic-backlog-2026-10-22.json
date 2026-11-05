@@ -1,0 +1,3705 @@
+{
+  "created_at_utc": "2026-10-22T10:13:44.794635+00:00",
+  "source_of_truth": "Current GitHub issue contracts, native relationships, and Project Status. This file is the initialization snapshot.",
+  "project_url": "https://github.com/users/Collaboration95/projects/18",
+  "guide_url": "https://github.com/Collaboration95/talktoit/issues/137",
+  "baseline_sha": "49510a7c804bd4c044db87c6e90523cae2ba0602",
+  "counts": {
+    "epics": 5,
+    "packages": 14,
+    "leaves": 43,
+    "total_issues": 63,
+    "native_parent_links": 57,
+    "native_dependency_links": 80
+  },
+  "verification": {
+    "result": "PASS",
+    "project_url": "https://github.com/users/Collaboration95/projects/18",
+    "guide_url": "https://github.com/Collaboration95/talktoit/issues/137",
+    "epics": 5,
+    "packages": 14,
+    "leaves": 43,
+    "total_issues": 63,
+    "native_parent_links": 57,
+    "native_dependency_links": 80,
+    "leaf_status_counts": {
+      "Backlog": 19,
+      "Ready": 17,
+      "Blocked": 26
+    },
+    "views": [
+      {
+        "id": "PVTV_lAHOBBatWM4BoNLWzgMLviU",
+        "number": 1,
+        "name": "00 \u00b7 Roadmap \u2014 all work",
+        "filter": "",
+        "layout": "TABLE_LAYOUT"
+      },
+      {
+        "id": "PVTV_lAHOBBatWM4BoNLWzgMLvyA",
+        "number": 2,
+        "name": "01 \u00b7 Epics",
+        "filter": "label:\"kind:epic\"",
+        "layout": "TABLE_LAYOUT"
+      },
+      {
+        "id": "PVTV_lAHOBBatWM4BoNLWzgMLvyI",
+        "number": 3,
+        "name": "02 \u00b7 Today candidates",
+        "filter": "kind:Task,Spike,Gate batch:\"Today candidates\"",
+        "layout": "TABLE_LAYOUT"
+      },
+      {
+        "id": "PVTV_lAHOBBatWM4BoNLWzgMLvyQ",
+        "number": 4,
+        "name": "03 \u00b7 Ready queue",
+        "filter": "status:Ready",
+        "layout": "TABLE_LAYOUT"
+      },
+      {
+        "id": "PVTV_lAHOBBatWM4BoNLWzgMLvyY",
+        "number": 5,
+        "name": "04 \u00b7 Workflow",
+        "filter": "-label:\"kind:epic\" -label:\"kind:package\" -label:\"kind:guide\"",
+        "layout": "BOARD_LAYOUT"
+      },
+      {
+        "id": "PVTV_lAHOBBatWM4BoNLWzgMLvys",
+        "number": 6,
+        "name": "05 \u00b7 Review queue",
+        "filter": "status:Review",
+        "layout": "TABLE_LAYOUT"
+      },
+      {
+        "id": "PVTV_lAHOBBatWM4BoNLWzgMLvy4",
+        "number": 7,
+        "name": "06 \u00b7 Blocked work",
+        "filter": "status:Blocked",
+        "layout": "TABLE_LAYOUT"
+      },
+      {
+        "id": "PVTV_lAHOBBatWM4BoNLWzgMLvy8",
+        "number": 8,
+        "name": "07 \u00b7 Agent start here",
+        "filter": "label:\"kind:guide\"",
+        "layout": "TABLE_LAYOUT"
+      }
+    ],
+    "historical_issues_unchanged": 103,
+    "errors": []
+  },
+  "issues": [
+    {
+      "area": "Maintenance",
+      "milestone": "Safe local core",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-M-EPIC",
+      "title": "Round 0: restore a reliable maintenance baseline",
+      "objective": "Based on main 49510a7c804bd4c044db87c6e90523cae2ba0602 and reports/tti-roadmap-2026-10-22.html. Prioritize maximum safe same-day agent throughput; these focused PRs do not promise completion of the entire roadmap today. Historical issue descriptions require reconciliation, not automatic reuse or closure.",
+      "kind": "Epic",
+      "sequence": 1000,
+      "children": [
+        "TTI-M-BASE",
+        "TTI-M-DEPS",
+        "TTI-R-PACKAGE"
+      ],
+      "parent": null,
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEI3RQ",
+        "number": 138,
+        "url": "https://github.com/Collaboration95/talktoit/issues/138"
+      },
+      "parent_url": null,
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/139",
+        "https://github.com/Collaboration95/talktoit/issues/143",
+        "https://github.com/Collaboration95/talktoit/issues/149"
+      ]
+    },
+    {
+      "area": "Maintenance",
+      "milestone": "Safe local core",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-M-BASE",
+      "title": "Supported baseline, macOS CI and audit reconciliation",
+      "objective": "Produce repeatable synthetic evidence and classify old issues independently of application safety implementation.",
+      "kind": "Package",
+      "sequence": 1010,
+      "children": [
+        "TTI-M-001",
+        "TTI-M-002",
+        "TTI-M-003"
+      ],
+      "parent": "TTI-M-EPIC",
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEI7mA",
+        "number": 139,
+        "url": "https://github.com/Collaboration95/talktoit/issues/139"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/138",
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/140",
+        "https://github.com/Collaboration95/talktoit/issues/141",
+        "https://github.com/Collaboration95/talktoit/issues/142"
+      ]
+    },
+    {
+      "area": "Maintenance",
+      "milestone": "Safe local core",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Today candidates",
+      "conflict_group": "baseline-evidence",
+      "size": "S",
+      "key": "TTI-M-001",
+      "title": "Capture the supported Node 20 synthetic baseline",
+      "objective": "Resolve the report limitation that local validation used Node 26 rather than supported Node 20.",
+      "scope": [
+        "Use Node 20 from frontend/.nvmrc and Python 3.12+; record runtime/OS/CPU, commit and lockfile hashes in docs/decisions/maintenance-baseline-2026-10.md.",
+        "Record quality gates, coverage, tiny synthetic benchmarks, build size and official V2 CLI fixture import counts/known values; isolate all DB/app-state paths under a disposable temp directory."
+      ],
+      "out_of_scope": [
+        "Personal health exports/databases; live model calls; unrelated product features",
+        "Dependency upgrades; performance optimization"
+      ],
+      "acceptance": [
+        "Exact commands, exit codes and timings are recorded with Node 20 actually verified; historical 460/162 test counts are not asserted as fresh results.",
+        "Global 80%, ingestion 90% and LLM 70% coverage results plus frontend coverage are recorded honestly.",
+        "Synthetic official import retains expected rows/child relationships/known values; bundle size and tiny bench results do not imply full-export throughput, browser latency or live model quality."
+      ],
+      "verification": [
+        "node -e 'if (process.versions.node.split(\".\")[0] !== \"20\") process.exit(1)'",
+        "make check",
+        "make test-backend",
+        "uv run --directory backend coverage report --include='app/ingest/*' --fail-under=90",
+        "uv run --directory backend coverage report --include='app/llm/*' --fail-under=70",
+        "npm --prefix frontend run test -- --run --coverage",
+        "make bench",
+        "make build",
+        "uv run --directory backend pytest tests/integration/test_ingest_cli.py tests/integration/test_ingest_phase_contracts.py -q --no-cov"
+      ],
+      "paths": [
+        "frontend/.nvmrc",
+        "docs/decisions/maintenance-baseline-2026-10.md",
+        "backend/tests/fixtures/sample.xml"
+      ],
+      "depends_on": [],
+      "related_issues": [],
+      "kind": "Task",
+      "estimate": "2-4 hours",
+      "stop_conditions": [
+        "Use synthetic fixtures and stub provider startup/gateway; stop if personal data, secrets or live inference would be required.",
+        "If Node 20 is unavailable, report the exact environment failure and leave verification pending."
+      ],
+      "parent": "TTI-M-BASE",
+      "sequence": 70,
+      "children": [],
+      "status": "Ready",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEJBtA",
+        "number": 140,
+        "url": "https://github.com/Collaboration95/talktoit/issues/140"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/139",
+      "dependency_urls": [],
+      "child_urls": []
+    },
+    {
+      "area": "Maintenance",
+      "milestone": "Safe local core",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Today candidates",
+      "conflict_group": "ci-workflows",
+      "size": "S",
+      "key": "TTI-M-002",
+      "title": "Add a macOS synthetic lifecycle smoke job",
+      "objective": "Check primary-platform lifecycle behavior alongside existing Ubuntu CI.",
+      "scope": [
+        "Add one macOS smoke job to ci.yml using supported Python and Node 20, locked installs and isolated temporary health/app-state paths.",
+        "Exercise official V2 import and isolated /health and /api/status readiness; disable local autostart and stub all gateways; retain existing Ubuntu jobs and coverage gates."
+      ],
+      "out_of_scope": [
+        "Personal health exports/databases; live model calls; unrelated product features",
+        "Full macOS matrix; Windows guarantees"
+      ],
+      "acceptance": [
+        "Actions macOS job asserts synthetic import counts/manifest and readiness, fails on missing tooling and leaves no background server.",
+        "Ubuntu lint/type/test/build and coverage thresholds remain unchanged; documented runtime versions appear in logs.",
+        "Remote validation is marked pending until the implementation PR has actual CI evidence."
+      ],
+      "verification": [
+        "uv run --directory backend pytest tests/integration/test_ingest_cli.py tests/integration/test_import_activation.py -q --no-cov",
+        "make check",
+        "gh workflow view ci.yml",
+        "After creating the implementation PR: gh pr checks <PR_NUMBER>"
+      ],
+      "paths": [
+        ".github/workflows/ci.yml",
+        "backend/tests/integration/test_import_activation.py",
+        "docs/ENGINEERING.md"
+      ],
+      "depends_on": [],
+      "related_issues": [],
+      "kind": "Task",
+      "estimate": "0.5-1 engineer-day",
+      "stop_conditions": [
+        "Use synthetic fixtures and stub provider startup/gateway; stop if personal data, secrets or live inference would be required.",
+        "Do not substitute local success for a missing Actions run."
+      ],
+      "parent": "TTI-M-BASE",
+      "sequence": 90,
+      "children": [],
+      "status": "Ready",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEJHXw",
+        "number": 141,
+        "url": "https://github.com/Collaboration95/talktoit/issues/141"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/139",
+      "dependency_urls": [],
+      "child_urls": []
+    },
+    {
+      "area": "Maintenance",
+      "milestone": "Safe local core",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Today candidates",
+      "conflict_group": "issue-reconciliation",
+      "size": "S",
+      "key": "TTI-M-003",
+      "title": "Reconcile open historical issues without changing them",
+      "objective": "Provide a defensible issue reuse/related map for the parent.",
+      "scope": [
+        "Read historical open issues through authenticated gh, excluding this agent:roadmap backlog, compare original acceptance to current code/tests and commit docs/decisions/audit-reconciliation-2026-10.md.",
+        "Classify repaired/residual/unverified with exact code/test references and matching roadmap keys; inspect #59/#60/#66/#68/#115-#120 carefully.",
+        "Treat #63/#85/#86 as related lifecycle history unless original acceptance truly matches a new leaf; leave all issues unchanged."
+      ],
+      "out_of_scope": [
+        "Personal health exports/databases; live model calls; unrelated product features"
+      ],
+      "acceptance": [
+        "Every historical open issue outside this new roadmap is classified; 55 was the audit snapshot, while the refreshed gh result is authoritative.",
+        "Reuse requires matching acceptance and cited evidence; green suites alone do not establish repaired status.",
+        "No issue edit/closure/relabel or unrelated application fix is included."
+      ],
+      "verification": [
+        "gh issue list --state open --limit 200 --json number,title,body,url",
+        "uv run --directory backend pytest tests/integration/test_ingest_cli.py tests/unit/test_ingest_dry_run.py tests/unit/test_ingest_activation_safety.py -q --no-cov",
+        "Review every reconciliation row against its fresh issue body and cited source/test."
+      ],
+      "paths": [
+        "docs/decisions/audit-reconciliation-2026-10.md",
+        "backend/tests/integration/test_ingest_cli.py",
+        "backend/tests/unit/test_ingest_dry_run.py"
+      ],
+      "depends_on": [],
+      "related_issues": [
+        59,
+        60,
+        63,
+        66,
+        68,
+        85,
+        86,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120
+      ],
+      "kind": "Task",
+      "estimate": "2-4 hours",
+      "stop_conditions": [
+        "Use synthetic fixtures and stub provider startup/gateway; stop if personal data, secrets or live inference would be required.",
+        "Record newly found unmatched defects for the parent rather than widening implementation scope."
+      ],
+      "parent": "TTI-M-BASE",
+      "sequence": 80,
+      "children": [],
+      "status": "Ready",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEJMhw",
+        "number": 142,
+        "url": "https://github.com/Collaboration95/talktoit/issues/142"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/139",
+      "dependency_urls": [],
+      "child_urls": []
+    },
+    {
+      "area": "Maintenance",
+      "milestone": "Safe local core",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-M-DEPS",
+      "title": "Audit triage and compatible dependency remediation",
+      "objective": "Historical 19 October audit 39276633414 reported 8 Python findings in anyio/pip/urllib3 and 17 Node findings; refresh scanners and disposition findings without blanket force upgrades.",
+      "kind": "Package",
+      "sequence": 1011,
+      "children": [
+        "TTI-M-004",
+        "TTI-M-005",
+        "TTI-M-006",
+        "TTI-M-007",
+        "TTI-M-GATE"
+      ],
+      "parent": "TTI-M-EPIC",
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEJRgQ",
+        "number": 143,
+        "url": "https://github.com/Collaboration95/talktoit/issues/143"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/138",
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/144",
+        "https://github.com/Collaboration95/talktoit/issues/145",
+        "https://github.com/Collaboration95/talktoit/issues/146",
+        "https://github.com/Collaboration95/talktoit/issues/147",
+        "https://github.com/Collaboration95/talktoit/issues/148"
+      ]
+    },
+    {
+      "area": "Maintenance",
+      "milestone": "Safe local core",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Today candidates",
+      "conflict_group": "dependency-design",
+      "size": "M",
+      "key": "TTI-M-004",
+      "title": "Spike: select bounded dependency remediation batches",
+      "objective": "Make compatibility decisions explicit before lockfile updates.",
+      "scope": [
+        "Timebox to 4 hours; refresh audit JSON using locked environments and classify advisory IDs, dependency paths, runtime/dev exposure and fixes.",
+        "Record exact Python batch and compatible Node batch plus a bounded migration decision for remaining Vitest/coverage and Tailwind v3/Tremor constraints.",
+        "Publish docs/decisions/dependency-disposition-2026-10.md with owner, residual risk, mitigation and next action for every unresolved finding; no threshold suppression."
+      ],
+      "out_of_scope": [
+        "Personal health exports/databases; live model calls; unrelated product features",
+        "Lockfile changes in this spike"
+      ],
+      "acceptance": [
+        "One design-note PR gives exact package/version scope and verification for TTI-M-005/006/007; historical scanner results are identified as historical.",
+        "Vitest and coverage coupling, Node 20 support, Tailwind v3/Tremor coupling are evaluated explicitly; no npm audit fix --force.",
+        "If no contained compatible migration is available, TTI-M-007 remains blocked with a precise objection and mitigation; safety tasks proceed."
+      ],
+      "verification": [
+        "gh run view 39276633414 --log-failed",
+        "uv run --directory backend pip-audit --format=json",
+        "npm --prefix frontend audit --json",
+        "npm --prefix frontend ls --all",
+        "Review manifest/lock dependency paths against advisory IDs."
+      ],
+      "paths": [
+        "docs/decisions/dependency-disposition-2026-10.md",
+        "backend/pyproject.toml",
+        "backend/uv.lock",
+        "frontend/package.json",
+        "frontend/package-lock.json"
+      ],
+      "depends_on": [],
+      "related_issues": [],
+      "kind": "Spike",
+      "estimate": "4-hour timebox",
+      "stop_conditions": [
+        "Use synthetic fixtures and stub provider startup/gateway; stop if personal data, secrets or live inference would be required."
+      ],
+      "parent": "TTI-M-DEPS",
+      "sequence": 30,
+      "children": [],
+      "status": "Ready",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEJXqg",
+        "number": 144,
+        "url": "https://github.com/Collaboration95/talktoit/issues/144"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/143",
+      "dependency_urls": [],
+      "child_urls": []
+    },
+    {
+      "area": "Maintenance",
+      "milestone": "Safe local core",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Today candidates",
+      "conflict_group": "python-dependencies",
+      "size": "S",
+      "key": "TTI-M-005",
+      "title": "Apply reviewed Python dependency fixes",
+      "objective": "Remove patchable Python audit findings while retaining supported runtime and data invariants.",
+      "scope": [
+        "Apply TTI-M-004 selected manifest/uv.lock changes only; distinguish installer-tool pip findings from project runtime dependencies.",
+        "Retain Python 3.12 compatibility, locked reproducibility and ingestion/query contracts; update residual advisory dispositions."
+      ],
+      "out_of_scope": [
+        "Personal health exports/databases; live model calls; unrelated product features"
+      ],
+      "acceptance": [
+        "Selected advisory IDs disappear in fresh audit; residuals are individually recorded, without suppressions.",
+        "Locked install, backend tests/lint/types and global/ingestion/LLM coverage gates pass.",
+        "No generated health data or unintended dependency migration is committed."
+      ],
+      "verification": [
+        "uv sync --directory backend --dev --locked",
+        "uv run --directory backend pip-audit",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend",
+        "uv run --directory backend coverage report --include='app/ingest/*' --fail-under=90",
+        "uv run --directory backend coverage report --include='app/llm/*' --fail-under=70"
+      ],
+      "paths": [
+        "backend/pyproject.toml",
+        "backend/uv.lock",
+        "docs/decisions/dependency-disposition-2026-10.md"
+      ],
+      "depends_on": [
+        "TTI-M-004"
+      ],
+      "related_issues": [],
+      "kind": "Task",
+      "estimate": "0.5-1 engineer-day",
+      "stop_conditions": [
+        "Use synthetic fixtures and stub provider startup/gateway; stop if personal data, secrets or live inference would be required.",
+        "If resolution requires dropping Python 3.12 or an unrelated major migration, stop and update the bounded design."
+      ],
+      "parent": "TTI-M-DEPS",
+      "sequence": 160,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEJecQ",
+        "number": 145,
+        "url": "https://github.com/Collaboration95/talktoit/issues/145"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/143",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/144"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Maintenance",
+      "milestone": "Safe local core",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Today candidates",
+      "conflict_group": "frontend-dependencies",
+      "size": "S",
+      "key": "TTI-M-006",
+      "title": "Apply compatible Node audit fixes",
+      "objective": "Remove independent patchable Node findings before major compatibility changes.",
+      "scope": [
+        "Apply only TTI-M-004 compatible versions using Node 20; review manifest/lock diff and production/dev audit results.",
+        "Do not force Tailwind 4 into Tremor 3; serialize with TTI-M-007 because both own frontend lockfiles."
+      ],
+      "out_of_scope": [
+        "Personal health exports/databases; live model calls; unrelated product features"
+      ],
+      "acceptance": [
+        "Selected nonbreaking advisory IDs disappear; remaining findings map to TTI-M-007 or explicit disposition.",
+        "Node 20 npm ci, coverage, lint/typecheck/format and production build pass without weakening thresholds.",
+        "No unplanned chart/template behavior changes."
+      ],
+      "verification": [
+        "npm --prefix frontend audit --json",
+        "npm --prefix frontend run format:check",
+        "npm --prefix frontend ci",
+        "npm --prefix frontend run test -- --run --coverage",
+        "make lint-frontend",
+        "make typecheck-frontend",
+        "make build"
+      ],
+      "paths": [
+        "frontend/package.json",
+        "frontend/package-lock.json",
+        "docs/decisions/dependency-disposition-2026-10.md"
+      ],
+      "depends_on": [
+        "TTI-M-004"
+      ],
+      "related_issues": [],
+      "kind": "Task",
+      "estimate": "0.5-1 engineer-day",
+      "stop_conditions": [
+        "Use synthetic fixtures and stub provider startup/gateway; stop if personal data, secrets or live inference would be required."
+      ],
+      "parent": "TTI-M-DEPS",
+      "sequence": 170,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEJjZw",
+        "number": 146,
+        "url": "https://github.com/Collaboration95/talktoit/issues/146"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/143",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/144"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Maintenance",
+      "milestone": "Safe local core",
+      "priority": "P1",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "frontend-dependencies",
+      "size": "M",
+      "key": "TTI-M-007",
+      "title": "Implement the selected bounded frontend compatibility migration",
+      "objective": "Resolve remaining compatibility-constrained advisories without broad UI redesign.",
+      "scope": [
+        "Implement only the exact migration/version scope selected in TTI-M-004 after the compatible batch lands.",
+        "Adjust test/coverage or Tailwind/Tremor config only as required by that decision; preserve six template contracts and existing chart styling."
+      ],
+      "out_of_scope": [
+        "Personal health exports/databases; live model calls; unrelated product features",
+        "Broad chart-library replacement; UI redesign"
+      ],
+      "acceptance": [
+        "Selected residual advisory IDs disappear from fresh audit; any remaining findings have explicit dispositions.",
+        "Node 20 locked install, coverage/lint/types/format and production build pass; affected chart/template states retain behavior and styling in focused tests and visual review.",
+        "If no compatibility migration remains necessary, record fresh audit and supported-toolchain evidence as a no-change disposition; do not invent a migration or claim a code fix. Otherwise only the exact bounded migration selected by TTI-M-004 may proceed."
+      ],
+      "verification": [
+        "npm --prefix frontend audit --json",
+        "npm --prefix frontend run format:check",
+        "npm --prefix frontend ci",
+        "npm --prefix frontend run test -- --run --coverage",
+        "make lint-frontend",
+        "make typecheck-frontend",
+        "make build",
+        "Review affected chart/template visual states; record unavailable browser validation as pending."
+      ],
+      "paths": [
+        "frontend/package.json",
+        "frontend/package-lock.json",
+        "frontend/vite.config.ts",
+        "frontend/tailwind.config.ts",
+        "frontend/postcss.config.js",
+        "frontend/tests/",
+        "docs/decisions/dependency-disposition-2026-10.md"
+      ],
+      "depends_on": [
+        "TTI-M-004",
+        "TTI-M-006"
+      ],
+      "related_issues": [],
+      "kind": "Task",
+      "estimate": "1-3 days after bounded design; conditional",
+      "stop_conditions": [
+        "Use synthetic fixtures and stub provider startup/gateway; stop if personal data, secrets or live inference would be required.",
+        "Do not implement without an exact contained supported migration selected by the spike; if none is needed, return the explicit verified no-change disposition."
+      ],
+      "parent": "TTI-M-DEPS",
+      "sequence": 180,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEJpNQ",
+        "number": 147,
+        "url": "https://github.com/Collaboration95/talktoit/issues/147"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/143",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/144",
+        "https://github.com/Collaboration95/talktoit/issues/146"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Maintenance",
+      "milestone": "Safe local core",
+      "priority": "P1",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "integrated-acceptance",
+      "size": "M",
+      "key": "TTI-M-GATE",
+      "title": "Verify supported maintenance and dependency dispositions",
+      "objective": "Independently verify the integrated epic outcome, not only individual local test results.",
+      "scope": [
+        "Run the complete epic acceptance against merged main using isolated synthetic data.",
+        "Publish a criterion-to-evidence matrix, actual head/merged SHAs, CI links and remaining limitations."
+      ],
+      "out_of_scope": [
+        "New application features, waived gates, personal datasets, hosted-model calls or rubber-stamp closure."
+      ],
+      "acceptance": [
+        "Supported-toolchain baseline and actual Ubuntu/macOS CI receipts are current.",
+        "Every dependency finding has a fix or explicit evidence-based disposition; required audit checks are not disabled.",
+        "Historical issue map is complete without unsupported closure claims.",
+        "Any failure produces a concrete blocker or follow-up leaf; the gate stays open until required acceptance passes."
+      ],
+      "verification": [
+        "make check-full",
+        "Execute the epic-specific synthetic integration/browser/fault checks above and post the charter completion receipt."
+      ],
+      "paths": [
+        "backend/tests/",
+        "frontend/tests/",
+        "docs/decisions/acceptance-evidence.md (new or linked evidence index)"
+      ],
+      "depends_on": [
+        "TTI-M-001",
+        "TTI-M-002",
+        "TTI-M-003",
+        "TTI-M-005",
+        "TTI-M-006",
+        "TTI-M-007"
+      ],
+      "related_issues": [],
+      "kind": "Gate",
+      "estimate": "One focused independent verification session; fix work returns to leaf issues",
+      "stop_conditions": [
+        "Do not substitute local green tests for missing required CI/browser/interrupt evidence.",
+        "Return exact failing acceptance and reproducer; do not broaden product scope or close unfinished issues."
+      ],
+      "parent": "TTI-M-DEPS",
+      "sequence": 390,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEJvPg",
+        "number": 148,
+        "url": "https://github.com/Collaboration95/talktoit/issues/148"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/143",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/140",
+        "https://github.com/Collaboration95/talktoit/issues/141",
+        "https://github.com/Collaboration95/talktoit/issues/142",
+        "https://github.com/Collaboration95/talktoit/issues/145",
+        "https://github.com/Collaboration95/talktoit/issues/146",
+        "https://github.com/Collaboration95/talktoit/issues/147"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Maintenance",
+      "milestone": "Safe local core",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-R-PACKAGE",
+      "title": "Whole-roadmap integration and handoff",
+      "objective": "Accept the overall required outcome only after all five epic gates pass.",
+      "kind": "Package",
+      "sequence": 1012,
+      "children": [
+        "TTI-R-001"
+      ],
+      "parent": "TTI-M-EPIC",
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEJ0pw",
+        "number": 149,
+        "url": "https://github.com/Collaboration95/talktoit/issues/149"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/138",
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/150"
+      ]
+    },
+    {
+      "area": "Maintenance",
+      "milestone": "Safe local core",
+      "priority": "P1",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "integrated-acceptance",
+      "size": "M",
+      "key": "TTI-R-001",
+      "title": "Accept the entire required roadmap and publish fresh-agent handoff",
+      "objective": "Confirm the complete required roadmap Definition of Done in the execution charter against integrated main.",
+      "scope": [
+        "Audit all required leaf/package/epic completion receipts and selected architecture decisions.",
+        "Run final integrated quality, ingestion, performance and synthetic browser/platform acceptance; publish an evidence index and current handoff."
+      ],
+      "out_of_scope": [
+        "Optional companion/ZIP discovery implementation, deployment, personal datasets, arbitrary redesigns or retroactive gate weakening."
+      ],
+      "acceptance": [
+        "All five epic verification gates are independently PASS with accepted merged-main/CI evidence.",
+        "Every required leaf is Done or has its contractually allowed evidence-based no-change disposition; optional discovery is distinguished and no blocker is hidden.",
+        "The complete charter Definition of Done is satisfied, setup is reproducible and no personal data/secrets/build output are committed.",
+        "Final handoff lists architecture choices, issue/PR/commit map, baseline/budgets, known limitations and how to continue safely."
+      ],
+      "verification": [
+        "make check-full",
+        "make bench",
+        "make build",
+        "Run the final synthetic macOS/Ubuntu lifecycle and browser journey, and audit the five gate receipts."
+      ],
+      "paths": [
+        "docs/ENGINEERING.md",
+        "docs/decisions/",
+        "backend/tests/",
+        "frontend/tests/"
+      ],
+      "depends_on": [
+        "TTI-M-GATE",
+        "TTI-S-GATE",
+        "TTI-U-GATE",
+        "TTI-P-GATE",
+        "TTI-A-GATE"
+      ],
+      "related_issues": [],
+      "kind": "Gate",
+      "estimate": "One final integrated verification session",
+      "stop_conditions": [
+        "A missing required receipt, browser/platform proof, or failing invariant keeps this gate open.",
+        "No release/deployment or personal-data verification is authorized by this planning contract."
+      ],
+      "parent": "TTI-R-PACKAGE",
+      "sequence": 440,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEJ69g",
+        "number": 150,
+        "url": "https://github.com/Collaboration95/talktoit/issues/150"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/149",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/148",
+        "https://github.com/Collaboration95/talktoit/issues/164",
+        "https://github.com/Collaboration95/talktoit/issues/176",
+        "https://github.com/Collaboration95/talktoit/issues/189",
+        "https://github.com/Collaboration95/talktoit/issues/199"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Data safety",
+      "milestone": "Safe local core",
+      "priority": "P0",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-S-EPIC",
+      "title": "Round 1: trust imports and dataset identity",
+      "objective": "Fix reproduced configured-shard deletion, crash replacement gap and cross-database CLI cache replay. Generation mixing is source-traced, not reproduced by the report: add controlled race evidence. Preserve local-first privacy, V2 worker invariance, exact counts and relationships. Start independent quick fixes and lifecycle design in parallel; dependencies gate only affected work. Every leaf is one focused PR.",
+      "kind": "Epic",
+      "sequence": 1100,
+      "children": [
+        "TTI-S-QUICK",
+        "TTI-S-ACT",
+        "TTI-S-GEN"
+      ],
+      "parent": null,
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEKCFg",
+        "number": 151,
+        "url": "https://github.com/Collaboration95/talktoit/issues/151"
+      },
+      "parent_url": null,
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/152",
+        "https://github.com/Collaboration95/talktoit/issues/155",
+        "https://github.com/Collaboration95/talktoit/issues/159"
+      ]
+    },
+    {
+      "area": "Data safety",
+      "milestone": "Safe local core",
+      "priority": "P0",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-S-QUICK",
+      "title": "Owned shards and immediate CLI identity isolation",
+      "objective": "Fix independently reproducible defects before the lifecycle redesign.",
+      "kind": "Package",
+      "sequence": 1110,
+      "children": [
+        "TTI-S-001",
+        "TTI-S-002"
+      ],
+      "parent": "TTI-S-EPIC",
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEKFFg",
+        "number": 152,
+        "url": "https://github.com/Collaboration95/talktoit/issues/152"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/151",
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/153",
+        "https://github.com/Collaboration95/talktoit/issues/154"
+      ]
+    },
+    {
+      "area": "Data safety",
+      "milestone": "Safe local core",
+      "priority": "P0",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Today candidates",
+      "conflict_group": "ingest-coordinator",
+      "size": "S",
+      "key": "TTI-S-001",
+      "title": "Create owned per-run shard children under configured roots",
+      "objective": "Prevent configured shard folders from losing unrelated files.",
+      "scope": [
+        "Treat explicit shard_dir and TTI_INGEST_SHARDS as parent roots; allocate a unique owned run child.",
+        "Confine normal/retry/fallback/failure cleanup to that owned child; use ownership evidence rather than basename prefix.",
+        "Preserve parent/siblings and worker/parquet reconciliation behavior."
+      ],
+      "out_of_scope": [
+        "Personal health exports/databases; live model calls; unrelated product features",
+        "Crash-safe activation; arbitrary caller-directory cleanup"
+      ],
+      "acceptance": [
+        "Unrelated sentinels in configured parent and sibling runs survive success, parse failure, reconciliation failure and retry.",
+        "Concurrent imports use distinct children and cannot erase each other; default temporary mode cleans owned artifacts.",
+        "Normalized/symlinked paths cannot cause recursive removal outside the owned child.",
+        "Synthetic known values, row counts and child relationships match for workers 1 and multiple workers."
+      ],
+      "verification": [
+        "uv run --directory backend pytest tests/integration/test_ingest_v2.py tests/integration/test_ingest_phase_contracts.py tests/unit/test_ingest_compatibility.py -q --no-cov",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend",
+        "uv run --directory backend coverage report --include='app/ingest/*' --fail-under=90"
+      ],
+      "paths": [
+        "backend/app/ingest/coordinator.py",
+        "backend/tests/integration/test_ingest_v2.py",
+        "backend/tests/integration/test_ingest_phase_contracts.py"
+      ],
+      "depends_on": [],
+      "related_issues": [],
+      "kind": "Task",
+      "estimate": "0.5-1 engineer-day",
+      "stop_conditions": [
+        "Use synthetic fixtures and stub provider startup/gateway; stop if personal data, secrets or live inference would be required.",
+        "Never authorize cleanup solely from a directory basename; stop if parser/reconciliation semantics would change."
+      ],
+      "parent": "TTI-S-QUICK",
+      "sequence": 10,
+      "children": [],
+      "status": "Ready",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEKKmg",
+        "number": 153,
+        "url": "https://github.com/Collaboration95/talktoit/issues/153"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/152",
+      "dependency_urls": [],
+      "child_urls": []
+    },
+    {
+      "area": "Data safety",
+      "milestone": "Safe local core",
+      "priority": "P0",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Today candidates",
+      "conflict_group": "cli-identity",
+      "size": "S",
+      "key": "TTI-S-002",
+      "title": "Bypass shared identity for unmatched CLI database overrides",
+      "objective": "Ensure database B cannot replay cached answers or provenance from active database A.",
+      "scope": [
+        "Resolve/canonicalize effective CLI DB path and require proof that it matches managed active data before shared identity/cache use.",
+        "For unprovable overrides bypass shared exact/canonical cache reads/writes and A-bound conversation/follow-up association.",
+        "Keep shared ChatOrchestrator and ChatResponse; conservative bypass is sufficient before full snapshot integration."
+      ],
+      "out_of_scope": [
+        "Personal health exports/databases; live model calls; unrelated product features",
+        "Persistent sidecar identity for arbitrary databases; full lifecycle architecture"
+      ],
+      "acceptance": [
+        "Prime A with 45.5-minute workout answer then query B with known 999-minute workout: identical question returns B data, never A cached provenance.",
+        "Cover exact/canonical keys, fresh/default mode, no active manifest and equivalent-path overrides; unmatched B leaves A cache unchanged.",
+        "A conversation/parent cannot silently attach B answers to A; safe useful behavior contains no raw internals.",
+        "Real CLI cache path runs with provider startup/gateway stubbed and no inference."
+      ],
+      "verification": [
+        "uv run --directory backend pytest tests/unit/test_cli_chat.py tests/integration/test_chat_cache_revalidation.py -q --no-cov",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend"
+      ],
+      "paths": [
+        "backend/app/cli/chat.py",
+        "backend/app/llm/cache_keys.py",
+        "backend/tests/unit/test_cli_chat.py"
+      ],
+      "depends_on": [],
+      "related_issues": [
+        120
+      ],
+      "kind": "Task",
+      "estimate": "0.5-1 engineer-day",
+      "stop_conditions": [
+        "Use synthetic fixtures and stub provider startup/gateway; stop if personal data, secrets or live inference would be required.",
+        "If managed identity cannot be proven, bypass it rather than infer it from active manifest alone."
+      ],
+      "parent": "TTI-S-QUICK",
+      "sequence": 20,
+      "children": [],
+      "status": "Ready",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEKQPQ",
+        "number": 154,
+        "url": "https://github.com/Collaboration95/talktoit/issues/154"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/152",
+      "dependency_urls": [],
+      "child_urls": []
+    },
+    {
+      "area": "Data safety",
+      "milestone": "Safe local core",
+      "priority": "P0",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-S-ACT",
+      "title": "Durable activation and restart recovery",
+      "objective": "Select a bounded protocol, implement it and verify real process-crash boundaries.",
+      "kind": "Package",
+      "sequence": 1111,
+      "children": [
+        "TTI-S-003",
+        "TTI-S-004",
+        "TTI-S-005"
+      ],
+      "parent": "TTI-S-EPIC",
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEKUwQ",
+        "number": 155,
+        "url": "https://github.com/Collaboration95/talktoit/issues/155"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/151",
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/156",
+        "https://github.com/Collaboration95/talktoit/issues/157",
+        "https://github.com/Collaboration95/talktoit/issues/158"
+      ]
+    },
+    {
+      "area": "Data safety",
+      "milestone": "Safe local core",
+      "priority": "P0",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Today candidates",
+      "conflict_group": "lifecycle-design",
+      "size": "M",
+      "key": "TTI-S-003",
+      "title": "Spike: specify durable lifecycle and artifact ownership",
+      "objective": "Choose journaled replacement or immutable generations plus transactional pointer before lifecycle implementation.",
+      "scope": [
+        "Timebox 4-6 hours; compare designs against DuckDB file replacement, SQLite manifest/export_root, CLI subprocess and HTTP startup.",
+        "Specify one selected protocol: commit point, fsync ordering, first import/replacement, old-install migration and idempotent recovery.",
+        "Define cross-process lock ordering, generation snapshot/lease retirement, import/delete coordination, cancellation before/after commit and ownership/liveness evidence for temporary artifacts.",
+        "Publish transition/fault table and implementation boundaries for TTI-S-004 through TTI-S-009 in docs/decisions/dataset-lifecycle.md."
+      ],
+      "out_of_scope": [
+        "Personal health exports/databases; live model calls; unrelated product features",
+        "Implementing two competing designs; changing database engine; broad distribution support"
+      ],
+      "acceptance": [
+        "One design-note PR selects exactly one implementation with compatibility and platform limits; no application implementation.",
+        "Every crash state recovers a matching old/new DB+manifest+route root or fails closed without deleting last valid data.",
+        "Snapshot acquisition is atomic by generation; deletion/restart cannot resurrect retired data; ambiguous artifact ownership preserves files.",
+        "Only dependent lifecycle leaves wait; shard/CLI/dependency/baseline work remains independently actionable."
+      ],
+      "verification": [
+        "uv run --directory backend pytest tests/unit/test_ingest_activation_safety.py tests/unit/test_connection_lifecycle.py tests/integration/test_import_activation.py -q --no-cov",
+        "Review transition table against run._activated_database, AppStateRepository.activate_file/get_active/get_export_root, API imports and settings deletion."
+      ],
+      "paths": [
+        "docs/decisions/dataset-lifecycle.md",
+        "backend/app/ingest/run.py",
+        "backend/app/db/connection.py",
+        "backend/app/state/app_state.py",
+        "backend/app/api/imports.py",
+        "backend/app/api/settings.py"
+      ],
+      "depends_on": [],
+      "related_issues": [
+        63,
+        85,
+        86
+      ],
+      "kind": "Spike",
+      "estimate": "4-6-hour timebox",
+      "stop_conditions": [
+        "Use synthetic fixtures and stub provider startup/gateway; stop if personal data, secrets or live inference would be required.",
+        "If no safe protocol is selected by the timebox, publish the precise unresolved objection instead of implementing competing protocols."
+      ],
+      "parent": "TTI-S-ACT",
+      "sequence": 40,
+      "children": [],
+      "status": "Ready",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEKZEw",
+        "number": 156,
+        "url": "https://github.com/Collaboration95/talktoit/issues/156"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/155",
+      "dependency_urls": [],
+      "child_urls": []
+    },
+    {
+      "area": "Data safety",
+      "milestone": "Safe local core",
+      "priority": "P0",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "dataset-lifecycle-core",
+      "size": "M",
+      "key": "TTI-S-004",
+      "title": "Implement crash-recoverable activation and startup recovery",
+      "objective": "Replace exception-only rollback with the selected durable lifecycle.",
+      "scope": [
+        "Implement TTI-S-003 persistence/activation protocol with minimal failure tests in the same PR; retain existing locking, fsync and normal rollback.",
+        "Recover before HTTP startup migrations and before CLI import/chat access; preserve matching database/manifest/export-root for first import and replacement.",
+        "Handle existing installations and legacy .previous/staging artifacts conservatively; integrate CLI changes after immediate isolation lands."
+      ],
+      "out_of_scope": [
+        "Personal health exports/databases; live model calls; unrelated product features",
+        "UI reconnect/progress; complete consumer migration"
+      ],
+      "acceptance": [
+        "Hard exit after retiring/moving old active data recovers a valid old/new generation on restart rather than missing active path.",
+        "Manifest-write/fsync/rename/close failures do not advertise wrong/missing data; ordinary rollback remains covered.",
+        "Two restarts are idempotent; interrupted first import cannot fabricate active identity; last valid copy is retained until durable outcome.",
+        "Official V2 and legacy/fallback counts, relationships, reports and useful error envelopes remain compatible."
+      ],
+      "verification": [
+        "uv run --directory backend pytest tests/unit/test_ingest_activation_safety.py tests/integration/test_import_activation.py tests/integration/test_ingest_cli.py tests/unit/test_ingest_fallback.py -q --no-cov",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend",
+        "uv run --directory backend coverage report --include='app/ingest/*' --fail-under=90"
+      ],
+      "paths": [
+        "backend/app/ingest/run.py",
+        "backend/app/state/app_state.py",
+        "backend/app/main.py",
+        "backend/app/cli/chat.py",
+        "backend/app/db/dataset_lifecycle.py (proposed; spike fixes name)",
+        "backend/tests/unit/test_ingest_activation_safety.py",
+        "backend/tests/integration/test_import_activation.py"
+      ],
+      "depends_on": [
+        "TTI-S-003",
+        "TTI-S-002"
+      ],
+      "related_issues": [
+        63
+      ],
+      "kind": "Task",
+      "estimate": "1-2 days",
+      "stop_conditions": [
+        "Use synthetic fixtures and stub provider startup/gateway; stop if personal data, secrets or live inference would be required.",
+        "Stop and revisit design if the selected durable commit boundary cannot preserve matching data and identity."
+      ],
+      "parent": "TTI-S-ACT",
+      "sequence": 190,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEKdqA",
+        "number": 157,
+        "url": "https://github.com/Collaboration95/talktoit/issues/157"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/155",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/156",
+        "https://github.com/Collaboration95/talktoit/issues/154"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Data safety",
+      "milestone": "Safe local core",
+      "priority": "P0",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "activation-fault-tests",
+      "size": "S",
+      "key": "TTI-S-005",
+      "title": "Test every durable activation interruption boundary",
+      "objective": "Prove crash recovery with bounded deterministic subprocess faults.",
+      "scope": [
+        "Inject hard exits/SIGKILL where supported at every selected activation boundary and restart official CLI/app startup.",
+        "Cover first import, replacement, pointer/manifest commit, rollback, cancellation before/after commit and recovery interrupted again.",
+        "Use two tiny synthetic datasets with distinct values/roots; test entire identity tuple, not file existence only."
+      ],
+      "out_of_scope": [
+        "Personal health exports/databases; live model calls; unrelated product features"
+      ],
+      "acceptance": [
+        "Every design boundary has a hard-exit regression where Python finally cannot mask process death.",
+        "Recovered known values, manifest/counts and export root belong to one generation; repeated recovery preserves last-good data and sentinels.",
+        "Cancellation cannot activate partial data; tests use synchronization and bounded timeouts rather than sleeps/random races.",
+        "Regression suite is portable to supported Ubuntu/macOS smoke."
+      ],
+      "verification": [
+        "uv run --directory backend pytest tests/integration/test_dataset_crash_recovery.py -q --no-cov",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend",
+        "uv run --directory backend coverage report --include='app/ingest/*' --fail-under=90"
+      ],
+      "paths": [
+        "backend/tests/integration/test_dataset_crash_recovery.py (new)",
+        "backend/tests/integration/test_import_activation.py",
+        "backend/app/ingest/run.py"
+      ],
+      "depends_on": [
+        "TTI-S-004"
+      ],
+      "related_issues": [
+        63
+      ],
+      "kind": "Task",
+      "estimate": "0.5-1 day",
+      "stop_conditions": [
+        "Use synthetic fixtures and stub provider startup/gateway; stop if personal data, secrets or live inference would be required.",
+        "Preserve ambiguous artifacts and return minimal failing transition evidence; do not weaken recovery assertions to make tests green."
+      ],
+      "parent": "TTI-S-ACT",
+      "sequence": 200,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEKjZg",
+        "number": 158,
+        "url": "https://github.com/Collaboration95/talktoit/issues/158"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/155",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/157"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Data safety",
+      "milestone": "Safe local core",
+      "priority": "P0",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-S-GEN",
+      "title": "Generation snapshots, coordinated deletion and temporary recovery",
+      "objective": "Bind readers to one dataset and reconcile owned abandoned artifacts without a general runbook/control epic.",
+      "kind": "Package",
+      "sequence": 1112,
+      "children": [
+        "TTI-S-006",
+        "TTI-S-007",
+        "TTI-S-008",
+        "TTI-S-009",
+        "TTI-S-GATE"
+      ],
+      "parent": "TTI-S-EPIC",
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEKofQ",
+        "number": 159,
+        "url": "https://github.com/Collaboration95/talktoit/issues/159"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/151",
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/160",
+        "https://github.com/Collaboration95/talktoit/issues/161",
+        "https://github.com/Collaboration95/talktoit/issues/162",
+        "https://github.com/Collaboration95/talktoit/issues/163",
+        "https://github.com/Collaboration95/talktoit/issues/164"
+      ]
+    },
+    {
+      "area": "Data safety",
+      "milestone": "Safe local core",
+      "priority": "P0",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "dataset-lifecycle-core",
+      "size": "M",
+      "key": "TTI-S-006",
+      "title": "Acquire connection, manifest and route root as one leased generation",
+      "objective": "Provide the primitive that prevents independently acquired dataset components from mixing.",
+      "scope": [
+        "Implement TTI-S-003 snapshot API over TTI-S-004 durable generations; acquire database handle, dataset identity and route root together.",
+        "Keep leases until request completion, reopen/invalidate idle handles by generation and retire old resources only under the selected policy.",
+        "Coordinate importer subprocess and server rather than relying only on in-process RLock."
+      ],
+      "out_of_scope": [
+        "Personal health exports/databases; live model calls; unrelated product features",
+        "Migrating every consumer; query performance redesign"
+      ],
+      "acceptance": [
+        "Barrier-controlled activation during acquisition cannot return old connection with new manifest/root.",
+        "Leased readers finish coherently or receive documented safe conflict, never closed-handle failure; next request gets committed new generation.",
+        "No-active-data behavior is explicit; last lease release retires resources without leaks; existing lifecycle tests pass."
+      ],
+      "verification": [
+        "uv run --directory backend pytest tests/unit/test_connection_lifecycle.py tests/integration/test_dataset_snapshots.py -q --no-cov",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend"
+      ],
+      "paths": [
+        "backend/app/db/connection.py",
+        "backend/app/db/dataset_lifecycle.py (proposed)",
+        "backend/app/state/app_state.py",
+        "backend/tests/unit/test_connection_lifecycle.py",
+        "backend/tests/integration/test_dataset_snapshots.py (new)"
+      ],
+      "depends_on": [
+        "TTI-S-004"
+      ],
+      "related_issues": [
+        86
+      ],
+      "kind": "Task",
+      "estimate": "1 day",
+      "stop_conditions": [
+        "Use synthetic fixtures and stub provider startup/gateway; stop if personal data, secrets or live inference would be required.",
+        "Stop if identity/root are read independently of the leased database or correctness relies solely on same-process locks."
+      ],
+      "parent": "TTI-S-GEN",
+      "sequence": 210,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEKtUw",
+        "number": 160,
+        "url": "https://github.com/Collaboration95/talktoit/issues/160"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/159",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/157"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Data safety",
+      "milestone": "Safe local core",
+      "priority": "P0",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "dataset-request-consumers",
+      "size": "M",
+      "key": "TTI-S-007",
+      "title": "Use generation snapshots in HTTP, CLI, caches and route access",
+      "objective": "Make query results, provenance, cached answers and route roots describe the same dataset.",
+      "scope": [
+        "Migrate chat, dashboard/workout detail/route download, active status/settings reads and CLI to TTI-S-006 snapshots.",
+        "Use snapshot identity for exact/canonical/semantic cache decisions, provenance and follow-up/conversation scope; retain unmatched CLI bypass.",
+        "Scope dashboard profile/capability caches by generation and GPX access by snapshot root; keep API envelopes and shared orchestrator."
+      ],
+      "out_of_scope": [
+        "Personal health exports/databases; live model calls; unrelated product features",
+        "Conversation transaction/profile performance; route-absence UI"
+      ],
+      "acceptance": [
+        "Controlled import/chat/dashboard races return coherent known values, dataset ID and provenance or defined safe conflict.",
+        "Two DBs never share exact/canonical/semantic answer or parent context; CLI/HTTP parity remains on ChatOrchestrator.",
+        "Workout routes use leased generation allowed root, never new root with old row; invalidated caches cannot replay retired data.",
+        "ChatResponse/template_id and existing envelopes remain compatible; no prompts/SQL/raw implementation output leaks."
+      ],
+      "verification": [
+        "uv run --directory backend pytest tests/integration/test_dataset_snapshots.py tests/integration/test_chat_cache_revalidation.py tests/integration/test_dashboard_profile_cache.py tests/integration/test_import_activation.py tests/unit/test_cli_chat.py -q --no-cov",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend"
+      ],
+      "paths": [
+        "backend/app/api/chat.py",
+        "backend/app/api/dashboard.py",
+        "backend/app/api/status.py",
+        "backend/app/api/settings.py",
+        "backend/app/cli/chat.py",
+        "backend/app/db/dashboard_cache.py",
+        "backend/app/llm/cache_keys.py",
+        "backend/tests/integration/test_dataset_snapshots.py"
+      ],
+      "depends_on": [
+        "TTI-S-006",
+        "TTI-S-002"
+      ],
+      "related_issues": [
+        113,
+        120
+      ],
+      "kind": "Task",
+      "estimate": "1-2 days",
+      "stop_conditions": [
+        "Use synthetic fixtures and stub provider startup/gateway; stop if personal data, secrets or live inference would be required.",
+        "Document any public-contract conflict before adding response types or exposing internal generation paths."
+      ],
+      "parent": "TTI-S-GEN",
+      "sequence": 220,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEKymw",
+        "number": 161,
+        "url": "https://github.com/Collaboration95/talktoit/issues/161"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/159",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/160",
+        "https://github.com/Collaboration95/talktoit/issues/154"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Data safety",
+      "milestone": "Safe local core",
+      "priority": "P0",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "dataset-lifecycle-core",
+      "size": "S",
+      "key": "TTI-S-008",
+      "title": "Coordinate health deletion with imports and leased readers",
+      "objective": "Prevent missing or resurrected active data under import/delete/read races.",
+      "scope": [
+        "Use shared durable lifecycle protocol for explicit health deletion and cross-process activation exclusion.",
+        "Apply selected bounded wait/conflict/lease policy and durable deletion state; preserve independent history/cache/diagnostic scopes.",
+        "Add deterministic delete/import/chat/dashboard races and restart after interrupted deletion."
+      ],
+      "out_of_scope": [
+        "Personal health exports/databases; live model calls; unrelated product features",
+        "Deleting source exports or unrelated local state"
+      ],
+      "acceptance": [
+        "Import/delete race yields a documented serialized outcome; restart never resurrects deliberately deleted active generation.",
+        "In-flight reader finishes coherently or gets defined safe conflict; no closed handle or wrong identity.",
+        "Scope/confirmation remain required; missing file deactivates safely, removal failures retain consistent state and useful 409.",
+        "History/saved views/diagnostics/cache remain independent except generation invalidation necessary to prevent replay."
+      ],
+      "verification": [
+        "uv run --directory backend pytest tests/integration/test_settings_api.py tests/unit/test_connection_lifecycle.py tests/integration/test_dataset_snapshots.py tests/integration/test_dataset_crash_recovery.py -q --no-cov",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend"
+      ],
+      "paths": [
+        "backend/app/api/settings.py",
+        "backend/app/db/connection.py",
+        "backend/app/db/dataset_lifecycle.py (proposed)",
+        "backend/app/ingest/run.py",
+        "backend/tests/integration/test_settings_api.py",
+        "backend/tests/integration/test_dataset_snapshots.py"
+      ],
+      "depends_on": [
+        "TTI-S-007"
+      ],
+      "related_issues": [
+        86
+      ],
+      "kind": "Task",
+      "estimate": "0.5-1 day",
+      "stop_conditions": [
+        "Use synthetic fixtures and stub provider startup/gateway; stop if personal data, secrets or live inference would be required.",
+        "Stop on lock-order deadlock or any deletion of a leased generation outside the selected policy."
+      ],
+      "parent": "TTI-S-GEN",
+      "sequence": 230,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEK3KA",
+        "number": 162,
+        "url": "https://github.com/Collaboration95/talktoit/issues/162"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/159",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/161"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Data safety",
+      "milestone": "Safe local core",
+      "priority": "P1",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "dataset-lifecycle-core",
+      "size": "M",
+      "key": "TTI-S-009",
+      "title": "Track temporary ownership and recover abandoned imports",
+      "objective": "Safely recover or remove abandoned uploads, shards and staging artifacts after restart.",
+      "scope": [
+        "Implement selected persistent ownership metadata for upload/shard/staging/backup artifacts and importer job association before subprocess handoff.",
+        "Cover partial upload, cancellation, timeout, parse failure and restart; reconcile activation before cleanup.",
+        "Distinguish live import, leased/committed generations, recoverable interrupted activation and abandoned owned artifacts.",
+        "Persist only minimal safe import state needed for honest existing list/get API after restart; leave frontend reconnect/progress to other lane."
+      ],
+      "out_of_scope": [
+        "Personal health exports/databases; live model calls; unrelated product features",
+        "ZIP/companion import; UI reconnect/stage labels; generic garbage collection"
+      ],
+      "acceptance": [
+        "Hard-killed importer/backend artifacts are deterministically recovered or removed after restart and cleanup is idempotent.",
+        "Configured roots/siblings, user export/GPX, live job, leased/active generation and last rollback copy survive cleanup.",
+        "Unknown/malformed/symlinked/ambiguous ownership fails closed; name prefix, age or PID alone never authorizes deletion.",
+        "Cancellation/timeout leave no owned orphan after reconciliation; restarted jobs show honest recovered/terminal state without local paths or subprocess output.",
+        "Synthetic sentinel and repeated-restart tests prove ownership boundaries without live models."
+      ],
+      "verification": [
+        "uv run --directory backend pytest tests/integration/test_imports_api.py tests/integration/test_import_artifact_recovery.py tests/integration/test_dataset_crash_recovery.py -q --no-cov",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend",
+        "uv run --directory backend coverage report --include='app/ingest/*' --fail-under=90"
+      ],
+      "paths": [
+        "backend/app/api/imports.py",
+        "backend/app/ingest/coordinator.py",
+        "backend/app/ingest/run.py",
+        "backend/app/state/app_state.py",
+        "backend/app/main.py",
+        "backend/tests/integration/test_imports_api.py",
+        "backend/tests/integration/test_import_artifact_recovery.py (new)"
+      ],
+      "depends_on": [
+        "TTI-S-001",
+        "TTI-S-005",
+        "TTI-S-006"
+      ],
+      "related_issues": [
+        85
+      ],
+      "kind": "Task",
+      "estimate": "1-2 days",
+      "stop_conditions": [
+        "Use synthetic fixtures and stub provider startup/gateway; stop if personal data, secrets or live inference would be required.",
+        "If ownership or liveness cannot be proven, preserve the artifact and report safe recovery status; never recursively clean a caller-owned root."
+      ],
+      "parent": "TTI-S-GEN",
+      "sequence": 240,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEK76Q",
+        "number": 163,
+        "url": "https://github.com/Collaboration95/talktoit/issues/163"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/159",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/153",
+        "https://github.com/Collaboration95/talktoit/issues/158",
+        "https://github.com/Collaboration95/talktoit/issues/160"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Data safety",
+      "milestone": "Safe local core",
+      "priority": "P1",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "integrated-acceptance",
+      "size": "M",
+      "key": "TTI-S-GATE",
+      "title": "Verify crash recovery, generation identity and cleanup",
+      "objective": "Independently verify the integrated epic outcome, not only individual local test results.",
+      "scope": [
+        "Run the complete epic acceptance against merged main using isolated synthetic data.",
+        "Publish a criterion-to-evidence matrix, actual head/merged SHAs, CI links and remaining limitations."
+      ],
+      "out_of_scope": [
+        "New application features, waived gates, personal datasets, hosted-model calls or rubber-stamp closure."
+      ],
+      "acceptance": [
+        "Run the complete deterministic crash-boundary and concurrent generation/deletion matrix through official entry points.",
+        "Two distinct synthetic datasets retain matching known values, IDs, counts and route roots across restart, cancellation and CLI cache paths.",
+        "Sentinel, ownership and abandoned-artifact recovery checks pass; last usable data is preserved.",
+        "Any failure produces a concrete blocker or follow-up leaf; the gate stays open until required acceptance passes."
+      ],
+      "verification": [
+        "make check-full",
+        "Execute the epic-specific synthetic integration/browser/fault checks above and post the charter completion receipt."
+      ],
+      "paths": [
+        "backend/tests/",
+        "frontend/tests/",
+        "docs/decisions/acceptance-evidence.md (new or linked evidence index)"
+      ],
+      "depends_on": [
+        "TTI-S-001",
+        "TTI-S-002",
+        "TTI-S-003",
+        "TTI-S-004",
+        "TTI-S-005",
+        "TTI-S-006",
+        "TTI-S-007",
+        "TTI-S-008",
+        "TTI-S-009"
+      ],
+      "related_issues": [],
+      "kind": "Gate",
+      "estimate": "One focused independent verification session; fix work returns to leaf issues",
+      "stop_conditions": [
+        "Do not substitute local green tests for missing required CI/browser/interrupt evidence.",
+        "Return exact failing acceptance and reproducer; do not broaden product scope or close unfinished issues."
+      ],
+      "parent": "TTI-S-GEN",
+      "sequence": 400,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZELBWg",
+        "number": 164,
+        "url": "https://github.com/Collaboration95/talktoit/issues/164"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/159",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/153",
+        "https://github.com/Collaboration95/talktoit/issues/154",
+        "https://github.com/Collaboration95/talktoit/issues/156",
+        "https://github.com/Collaboration95/talktoit/issues/157",
+        "https://github.com/Collaboration95/talktoit/issues/158",
+        "https://github.com/Collaboration95/talktoit/issues/160",
+        "https://github.com/Collaboration95/talktoit/issues/161",
+        "https://github.com/Collaboration95/talktoit/issues/162",
+        "https://github.com/Collaboration95/talktoit/issues/163"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "UX",
+      "milestone": "Everyday exploration",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-U-EPIC",
+      "title": "Round 2 \u2014 Daily use without code knowledge",
+      "objective": "Plan against main 49510a7 and reports/tti-roadmap-2026-10-22.html. Connect existing capabilities while preserving local-first data invariants. Maximize safe same-day agent throughput by dispatching ready leaves in different conflict groups; do not promise the entire roadmap today. Each leaf is one focused implement\u2192verify\u2192independent review\u2192close PR; delivery agents follow the execution charter. Same conflict group means serialize; also honor explicit shared-file notes. Existing issue references are related-only unless the parent separately proves exact acceptance equivalence. All estimates include focused verification and review, not calendar promises.",
+      "kind": "Epic",
+      "sequence": 1200,
+      "children": [
+        "TTI-U-PERIOD",
+        "TTI-U-GUIDANCE",
+        "TTI-U-TRUST"
+      ],
+      "parent": null,
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZELGlA",
+        "number": 165,
+        "url": "https://github.com/Collaboration95/talktoit/issues/165"
+      },
+      "parent_url": null,
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/166",
+        "https://github.com/Collaboration95/talktoit/issues/169",
+        "https://github.com/Collaboration95/talktoit/issues/172"
+      ]
+    },
+    {
+      "area": "UX",
+      "milestone": "Everyday exploration",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-U-PERIOD",
+      "title": "Visible periods and recoverable empty results",
+      "objective": "Make dates and scope controls trustworthy without adding analytics.",
+      "kind": "Package",
+      "sequence": 1210,
+      "children": [
+        "TTI-U-001",
+        "TTI-U-002"
+      ],
+      "parent": "TTI-U-EPIC",
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZELK9w",
+        "number": 166,
+        "url": "https://github.com/Collaboration95/talktoit/issues/166"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/165",
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/167",
+        "https://github.com/Collaboration95/talktoit/issues/168"
+      ]
+    },
+    {
+      "area": "UX",
+      "milestone": "Everyday exploration",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "dashboard-view",
+      "size": "M",
+      "key": "TTI-U-001",
+      "title": "Expose dataset-anchored dashboard periods and truthful headings",
+      "objective": "Choose a visible date window that agrees with requests, URL state and panel labels.",
+      "scope": [
+        "Add latest-7/latest-30 data-day presets, all-available coverage and validated custom start/end controls using existing status coverage and dashboard scope.",
+        "Use existing shared date helpers; retain scope through URL navigation and saved-view application."
+      ],
+      "out_of_scope": [
+        "New date engine, ingestion changes, new metrics, broad dashboard redesign."
+      ],
+      "acceptance": [
+        "With computer date outside fixture coverage, presets end on imported latest date and send the displayed dates to every date-scoped request.",
+        "Reject impossible dates and start-after-end without sending requests; missing coverage has a useful disabled/empty state.",
+        "Custom and saved periods round-trip through URL and Back/Forward; titles describe actual windows rather than always claiming latest 30 days.",
+        "Existing default scope behavior and unknown-template fallback remain compatible; loading/error states do not invent coverage.",
+        "The ordinary default/latest-data dashboard can be saved as a view without hand-editing URL dates; applying it restores the visible scope."
+      ],
+      "verification": [
+        "npm --prefix frontend run test -- --run tests/components/dashboard-view.test.tsx tests/lib/dashboard-query.test.ts tests/lib/format.test.ts",
+        "make test-frontend",
+        "make lint-frontend",
+        "make typecheck-frontend"
+      ],
+      "paths": [
+        "frontend/src/components/dashboard-view.tsx",
+        "frontend/src/lib/dashboard-query.ts",
+        "frontend/src/lib/format.ts",
+        "frontend/tests/components/dashboard-view.test.tsx",
+        "frontend/tests/lib/dashboard-query.test.ts"
+      ],
+      "depends_on": [],
+      "related_issues": [],
+      "kind": "Task",
+      "estimate": "6\u20138 engineer-hours",
+      "stop_conditions": [
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "parent": "TTI-U-PERIOD",
+      "sequence": 130,
+      "children": [],
+      "status": "Ready",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZELRcQ",
+        "number": 167,
+        "url": "https://github.com/Collaboration95/talktoit/issues/167"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/166",
+      "dependency_urls": [],
+      "child_urls": []
+    },
+    {
+      "area": "UX",
+      "milestone": "Everyday exploration",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Today candidates",
+      "conflict_group": "dashboard-view",
+      "size": "S",
+      "key": "TTI-U-002",
+      "title": "Keep workout filters and Reset usable with zero results",
+      "objective": "Let users recover from an empty scoped result without editing URLs.",
+      "scope": [
+        "Render existing filter/reset controls outside result-dependent early returns.",
+        "Preserve selected filters and available options while a zero-result request settles; Reset clears only intended scope filters."
+      ],
+      "out_of_scope": [
+        "New filter types, date-control redesign, pagination rewrite."
+      ],
+      "acceptance": [
+        "A zero-match source/activity/date combination still displays active filters and an enabled Reset.",
+        "Reset removes stale scope URL parameters, requests the unfiltered scope and restores results; loading/error/empty states remain distinct.",
+        "Keyboard-accessible controls persist during loading and failed requests; existing pagination generation guards remain intact.",
+        "Filter choices remain stable across filtered or paginated results; counts explicitly identify loaded-row counts unless backed by a dataset total."
+      ],
+      "verification": [
+        "npm --prefix frontend run test -- --run tests/components/dashboard-view.test.tsx tests/lib/dashboard-query.test.ts",
+        "make test-frontend",
+        "make lint-frontend",
+        "make typecheck-frontend"
+      ],
+      "paths": [
+        "frontend/src/components/dashboard-view.tsx",
+        "frontend/tests/components/dashboard-view.test.tsx"
+      ],
+      "depends_on": [],
+      "related_issues": [
+        {
+          "number": 104,
+          "url": "https://github.com/Collaboration95/talktoit/issues/104",
+          "relationship": "related_only",
+          "note": "Saved-view issues are adjacent; do not reuse its broader acceptance without revalidation."
+        }
+      ],
+      "kind": "Task",
+      "estimate": "2\u20134 engineer-hours",
+      "stop_conditions": [
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "parent": "TTI-U-PERIOD",
+      "sequence": 50,
+      "children": [],
+      "status": "Ready",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZELX0A",
+        "number": 168,
+        "url": "https://github.com/Collaboration95/talktoit/issues/168"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/166",
+      "dependency_urls": [],
+      "child_urls": []
+    },
+    {
+      "area": "UX",
+      "milestone": "Everyday exploration",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-U-GUIDANCE",
+      "title": "First import and active-job guidance",
+      "objective": "Guide users to existing capabilities and reconnect within a running backend; durable restart recovery remains Round 1.",
+      "kind": "Package",
+      "sequence": 1211,
+      "children": [
+        "TTI-U-003",
+        "TTI-U-004"
+      ],
+      "parent": "TTI-U-EPIC",
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZELclg",
+        "number": 169,
+        "url": "https://github.com/Collaboration95/talktoit/issues/169"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/165",
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/170",
+        "https://github.com/Collaboration95/talktoit/issues/171"
+      ]
+    },
+    {
+      "area": "UX",
+      "milestone": "Everyday exploration",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "chat-view",
+      "size": "M",
+      "key": "TTI-U-003",
+      "title": "Guide the first import and offer dataset-relevant starter questions",
+      "objective": "Connect empty-dataset chat to the existing importer and reveal supported questions after import.",
+      "scope": [
+        "Use existing status/settings capability data; provide an obvious Settings/import navigation action in the no-dataset state.",
+        "Replace unconditional seed choices with a small deterministic supported subset based on imported metrics/workout types; refresh after returning from successful import."
+      ],
+      "out_of_scope": [
+        "New import wizard, inferred health advice, sleep/comparison promises before those tasks ship."
+      ],
+      "acceptance": [
+        "No dataset shows an actionable route to the existing XML importer, with no model-start requirement.",
+        "Synthetic steps-only, workouts-only and no-supported-metric datasets display truthful available metrics and relevant supported prompts.",
+        "Clicking a starter keeps its question visible through answer rendering; failed capability loading has a safe retry/generic state.",
+        "Returning from successful import refreshes capability guidance without a full browser reload.",
+        "Explain how to obtain and unpack export.xml, show the local-only default and model-optional supported capabilities, and reuse the existing importer rather than introduce a second flow."
+      ],
+      "verification": [
+        "npm --prefix frontend run test -- --run tests/app.test.tsx tests/components/chat-view.test.tsx tests/components/seed-prompts.test.tsx",
+        "make test-frontend",
+        "make lint-frontend",
+        "make typecheck-frontend"
+      ],
+      "paths": [
+        "frontend/src/app.tsx",
+        "frontend/src/components/chat-view.tsx",
+        "frontend/src/components/seed-prompts.tsx",
+        "frontend/src/api/settings.ts",
+        "frontend/tests/app.test.tsx",
+        "frontend/tests/components/seed-prompts.test.tsx"
+      ],
+      "depends_on": [],
+      "related_issues": [],
+      "kind": "Task",
+      "estimate": "4\u20138 engineer-hours",
+      "stop_conditions": [
+        "If available capability responses cannot distinguish supported prompts, add only a small local capability projection; do not scan health records from UI.",
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "parent": "TTI-U-GUIDANCE",
+      "sequence": 140,
+      "children": [],
+      "status": "Ready",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZELiJg",
+        "number": 170,
+        "url": "https://github.com/Collaboration95/talktoit/issues/170"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/169",
+      "dependency_urls": [],
+      "child_urls": []
+    },
+    {
+      "area": "UX",
+      "milestone": "Everyday exploration",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Today candidates",
+      "conflict_group": "settings-view",
+      "size": "M",
+      "key": "TTI-U-004",
+      "title": "Reconnect Settings to active imports and expose cancellation and honest phases",
+      "objective": "Reopening Settings should rediscover the same running backend job and allow safe cancellation.",
+      "scope": [
+        "Wire existing GET /api/imports and DELETE /api/imports/{id} into typed frontend clients and polling.",
+        "Show queued/running/terminal phase labels supported by actual job evidence instead of the current approximate percent; keep cancel idempotent and clean up polling."
+      ],
+      "out_of_scope": [
+        "Backend-restart persistence and recovery journal (Round 1 lane), new importer progress instrumentation, ZIP uploads."
+      ],
+      "acceptance": [
+        "Unmount/remount Settings during a synthetic running job rediscovers it without starting another upload.",
+        "Cancel uses the existing endpoint; success, failure, cancellation and already-finished race produce accurate terminal UI and restore upload controls.",
+        "No fabricated percentage or stage appears; when backend exposes only running, display running.",
+        "Backend restart/job disappearance shows an honest unknown/interrupted state; do not claim restart survival.",
+        "Polling aborts on unmount and old responses cannot overwrite a newer job."
+      ],
+      "verification": [
+        "npm --prefix frontend run test -- --run tests/components/settings-view.test.tsx tests/api/settings.test.ts",
+        "make test-frontend",
+        "make lint-frontend",
+        "make typecheck-frontend",
+        "uv run --directory backend pytest -o addopts='' -q tests/integration/test_imports_api.py",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend",
+        "uv run --directory backend coverage report --include='app/llm/*' --fail-under=70"
+      ],
+      "paths": [
+        "frontend/src/api/imports.ts",
+        "frontend/src/components/settings-view.tsx",
+        "frontend/tests/components/settings-view.test.tsx",
+        "backend/app/api/imports.py",
+        "backend/tests/integration/test_imports_api.py"
+      ],
+      "depends_on": [],
+      "related_issues": [
+        {
+          "number": 85,
+          "url": "https://github.com/Collaboration95/talktoit/issues/85",
+          "relationship": "related_only",
+          "note": "Timeout/cancel backend paths already exist; UI reconnection is narrower, persistence belongs to Round 1."
+        }
+      ],
+      "kind": "Task",
+      "estimate": "4\u20138 engineer-hours",
+      "stop_conditions": [
+        "Coordinate with Round 1 import-job ownership changes before merging; this task must not design durable backend recovery.",
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "parent": "TTI-U-GUIDANCE",
+      "sequence": 110,
+      "children": [],
+      "status": "Ready",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZELnEA",
+        "number": 171,
+        "url": "https://github.com/Collaboration95/talktoit/issues/171"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/169",
+      "dependency_urls": [],
+      "child_urls": []
+    },
+    {
+      "area": "UX",
+      "milestone": "Everyday exploration",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-U-TRUST",
+      "title": "Truthful chat and provider status",
+      "objective": "Explain unsupported outcomes, actual egress and local model readiness accurately.",
+      "kind": "Package",
+      "sequence": 1212,
+      "children": [
+        "TTI-U-005",
+        "TTI-U-006",
+        "TTI-U-007",
+        "TTI-U-GATE"
+      ],
+      "parent": "TTI-U-EPIC",
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZELtDg",
+        "number": 172,
+        "url": "https://github.com/Collaboration95/talktoit/issues/172"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/165",
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/173",
+        "https://github.com/Collaboration95/talktoit/issues/174",
+        "https://github.com/Collaboration95/talktoit/issues/175",
+        "https://github.com/Collaboration95/talktoit/issues/176"
+      ]
+    },
+    {
+      "area": "UX",
+      "milestone": "Everyday exploration",
+      "priority": "P2",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "chat-contract",
+      "size": "M",
+      "key": "TTI-U-005",
+      "title": "Explain unsupported, empty, ambiguous and unavailable-model chat outcomes",
+      "objective": "Offer valid next actions for distinct non-success outcomes across HTTP, CLI and UI.",
+      "scope": [
+        "Propagate small validated outcome reasons through the existing response envelope and render actionable local guidance.",
+        "Reuse fallback template and selected-answer follow-up path; add compatible optional model fields and renderer/type tests together only if necessary."
+      ],
+      "out_of_scope": [
+        "Implementing pace rankings, metric comparisons or sleep chat here; free-form provider text as trusted guidance."
+      ],
+      "acceptance": [
+        "Unsupported pace ranking says unsupported and offers a currently supported ranking; starting a model is never proposed as the capability fix.",
+        "No matching measurements, clarification needed and unavailable provider produce distinguishable useful guidance; deterministic supported questions still work without a model.",
+        "HTTP and CLI JSON preserve ChatResponse/template contracts; original question remains visible and unknown template IDs fail safely.",
+        "No raw prompt/SQL/JSON leaks and no unsupported next-action chip is emitted."
+      ],
+      "verification": [
+        "uv run --directory backend pytest -o addopts='' -q tests/unit/test_local_planner.py tests/integration/test_chat.py tests/unit/test_cli_chat.py",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend",
+        "uv run --directory backend coverage report --include='app/llm/*' --fail-under=70",
+        "npm --prefix frontend run test -- --run tests/components/chat-view.test.tsx tests/templates/fallback.test.tsx tests/components/template-dispatch.test.tsx",
+        "make test-frontend",
+        "make lint-frontend",
+        "make typecheck-frontend"
+      ],
+      "paths": [
+        "backend/app/llm/local_planner.py",
+        "backend/app/llm/orchestrator.py",
+        "backend/app/models/chat.py",
+        "backend/app/models/templates.py",
+        "frontend/src/templates/fallback.tsx",
+        "frontend/src/types/templates.ts",
+        "frontend/src/components/chat-view.tsx",
+        "backend/tests/integration/test_chat.py",
+        "frontend/tests/templates/fallback.test.tsx"
+      ],
+      "depends_on": [],
+      "related_issues": [
+        {
+          "number": 100,
+          "url": "https://github.com/Collaboration95/talktoit/issues/100",
+          "relationship": "related_only",
+          "note": "Heading already repaired at 49510a7; outcome semantics are a new narrower contract."
+        }
+      ],
+      "kind": "Task",
+      "estimate": "1\u20132 engineer-days",
+      "stop_conditions": [
+        "If adding a new template is necessary, include its model, dispatch, renderer and state tests in this same PR. Coordinate shared chat-view changes with TTI-U-003.",
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "parent": "TTI-U-TRUST",
+      "sequence": 150,
+      "children": [],
+      "status": "Ready",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZELxyg",
+        "number": 173,
+        "url": "https://github.com/Collaboration95/talktoit/issues/173"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/172",
+      "dependency_urls": [],
+      "child_urls": []
+    },
+    {
+      "area": "UX",
+      "milestone": "Everyday exploration",
+      "priority": "P1",
+      "risk": "Low",
+      "commitment": "Required",
+      "batch": "Today candidates",
+      "conflict_group": "settings-view",
+      "size": "S",
+      "key": "TTI-U-006",
+      "title": "Disclose question egress for hosted planning and narration",
+      "objective": "Make settings accurately explain existing provider projections without changing privacy boundaries.",
+      "scope": [
+        "Update backend egress categories and frontend explanatory copy to include question text for hosted planning and narration.",
+        "Describe actual metadata and compact rounded facts from projection functions; distinguish local/hosted modes using saved effective configuration."
+      ],
+      "out_of_scope": [
+        "Provider selection changes, new consent workflow, collecting telemetry, making provider/model requests."
+      ],
+      "acceptance": [
+        "Hosted planning disclosure explicitly includes question text and dataset metadata; narration additionally identifies compact measurements.",
+        "Local mode advertises no hosted egress; disclosure agrees with planning_projection and narration_projection fixture payloads.",
+        "Raw health rows and route geometry remain excluded and provider redaction tests pass.",
+        "Settings API and UI agree before/after provider-mode save, without exposing keys or private paths."
+      ],
+      "verification": [
+        "uv run --directory backend pytest -o addopts='' -q tests/integration/test_settings_api.py tests/unit/test_provider_redaction.py",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend",
+        "uv run --directory backend coverage report --include='app/llm/*' --fail-under=70",
+        "npm --prefix frontend run test -- --run tests/components/settings-view.test.tsx tests/api/settings.test.ts",
+        "make test-frontend",
+        "make lint-frontend",
+        "make typecheck-frontend"
+      ],
+      "paths": [
+        "backend/app/api/settings.py",
+        "backend/app/llm/provider_projection.py",
+        "frontend/src/components/settings-view.tsx",
+        "backend/tests/integration/test_settings_api.py",
+        "backend/tests/unit/test_provider_redaction.py",
+        "frontend/tests/components/settings-view.test.tsx"
+      ],
+      "depends_on": [],
+      "related_issues": [],
+      "kind": "Task",
+      "estimate": "2\u20134 engineer-hours",
+      "stop_conditions": [
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "parent": "TTI-U-TRUST",
+      "sequence": 60,
+      "children": [],
+      "status": "Ready",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEL3Gw",
+        "number": 174,
+        "url": "https://github.com/Collaboration95/talktoit/issues/174"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/172",
+      "dependency_urls": [],
+      "child_urls": []
+    },
+    {
+      "area": "UX",
+      "milestone": "Everyday exploration",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Today candidates",
+      "conflict_group": "settings-api",
+      "size": "M",
+      "key": "TTI-U-007",
+      "title": "Align local model health reporting with nonblocking Settings probes",
+      "objective": "The local health endpoint and Settings should agree on readiness without stalling unrelated requests.",
+      "scope": [
+        "Reuse a bounded local-provider probe/projection between /api/settings and /api/settings/llm/health; offload blocking local probe/status work.",
+        "Preserve compatible endpoint fields and document effective local readiness for stopped/missing model/external endpoint states.",
+        "Apply the gateway local-endpoint boundary consistently before status/health requests; reject non-loopback local URLs without issuing HTTP."
+      ],
+      "out_of_scope": [
+        "LiteRT lifecycle rewrite, hosted health network probes, retry-loop redesign, global /health semantics."
+      ],
+      "acceptance": [
+        "Stubbed local probe reports identical readiness/status facts in Settings and dedicated model-health endpoint for available, stopped, missing-model, timeout and error cases.",
+        "A deliberately blocked local probe does not block concurrent /health or independent API requests.",
+        "Hosted health reporting remains configuration-only with no external probe; error responses omit secrets/paths.",
+        "Existing UI/API consumers continue to decode the health payload.",
+        "A non-loopback local model URL is rejected before any probe; persisted/default endpoint and model are the same ones used for chat readiness. Test with HTTP fakes and zero real external requests."
+      ],
+      "verification": [
+        "uv run --directory backend pytest -o addopts='' -q tests/integration/test_settings_api.py tests/integration/test_chat_event_loop.py",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend",
+        "uv run --directory backend coverage report --include='app/llm/*' --fail-under=70",
+        "npm --prefix frontend run test -- --run tests/api/settings.test.ts tests/components/settings-view.test.tsx",
+        "make test-frontend",
+        "make lint-frontend",
+        "make typecheck-frontend"
+      ],
+      "paths": [
+        "backend/app/api/settings.py",
+        "backend/app/llm/litert.py",
+        "backend/tests/integration/test_settings_api.py",
+        "backend/tests/integration/test_chat_event_loop.py",
+        "frontend/src/api/settings.ts"
+      ],
+      "depends_on": [],
+      "related_issues": [
+        {
+          "number": 78,
+          "url": "https://github.com/Collaboration95/talktoit/issues/78",
+          "relationship": "related_only",
+          "note": "Main Settings handler already offloads; dedicated LLM-health endpoint still probes inline."
+        },
+        {
+          "number": 107,
+          "url": "https://github.com/Collaboration95/talktoit/issues/107",
+          "relationship": "related_only",
+          "note": "Frontend health cleanup and retry already implemented; do not reopen that repaired scope."
+        }
+      ],
+      "kind": "Task",
+      "estimate": "4\u20136 engineer-hours",
+      "stop_conditions": [
+        "Use mocked local HTTP/probe boundaries only; do not launch a model or contact a hosted provider. Serialize settings.py edits with TTI-U-006.",
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "parent": "TTI-U-TRUST",
+      "sequence": 120,
+      "children": [],
+      "status": "Ready",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEL81w",
+        "number": 175,
+        "url": "https://github.com/Collaboration95/talktoit/issues/175"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/172",
+      "dependency_urls": [],
+      "child_urls": []
+    },
+    {
+      "area": "UX",
+      "milestone": "Everyday exploration",
+      "priority": "P1",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "integrated-acceptance",
+      "size": "M",
+      "key": "TTI-U-GATE",
+      "title": "Verify the complete synthetic daily-use journey",
+      "objective": "Independently verify the integrated epic outcome, not only individual local test results.",
+      "scope": [
+        "Run the complete epic acceptance against merged main using isolated synthetic data.",
+        "Publish a criterion-to-evidence matrix, actual head/merged SHAs, CI links and remaining limitations."
+      ],
+      "out_of_scope": [
+        "New application features, waived gates, personal datasets, hosted-model calls or rubber-stamp closure."
+      ],
+      "acceptance": [
+        "In a real browser with isolated synthetic state, complete empty-dataset onboarding, import, active-job reconnect/cancel, scoped dashboard, zero-results recovery and actionable chat outcomes.",
+        "Reopen after backend restart and verify job-recovery UI truthfully reflects the durable backend state.",
+        "Desktop and phone-width states, keyboard interactions, original-question visibility and route absence disclosure pass with evidence.",
+        "Any failure produces a concrete blocker or follow-up leaf; the gate stays open until required acceptance passes."
+      ],
+      "verification": [
+        "make check-full",
+        "Execute the epic-specific synthetic integration/browser/fault checks above and post the charter completion receipt."
+      ],
+      "paths": [
+        "backend/tests/",
+        "frontend/tests/",
+        "docs/decisions/acceptance-evidence.md (new or linked evidence index)"
+      ],
+      "depends_on": [
+        "TTI-U-001",
+        "TTI-U-002",
+        "TTI-U-003",
+        "TTI-U-004",
+        "TTI-U-005",
+        "TTI-U-006",
+        "TTI-U-007",
+        "TTI-A-005",
+        "TTI-S-009"
+      ],
+      "related_issues": [],
+      "kind": "Gate",
+      "estimate": "One focused independent verification session; fix work returns to leaf issues",
+      "stop_conditions": [
+        "Do not substitute local green tests for missing required CI/browser/interrupt evidence.",
+        "Return exact failing acceptance and reproducer; do not broaden product scope or close unfinished issues."
+      ],
+      "parent": "TTI-U-TRUST",
+      "sequence": 410,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEMBoA",
+        "number": 176,
+        "url": "https://github.com/Collaboration95/talktoit/issues/176"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/172",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/167",
+        "https://github.com/Collaboration95/talktoit/issues/168",
+        "https://github.com/Collaboration95/talktoit/issues/170",
+        "https://github.com/Collaboration95/talktoit/issues/171",
+        "https://github.com/Collaboration95/talktoit/issues/173",
+        "https://github.com/Collaboration95/talktoit/issues/174",
+        "https://github.com/Collaboration95/talktoit/issues/175",
+        "https://github.com/Collaboration95/talktoit/issues/197",
+        "https://github.com/Collaboration95/talktoit/issues/163"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Performance",
+      "milestone": "Measured performance",
+      "priority": "P2",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-P-EPIC",
+      "title": "Round 3 \u2014 Measured performance with parity",
+      "objective": "Measure cold/warm latency, request counts, production browser load, ingestion wall time and aggregate process memory on representative synthetic data before selecting optimizations. Report medians/p95 and comparable machine/data metadata; no claimed speedup without evidence. Proposed roadmap budgets are targets, not observed guarantees. Candidates with no demonstrated benefit return a no-go decision, not speculative rewrites. External dependency keys are symbolic and parent must resolve them before Ready.",
+      "kind": "Epic",
+      "sequence": 1300,
+      "children": [
+        "TTI-P-MEASURE",
+        "TTI-P-CHAT",
+        "TTI-P-EXPLORE"
+      ],
+      "parent": null,
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEMHGg",
+        "number": 177,
+        "url": "https://github.com/Collaboration95/talktoit/issues/177"
+      },
+      "parent_url": null,
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/178",
+        "https://github.com/Collaboration95/talktoit/issues/182",
+        "https://github.com/Collaboration95/talktoit/issues/185"
+      ]
+    },
+    {
+      "area": "Performance",
+      "milestone": "Measured performance",
+      "priority": "P2",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-P-MEASURE",
+      "title": "Baseline and ingestion memory candidates",
+      "objective": "Build evidence once; validate XML cleanup and bounded byte scanning separately without weakening reconciliation or worker invariance.",
+      "kind": "Package",
+      "sequence": 1310,
+      "children": [
+        "TTI-P-001",
+        "TTI-P-007",
+        "TTI-P-008"
+      ],
+      "parent": "TTI-P-EPIC",
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEMMMA",
+        "number": 178,
+        "url": "https://github.com/Collaboration95/talktoit/issues/178"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/177",
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/179",
+        "https://github.com/Collaboration95/talktoit/issues/180",
+        "https://github.com/Collaboration95/talktoit/issues/181"
+      ]
+    },
+    {
+      "area": "Performance",
+      "milestone": "Measured performance",
+      "priority": "P1",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Today candidates",
+      "conflict_group": "benchmark-harness",
+      "size": "M",
+      "key": "TTI-P-001",
+      "title": "Establish a reproducible representative synthetic performance baseline",
+      "objective": "Choose measured priorities and budgets before optimizing candidate slow paths.",
+      "scope": [
+        "Extend the existing synthetic benchmark harness with repeatable cold/warm HTTP chat, dashboard requests/browser load, ingest wall time and aggregate parent-plus-worker memory.",
+        "Use fixed synthetic sizes/seeds, supported Node 20, disclosed machine/toolchain, warmup/repetition rules; retain existing tiny policy checks.",
+        "Record a bounded implementation decision for each candidate; compare report bundle size as historical evidence, not a current load-time measurement.",
+        "Record full ingestion wall time including XML validation, compatibility checks and activation separately; the current total is captured before the final compatibility gate.",
+        "Inspect latest/ranked/paginated workout joins with synthetic EXPLAIN ANALYZE and record whether filtered aggregates or an import-built summary table are justified; do not assume DuckDB executes the full subqueries."
+      ],
+      "out_of_scope": [
+        "Personal-export benchmarks, live inference, automatic adoption of every candidate, machine-independent hard latency promises."
+      ],
+      "acceptance": [
+        "A documented root command (make bench plus any new explicit slow target) reproduces a small and a representative synthetic case with median/p95, sample counts and process-tree memory method/units.",
+        "Report separates provider, local query and HTTP cost; records dashboard request counts, initial JS bytes and browser load evidence or explicit unavailable-browser limitation.",
+        "Set ingestion worker/throughput/memory budgets only from observed runs; label roadmap p95 targets proposed until calibrated.",
+        "Publish results without paths, question text or health values; choose go/no-go per SQL bucketing, profile reuse, write scopes, bundle, XML retention and worker copies."
+      ],
+      "verification": [
+        "make bench",
+        "make check",
+        "make build",
+        "Run the documented new representative synthetic benchmark command twice and compare machine/seed/size/sample metadata."
+      ],
+      "paths": [
+        "backend/app/bench/runner.py",
+        "backend/tests/bench/test_benchmarks.py",
+        "backend/tests/bench/test_phase23_benchmarks.py",
+        "Makefile",
+        "docs/ENGINEERING.md",
+        "frontend/package.json",
+        "backend/app/ingest/coordinator.py"
+      ],
+      "depends_on": [
+        "TTI-M-001"
+      ],
+      "related_issues": [],
+      "kind": "Spike",
+      "estimate": "6\u20138 engineer-hours",
+      "stop_conditions": [
+        "Bound investigation to one day; return reproducible baseline and candidate decisions even if no optimization is justified. Never use best-of timing as median/p95.",
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "parent": "TTI-P-MEASURE",
+      "sequence": 100,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEMRLw",
+        "number": 179,
+        "url": "https://github.com/Collaboration95/talktoit/issues/179"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/178",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/140"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Performance",
+      "milestone": "Measured performance",
+      "priority": "P2",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "ingest-validation",
+      "size": "M",
+      "key": "TTI-P-007",
+      "title": "Bound XML syntax-validation memory without weakening its gate",
+      "objective": "Remove retained cleared-element shells if synthetic profiling confirms validation retention.",
+      "scope": [
+        "Change only well-formedness validation tree cleanup using safe lxml streaming practices.",
+        "Retain malformed/truncated/non-HealthData rejection before byte scanning and activation."
+      ],
+      "out_of_scope": [
+        "Skipping validation, parser replacement, parallelism defaults, activation lifecycle."
+      ],
+      "acceptance": [
+        "If selected: Representative synthetic validation runs show lower retained/peak memory with documented wall-time tradeoff.",
+        "If selected: Nested records, metadata and workouts plus malformed/truncated documents keep existing accept/reject behavior.",
+        "If selected: Official V2 import row counts, known values and child relationships are identical; worker-invariance and ingestion coverage gates pass.",
+        "If not selected by TTI-P-001: publish the measurement-based no-change decision, retained correctness/budget evidence and explicit deferred trigger; no implementation improvement is claimed."
+      ],
+      "verification": [
+        "uv run --directory backend pytest -o addopts='' -q tests/integration/test_ingest_phase_contracts.py tests/integration/test_ingest_v2.py tests/integration/test_worker_invariance.py",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend",
+        "uv run --directory backend coverage report --include='app/llm/*' --fail-under=70",
+        "uv run --directory backend coverage report --include='app/ingest/*' --fail-under=90",
+        "make bench"
+      ],
+      "paths": [
+        "backend/app/ingest/compatibility.py",
+        "backend/tests/integration/test_ingest_phase_contracts.py",
+        "backend/tests/integration/test_ingest_v2.py",
+        "backend/tests/bench/"
+      ],
+      "depends_on": [
+        "TTI-P-001"
+      ],
+      "related_issues": [],
+      "kind": "Task",
+      "estimate": "4\u20138 engineer-hours",
+      "stop_conditions": [
+        "If validation is not a measured memory contributor, return no-go with evidence; never bypass syntactic validation for throughput. Coordinate importer ownership with safety lane.",
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "decision_gate": "Candidate selection is gated by TTI-P-001. If selected, satisfy every implementation criterion below. If the baseline rejects this optimization, the accepted alternative is a documented no-change disposition with reproducible measurements and rationale; do not claim an improvement. The performance gate evaluates the selected portfolio, not speculative changes.",
+      "parent": "TTI-P-MEASURE",
+      "sequence": 310,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEMV1w",
+        "number": 180,
+        "url": "https://github.com/Collaboration95/talktoit/issues/180"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/178",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/179"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Performance",
+      "milestone": "Measured performance",
+      "priority": "P2",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "ingest-worker",
+      "size": "M",
+      "key": "TTI-P-008",
+      "title": "Avoid full worker-range copies in V2 byte scanning",
+      "objective": "Reduce aggregate worker memory if measured range copies dominate synthetic ingestion.",
+      "scope": [
+        "Scan mmap ranges without full assigned-range byte copies while preserving regex match bounds, row IDs and child parsing.",
+        "Limit changes to worker scanning and focused benchmark/fixture coverage."
+      ],
+      "out_of_scope": [
+        "Worker-count tuning without measurement, new XML parser, changing reconciliation or activation."
+      ],
+      "acceptance": [
+        "If selected: Boundary-heavy synthetic records/workouts/child attributes produce exact table counts and known values across 1/2/4 workers.",
+        "If selected: Nonzero start/end ranges never match outside assignment or lose boundary elements; existing worker invariance remains exact.",
+        "If selected: Record aggregate parent-plus-worker peak memory and throughput before/after on identical corpus; retain change only with selected measured benefit.",
+        "If not selected by TTI-P-001: publish the measurement-based no-change decision, retained correctness/budget evidence and explicit deferred trigger; no implementation improvement is claimed."
+      ],
+      "verification": [
+        "uv run --directory backend pytest -o addopts='' -q tests/integration/test_ingest_v2.py tests/integration/test_ingest_attribute_order.py tests/integration/test_ingest_child_attribute_order.py tests/integration/test_worker_invariance.py",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend",
+        "uv run --directory backend coverage report --include='app/llm/*' --fail-under=70",
+        "uv run --directory backend coverage report --include='app/ingest/*' --fail-under=90",
+        "make bench"
+      ],
+      "paths": [
+        "backend/app/ingest/bytescan.py",
+        "backend/app/ingest/coordinator.py",
+        "backend/tests/integration/test_ingest_v2.py",
+        "backend/tests/integration/test_worker_invariance.py",
+        "backend/tests/bench/"
+      ],
+      "depends_on": [
+        "TTI-P-001",
+        "TTI-S-001"
+      ],
+      "related_issues": [],
+      "kind": "Task",
+      "estimate": "6\u20138 engineer-hours",
+      "stop_conditions": [
+        "If mmap bounded matching changes regex semantics or assignment ownership, stop and document a narrower alternative. Do not combine with Round 1 shard-directory changes.",
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "decision_gate": "Candidate selection is gated by TTI-P-001. If selected, satisfy every implementation criterion below. If the baseline rejects this optimization, the accepted alternative is a documented no-change disposition with reproducible measurements and rationale; do not claim an improvement. The performance gate evaluates the selected portfolio, not speculative changes.",
+      "parent": "TTI-P-MEASURE",
+      "sequence": 320,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEMbYA",
+        "number": 181,
+        "url": "https://github.com/Collaboration95/talktoit/issues/181"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/178",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/179",
+        "https://github.com/Collaboration95/talktoit/issues/153"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Performance",
+      "milestone": "Measured performance",
+      "priority": "P2",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-P-CHAT",
+      "title": "Reduce repeated chat preparation work",
+      "objective": "Shorten state write scopes and reuse dataset-bound profiles only when measured and identity-safe.",
+      "kind": "Package",
+      "sequence": 1311,
+      "children": [
+        "TTI-P-002",
+        "TTI-P-003"
+      ],
+      "parent": "TTI-P-EPIC",
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEMgeg",
+        "number": 182,
+        "url": "https://github.com/Collaboration95/talktoit/issues/182"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/177",
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/183",
+        "https://github.com/Collaboration95/talktoit/issues/184"
+      ]
+    },
+    {
+      "area": "Performance",
+      "milestone": "Measured performance",
+      "priority": "P2",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "chat-preparation",
+      "size": "M",
+      "key": "TTI-P-002",
+      "title": "Release conversation write locks before slow chat preparation",
+      "objective": "Unrelated state writers should remain responsive while profiling or semantic preparation runs.",
+      "scope": [
+        "Split pending-turn persistence and later finalization into short committed sessions around expensive DuckDB/profile/follow-up preparation.",
+        "Preserve cancellation handles, canonical plans, parent selection, history ordering and cache behavior."
+      ],
+      "out_of_scope": [
+        "New state store, async database library, changing dataset-generation lifecycle."
+      ],
+      "acceptance": [
+        "If selected: A deterministic barrier holds slow preparation while an unrelated app-state writer completes before the barrier releases; report median/p95 vs TTI-P-001.",
+        "If selected: Pending turns remain visible and terminate once on completion/cancel/failure; no orphan/duplicate finalized turns.",
+        "If selected: Exact-cache hits still bypass profiling; cache/follow-up/conversation isolation remains unchanged.",
+        "If selected: Record performance gain against baseline; roadmap 250 ms target is reference-machine guidance, not a flaky global unit-test threshold.",
+        "If not selected by TTI-P-001: publish the measurement-based no-change decision, retained correctness/budget evidence and explicit deferred trigger; no implementation improvement is claimed."
+      ],
+      "verification": [
+        "uv run --directory backend pytest -o addopts='' -q tests/integration/test_chat_event_loop.py tests/integration/test_concurrency.py tests/integration/test_conversations_api.py tests/integration/test_chat_cache_revalidation.py",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend",
+        "uv run --directory backend coverage report --include='app/llm/*' --fail-under=70",
+        "make bench"
+      ],
+      "paths": [
+        "backend/app/api/chat.py",
+        "backend/app/state/app_state.py",
+        "backend/tests/integration/test_chat_event_loop.py",
+        "backend/tests/integration/test_concurrency.py"
+      ],
+      "depends_on": [
+        "TTI-P-001",
+        "TTI-S-007"
+      ],
+      "related_issues": [
+        {
+          "number": 79,
+          "url": "https://github.com/Collaboration95/talktoit/issues/79",
+          "relationship": "related_only",
+          "note": "Event-loop write defects may be repaired; this task specifically bounds write-lock duration."
+        }
+      ],
+      "kind": "Task",
+      "estimate": "6\u20138 engineer-hours",
+      "stop_conditions": [
+        "Coordinate with Round 1 request-generation owner before changing active-dataset reads; do not weaken cancellation or transaction atomicity for speed.",
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "decision_gate": "Candidate selection is gated by TTI-P-001. If selected, satisfy every implementation criterion below. If the baseline rejects this optimization, the accepted alternative is a documented no-change disposition with reproducible measurements and rationale; do not claim an improvement. The performance gate evaluates the selected portfolio, not speculative changes.",
+      "parent": "TTI-P-CHAT",
+      "sequence": 260,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEMmhw",
+        "number": 183,
+        "url": "https://github.com/Collaboration95/talktoit/issues/183"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/182",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/179",
+        "https://github.com/Collaboration95/talktoit/issues/161"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Performance",
+      "milestone": "Measured performance",
+      "priority": "P2",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "chat-preparation",
+      "size": "M",
+      "key": "TTI-P-003",
+      "title": "Reuse dataset profiles across uncached questions safely",
+      "objective": "Avoid recomputing the same dataset scan for each distinct question.",
+      "scope": [
+        "Share an immutable dataset-scoped profile cache with chat preparation using the existing dashboard cache design.",
+        "Key by generation/database identity, include bounded invalidation/eviction and keep CLI/HTTP identity boundaries explicit."
+      ],
+      "out_of_scope": [
+        "New answer semantic cache, cross-dataset reuse, changing profile facts or planner behavior."
+      ],
+      "acceptance": [
+        "If selected: Different uncached questions against one unchanged generation reuse one profile computation; exact answer-cache hits still do zero scans.",
+        "If selected: Import activation, deletion and CLI database override cannot receive a previous generation profile; concurrent callers cannot mutate cached objects.",
+        "If selected: Eviction is bounded, thread-safe and deterministic; before/after median/p95 and profile-call counts show the selected benefit.",
+        "If not selected by TTI-P-001: publish the measurement-based no-change decision, retained correctness/budget evidence and explicit deferred trigger; no implementation improvement is claimed."
+      ],
+      "verification": [
+        "uv run --directory backend pytest -o addopts='' -q tests/integration/test_dashboard_profile_cache.py tests/integration/test_chat_cache_revalidation.py tests/unit/test_cli_chat.py tests/integration/test_concurrency.py",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend",
+        "uv run --directory backend coverage report --include='app/llm/*' --fail-under=70",
+        "make bench"
+      ],
+      "paths": [
+        "backend/app/db/dashboard_cache.py",
+        "backend/app/db/data_profile.py",
+        "backend/app/api/chat.py",
+        "backend/app/llm/orchestrator.py",
+        "backend/app/cli/chat.py",
+        "backend/tests/integration/test_dashboard_profile_cache.py"
+      ],
+      "depends_on": [
+        "TTI-P-001",
+        "TTI-S-007",
+        "TTI-S-002"
+      ],
+      "related_issues": [
+        {
+          "number": 81,
+          "url": "https://github.com/Collaboration95/talktoit/issues/81",
+          "relationship": "related_only",
+          "note": "Profile handoff within one turn already exists; remaining candidate is reuse across distinct cache misses."
+        },
+        {
+          "number": 113,
+          "url": "https://github.com/Collaboration95/talktoit/issues/113",
+          "relationship": "related_only",
+          "note": "Mutable cache concerns are related; revalidate independently."
+        }
+      ],
+      "kind": "Task",
+      "estimate": "6\u20138 engineer-hours",
+      "stop_conditions": [
+        "Parent must resolve external stable keys and confirm generation ownership before Ready. If baseline cannot justify reuse, close this candidate by documented no-go rather than adding a cache.",
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "decision_gate": "Candidate selection is gated by TTI-P-001. If selected, satisfy every implementation criterion below. If the baseline rejects this optimization, the accepted alternative is a documented no-change disposition with reproducible measurements and rationale; do not claim an improvement. The performance gate evaluates the selected portfolio, not speculative changes.",
+      "parent": "TTI-P-CHAT",
+      "sequence": 270,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEMrNg",
+        "number": 184,
+        "url": "https://github.com/Collaboration95/talktoit/issues/184"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/182",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/179",
+        "https://github.com/Collaboration95/talktoit/issues/161",
+        "https://github.com/Collaboration95/talktoit/issues/154"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Performance",
+      "milestone": "Measured performance",
+      "priority": "P2",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-P-EXPLORE",
+      "title": "Remove unnecessary dashboard and chart work",
+      "objective": "Isolate volume requests, defer unused chart code and push numeric aggregation into SQL only with parity and measured benefit.",
+      "kind": "Package",
+      "sequence": 1312,
+      "children": [
+        "TTI-P-004",
+        "TTI-P-005",
+        "TTI-P-006",
+        "TTI-P-GATE"
+      ],
+      "parent": "TTI-P-EPIC",
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEMwqg",
+        "number": 185,
+        "url": "https://github.com/Collaboration95/talktoit/issues/185"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/177",
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/186",
+        "https://github.com/Collaboration95/talktoit/issues/187",
+        "https://github.com/Collaboration95/talktoit/issues/188",
+        "https://github.com/Collaboration95/talktoit/issues/189"
+      ]
+    },
+    {
+      "area": "Performance",
+      "milestone": "Measured performance",
+      "priority": "P2",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "dashboard-view",
+      "size": "M",
+      "key": "TTI-P-004",
+      "title": "Fetch only training volume when its granularity changes",
+      "objective": "A week/month volume toggle should not restart all nine dashboard panel requests.",
+      "scope": [
+        "Separate training-volume effect/request lifecycle from scope-wide panel loading while preserving cancellation and scope generations."
+      ],
+      "out_of_scope": [
+        "New data-fetching framework, retries redesign, unrelated panel caching."
+      ],
+      "acceptance": [
+        "If selected: Toggling week/month requests volume only; summary/workouts/steps/heart/sleep/stages/capabilities/status request counts do not change.",
+        "If selected: Scope changes still refresh all scoped panels; rapid toggle-plus-scope change cannot paint stale volume.",
+        "If selected: Volume loading/error/retry states affect only volume and preserve other panels; compare request counts and latency with baseline.",
+        "If not selected by TTI-P-001: publish the measurement-based no-change decision, retained correctness/budget evidence and explicit deferred trigger; no implementation improvement is claimed."
+      ],
+      "verification": [
+        "npm --prefix frontend run test -- --run tests/components/dashboard-view.test.tsx tests/api/dashboard.test.ts",
+        "make test-frontend",
+        "make lint-frontend",
+        "make typecheck-frontend",
+        "make build"
+      ],
+      "paths": [
+        "frontend/src/components/dashboard-view.tsx",
+        "frontend/tests/components/dashboard-view.test.tsx"
+      ],
+      "depends_on": [
+        "TTI-P-001",
+        "TTI-U-001",
+        "TTI-U-002"
+      ],
+      "related_issues": [],
+      "kind": "Task",
+      "estimate": "3\u20135 engineer-hours",
+      "stop_conditions": [
+        "Serialize with TTI-U-001/002 because all edit dashboard-view.tsx; rebase and rerun its tests before review.",
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "decision_gate": "Candidate selection is gated by TTI-P-001. If selected, satisfy every implementation criterion below. If the baseline rejects this optimization, the accepted alternative is a documented no-change disposition with reproducible measurements and rationale; do not claim an improvement. The performance gate evaluates the selected portfolio, not speculative changes.",
+      "parent": "TTI-P-EXPLORE",
+      "sequence": 280,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEM2cQ",
+        "number": 186,
+        "url": "https://github.com/Collaboration95/talktoit/issues/186"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/185",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/179",
+        "https://github.com/Collaboration95/talktoit/issues/167",
+        "https://github.com/Collaboration95/talktoit/issues/168"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Performance",
+      "milestone": "Measured performance",
+      "priority": "P2",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "chart-loading",
+      "size": "M",
+      "key": "TTI-P-005",
+      "title": "Defer chart dependencies from the initial chat bundle",
+      "objective": "Reduce production initial JS and measured cold-load work using existing lazy boundaries.",
+      "scope": [
+        "Inspect production chunk graph; lazy-load chart renderers/dependencies only at actual chart use with Suspense/error states.",
+        "Keep existing tab laziness and template dispatch; change manual chunks only when measured graph supports it."
+      ],
+      "out_of_scope": [
+        "Chart-library migration, visual redesign, replacing all charts, claiming bytes alone prove latency."
+      ],
+      "acceptance": [
+        "If selected: Record before/after production initial JS/gzip and representative cold-load timing; first chat render avoids unused chart code.",
+        "If selected: First-use trend/comparison/workout-route charts still render, including loading/empty/error/fallback states.",
+        "If selected: The original question remains visible during lazy loads; failed chart loading offers recovery and does not crash other answers.",
+        "If selected: No material first-chart or cached-navigation regression beyond noise disclosed by baseline.",
+        "If not selected by TTI-P-001: publish the measurement-based no-change decision, retained correctness/budget evidence and explicit deferred trigger; no implementation improvement is claimed."
+      ],
+      "verification": [
+        "npm --prefix frontend run test -- --run tests/components/template-dispatch.test.tsx tests/templates/trend-chart.test.tsx tests/templates/comparison.test.tsx tests/components/workout-detail.test.tsx",
+        "make test-frontend",
+        "make lint-frontend",
+        "make typecheck-frontend",
+        "make build",
+        "Inspect built chunk imports and exercise cold chat then first chart using synthetic data in a local browser."
+      ],
+      "paths": [
+        "frontend/src/components/template-dispatch.tsx",
+        "frontend/src/templates/trend-chart.tsx",
+        "frontend/src/templates/comparison.tsx",
+        "frontend/src/templates/workout-card.tsx",
+        "frontend/src/components/workout-detail.tsx",
+        "frontend/src/charts/",
+        "frontend/vite.config.ts"
+      ],
+      "depends_on": [
+        "TTI-P-001",
+        "TTI-M-006",
+        "TTI-M-007"
+      ],
+      "related_issues": [],
+      "kind": "Task",
+      "estimate": "4\u20138 engineer-hours",
+      "stop_conditions": [
+        "If selected chart boundary creates a library/runtime redesign, stop with the chunk graph and a narrower proposal. Coordinate workout-detail edits with TTI-A-005.",
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "decision_gate": "Candidate selection is gated by TTI-P-001. If selected, satisfy every implementation criterion below. If the baseline rejects this optimization, the accepted alternative is a documented no-change disposition with reproducible measurements and rationale; do not claim an improvement. The performance gate evaluates the selected portfolio, not speculative changes.",
+      "parent": "TTI-P-EXPLORE",
+      "sequence": 290,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEM7uw",
+        "number": 187,
+        "url": "https://github.com/Collaboration95/talktoit/issues/187"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/185",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/179",
+        "https://github.com/Collaboration95/talktoit/issues/146",
+        "https://github.com/Collaboration95/talktoit/issues/147"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Performance",
+      "milestone": "Measured performance",
+      "priority": "P2",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "analytics-queries",
+      "size": "M",
+      "key": "TTI-P-006",
+      "title": "Push numeric trend aggregation into DuckDB with output parity",
+      "objective": "Reduce transferred observations and Python allocations for large numeric trends when baseline supports it.",
+      "scope": [
+        "Keep get_trend API and validated registry; move numeric bucketing/sums/averages into parameterized SQL in queries.py.",
+        "Preserve local timezone/day/week/month boundaries, units, ordering and explicit missing buckets."
+      ],
+      "out_of_scope": [
+        "Sleep interval-union rewrite, new metric semantics, arbitrary SQL, database migration."
+      ],
+      "acceptance": [
+        "If selected: Synthetic oracle cases match pre-change series for day/week/month, DST and offset boundaries, sparse windows, zeros and empty input.",
+        "If selected: SUM/AVG and current unit semantics agree; missing measurements remain null rather than zero.",
+        "If selected: Representative before/after transfer count, memory, median/p95 show benefit with no output drift; if not, deliver a documented no-go without speculative optimization.",
+        "If not selected by TTI-P-001: publish the measurement-based no-change decision, retained correctness/budget evidence and explicit deferred trigger; no implementation improvement is claimed."
+      ],
+      "verification": [
+        "uv run --directory backend pytest -o addopts='' -q tests/integration/test_queries.py tests/integration/test_dashboard.py tests/unit/test_metric_catalog.py",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend",
+        "uv run --directory backend coverage report --include='app/llm/*' --fail-under=70",
+        "make bench"
+      ],
+      "paths": [
+        "backend/app/db/queries.py",
+        "backend/app/db/aggregations.py",
+        "backend/app/analytics/registry.py",
+        "backend/tests/integration/test_queries.py",
+        "backend/tests/bench/"
+      ],
+      "depends_on": [
+        "TTI-P-001"
+      ],
+      "related_issues": [],
+      "kind": "Task",
+      "estimate": "6\u20138 engineer-hours",
+      "stop_conditions": [
+        "Baseline go decision required before Ready; reject changes to timezone, aggregation or missingness semantics. Serialize with TTI-A-002/004 query changes.",
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "decision_gate": "Candidate selection is gated by TTI-P-001. If selected, satisfy every implementation criterion below. If the baseline rejects this optimization, the accepted alternative is a documented no-change disposition with reproducible measurements and rationale; do not claim an improvement. The performance gate evaluates the selected portfolio, not speculative changes.",
+      "parent": "TTI-P-EXPLORE",
+      "sequence": 300,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZENB4w",
+        "number": 188,
+        "url": "https://github.com/Collaboration95/talktoit/issues/188"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/185",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/179"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Performance",
+      "milestone": "Measured performance",
+      "priority": "P2",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "integrated-acceptance",
+      "size": "M",
+      "key": "TTI-P-GATE",
+      "title": "Verify the measured performance portfolio",
+      "objective": "Independently verify the integrated epic outcome, not only individual local test results.",
+      "scope": [
+        "Run the complete epic acceptance against merged main using isolated synthetic data.",
+        "Publish a criterion-to-evidence matrix, actual head/merged SHAs, CI links and remaining limitations."
+      ],
+      "out_of_scope": [
+        "New application features, waived gates, personal datasets, hosted-model calls or rubber-stamp closure."
+      ],
+      "acceptance": [
+        "Re-run identical representative synthetic cases on the documented reference setup; compare median/p95, samples, query/request counts, bundle and aggregate process memory.",
+        "Selected optimizations show justified improvement without count/value/timezone/missingness regressions; rejected candidates have reproducible no-change dispositions.",
+        "No tiny-fixture or historic projected ingestion timing is represented as a full-export performance guarantee.",
+        "Any failure produces a concrete blocker or follow-up leaf; the gate stays open until required acceptance passes."
+      ],
+      "verification": [
+        "make check-full",
+        "make bench",
+        "Execute the epic-specific synthetic integration/browser/fault checks above and post the charter completion receipt."
+      ],
+      "paths": [
+        "backend/tests/",
+        "frontend/tests/",
+        "docs/decisions/acceptance-evidence.md (new or linked evidence index)"
+      ],
+      "depends_on": [
+        "TTI-P-001",
+        "TTI-P-002",
+        "TTI-P-003",
+        "TTI-P-004",
+        "TTI-P-005",
+        "TTI-P-006",
+        "TTI-P-007",
+        "TTI-P-008"
+      ],
+      "related_issues": [],
+      "kind": "Gate",
+      "estimate": "One focused independent verification session; fix work returns to leaf issues",
+      "stop_conditions": [
+        "Do not substitute local green tests for missing required CI/browser/interrupt evidence.",
+        "Return exact failing acceptance and reproducer; do not broaden product scope or close unfinished issues."
+      ],
+      "parent": "TTI-P-EXPLORE",
+      "sequence": 420,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZENHgQ",
+        "number": 189,
+        "url": "https://github.com/Collaboration95/talktoit/issues/189"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/185",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/179",
+        "https://github.com/Collaboration95/talktoit/issues/183",
+        "https://github.com/Collaboration95/talktoit/issues/184",
+        "https://github.com/Collaboration95/talktoit/issues/186",
+        "https://github.com/Collaboration95/talktoit/issues/187",
+        "https://github.com/Collaboration95/talktoit/issues/188",
+        "https://github.com/Collaboration95/talktoit/issues/180",
+        "https://github.com/Collaboration95/talktoit/issues/181"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Analytics",
+      "milestone": "Expanded measured analytics",
+      "priority": "P2",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-A-EPIC",
+      "title": "Round 4 \u2014 Measured analytics and honest route availability",
+      "objective": "Expose sleep chat and steps/resting-HR/HRV period comparisons through the existing validated local query pipeline. Resolve new semantic/contracts through bounded spikes, then deliver complete vertical slices. Route absence disclosure is an independent safe early UX task. Companion/ZIP import remains a later gated feasibility decision. No new database, UI rewrite, multi-agent runtime, public hosting or diagnostic claims.",
+      "kind": "Epic",
+      "sequence": 1400,
+      "children": [
+        "TTI-A-ANSWERS",
+        "TTI-A-ROUTES"
+      ],
+      "parent": null,
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZENM4w",
+        "number": 190,
+        "url": "https://github.com/Collaboration95/talktoit/issues/190"
+      },
+      "parent_url": null,
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/191",
+        "https://github.com/Collaboration95/talktoit/issues/196"
+      ]
+    },
+    {
+      "area": "Analytics",
+      "milestone": "Expanded measured analytics",
+      "priority": "P2",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-A-ANSWERS",
+      "title": "Sleep trends and metric comparisons",
+      "objective": "Decide precise measurement contracts, then implement query/tool/model/renderer/tests together with CLI/HTTP parity.",
+      "kind": "Package",
+      "sequence": 1410,
+      "children": [
+        "TTI-A-001",
+        "TTI-A-002",
+        "TTI-A-003",
+        "TTI-A-004"
+      ],
+      "parent": "TTI-A-EPIC",
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZENQQA",
+        "number": 191,
+        "url": "https://github.com/Collaboration95/talktoit/issues/191"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/190",
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/192",
+        "https://github.com/Collaboration95/talktoit/issues/193",
+        "https://github.com/Collaboration95/talktoit/issues/194",
+        "https://github.com/Collaboration95/talktoit/issues/195"
+      ]
+    },
+    {
+      "area": "Analytics",
+      "milestone": "Expanded measured analytics",
+      "priority": "P2",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Later",
+      "conflict_group": "sleep-contract",
+      "size": "S",
+      "key": "TTI-A-001",
+      "title": "Decide shared sleep measurement semantics and minimal chat contract",
+      "objective": "Bound the sleep analytics decision before exposing a new query capability.",
+      "scope": [
+        "Compare current dashboard total/stage queries and metric catalog using synthetic overlapping/staged/unstaged/source/timezone cases.",
+        "Write a short ADR with explicit existing behavior, any discrepancy, interval-union/stage/missingness decisions and a minimal reuse or additive template contract."
+      ],
+      "out_of_scope": [
+        "Medical sleep quality scores, new sensor data, schema migration, implementing sleep chat in the spike."
+      ],
+      "acceptance": [
+        "Decision specifies source scopes, timezone, overnight attribution, overlap union, awake/in-bed inclusion and null semantics with executable synthetic examples.",
+        "Identify whether total and stages actually disagree at 49510a7; do not silently redefine sleep to make tests pass.",
+        "Choose a shared query under queries.py, validated registry/tool path and renderer contract; preserve local-only sleep metric egress policy.",
+        "Provide bounded implementation checklist for TTI-A-002; any unresolved product-sensitive discrepancy has explicit alternatives and stays local to sleep work."
+      ],
+      "verification": [
+        "uv run --directory backend pytest -o addopts='' -q tests/unit/test_sleep_stages.py tests/integration/test_dashboard.py tests/integration/test_dashboard_contracts.py",
+        "git diff --check",
+        "Review the new ADR against metric_catalog.py and both sleep endpoint queries."
+      ],
+      "paths": [
+        "backend/app/api/dashboard.py",
+        "backend/app/db/queries.py",
+        "backend/app/analytics/metric_catalog.py",
+        "backend/tests/unit/test_sleep_stages.py",
+        "backend/tests/integration/test_dashboard_contracts.py",
+        "docs/decisions/sleep-chat-contract.md (new decision artifact)"
+      ],
+      "depends_on": [],
+      "related_issues": [
+        {
+          "number": 121,
+          "url": "https://github.com/Collaboration95/talktoit/issues/121",
+          "relationship": "related_only",
+          "note": "Add endpoint agreement checks within the vertical slice if this missing coverage is confirmed; do not create a duplicate tests-only task."
+        }
+      ],
+      "kind": "Spike",
+      "estimate": "2\u20134 engineer-hours",
+      "stop_conditions": [
+        "Cap at four hours; record a bounded decision or precise sleep-only objection. Do not block unrelated UX/performance work.",
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "parent": "TTI-A-ANSWERS",
+      "sequence": 330,
+      "children": [],
+      "status": "Ready",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZENUwQ",
+        "number": 192,
+        "url": "https://github.com/Collaboration95/talktoit/issues/192"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/191",
+      "dependency_urls": [],
+      "child_urls": []
+    },
+    {
+      "area": "Analytics",
+      "milestone": "Expanded measured analytics",
+      "priority": "P2",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Later",
+      "conflict_group": "analytics-queries",
+      "size": "M",
+      "key": "TTI-A-002",
+      "title": "Answer sleep trend questions with dashboard-equivalent measurements",
+      "objective": "Deliver sleep chat as one tested full-stack query slice using the decided contract.",
+      "scope": [
+        "Extract/reuse shared sleep calculations in queries.py and make dashboard endpoints consume that logic where required for parity.",
+        "Register a validated sleep trend tool/local question pattern; reuse trend_chart where sufficient and update model/renderer/tests together if additive fields are required.",
+        "Route CLI and HTTP through the same orchestrator and keep sleep payloads local under catalog privacy policy."
+      ],
+      "out_of_scope": [
+        "Sleep diagnosis, sleep scores, new data import, provider prompts with raw intervals."
+      ],
+      "acceptance": [
+        "A supported sleep-duration question returns a structured trend; relative dates anchor to the dataset, with explicit periods/granularity handled as decided.",
+        "Identical synthetic scope produces matching chat/dashboard totals; overlapping intervals are never double-counted and stage partitions remain bounded by asleep union where that policy applies.",
+        "Sparse/empty/unstaged/source-filtered and overnight cases follow TTI-A-001; missing values remain null and language describes measured facts.",
+        "CLI JSON/HTTP envelopes agree; frontend shows loading/success/empty/error/unknown-template fallback and keeps question visible.",
+        "Provider projection tests reject raw sleep intervals and do not accidentally broaden local-only sleep egress."
+      ],
+      "verification": [
+        "uv run --directory backend pytest -o addopts='' -q tests/unit/test_sleep_stages.py tests/unit/test_local_planner.py tests/unit/test_cli_chat.py tests/integration/test_chat.py tests/integration/test_dashboard_contracts.py tests/unit/test_provider_redaction.py",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend",
+        "uv run --directory backend coverage report --include='app/llm/*' --fail-under=70",
+        "npm --prefix frontend run test -- --run tests/templates/trend-chart.test.tsx tests/components/chat-view.test.tsx tests/components/template-dispatch.test.tsx",
+        "make test-frontend",
+        "make lint-frontend",
+        "make typecheck-frontend"
+      ],
+      "paths": [
+        "backend/app/db/queries.py",
+        "backend/app/api/dashboard.py",
+        "backend/app/analytics/registry.py",
+        "backend/app/analytics/metric_catalog.py",
+        "backend/app/llm/tools.py",
+        "backend/app/llm/local_planner.py",
+        "backend/app/models/templates.py",
+        "frontend/src/templates/trend-chart.tsx",
+        "frontend/src/types/templates.ts",
+        "backend/tests/integration/test_dashboard_contracts.py"
+      ],
+      "depends_on": [
+        "TTI-A-001",
+        "TTI-U-005",
+        "TTI-S-007"
+      ],
+      "related_issues": [
+        {
+          "number": 121,
+          "url": "https://github.com/Collaboration95/talktoit/issues/121",
+          "relationship": "related_only",
+          "note": "Parity coverage belongs to this implementation; retain old issue unchanged unless parent verifies its exact acceptance."
+        }
+      ],
+      "kind": "Task",
+      "estimate": "1\u20132 engineer-days",
+      "stop_conditions": [
+        "Do not register sleep as a numeric category-value average. Coordinate optional response-field edits with TTI-U-005 and comparison contract.",
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "parent": "TTI-A-ANSWERS",
+      "sequence": 350,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZENZ0A",
+        "number": 193,
+        "url": "https://github.com/Collaboration95/talktoit/issues/193"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/191",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/192",
+        "https://github.com/Collaboration95/talktoit/issues/173",
+        "https://github.com/Collaboration95/talktoit/issues/161"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Analytics",
+      "milestone": "Expanded measured analytics",
+      "priority": "P2",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Later",
+      "conflict_group": "comparison-contract",
+      "size": "S",
+      "key": "TTI-A-003",
+      "title": "Decide metric comparison coverage and backward-compatible payload",
+      "objective": "Fix comparison semantics for steps, resting HR and HRV before enabling questions.",
+      "scope": [
+        "Write a bounded contract ADR for explicit period comparison using existing catalog/query/template mechanisms.",
+        "Specify sum vs observation average, source scope, observed-day coverage vs requested days, missing/zero denominator behavior, units and neutral delta labels."
+      ],
+      "out_of_scope": [
+        "New metrics, automatic causal explanations, weekly planner rewrite already repaired, implementation during spike."
+      ],
+      "acceptance": [
+        "Examples cover unequal period lengths/coverage, no data in one/both periods, true zero and mixed supported source measurements.",
+        "Choose minimally additive comparison payload fields and validated tool arguments; existing workout comparisons remain decodable.",
+        "Define explicit-date question vocabulary and clarification for missing/ambiguous periods; no remote planner required for documented examples.",
+        "State how missing metric counterparts are compared without inventing a dashboard HRV panel; use existing numeric trend/query values as oracle."
+      ],
+      "verification": [
+        "uv run --directory backend pytest -o addopts='' -q tests/integration/test_queries.py tests/unit/test_local_planner.py tests/unit/test_metric_catalog.py",
+        "npm --prefix frontend run test -- --run tests/templates/comparison.test.tsx",
+        "git diff --check"
+      ],
+      "paths": [
+        "backend/app/analytics/metric_catalog.py",
+        "backend/app/db/queries.py",
+        "backend/app/llm/tools.py",
+        "backend/app/models/templates.py",
+        "frontend/src/templates/comparison.tsx",
+        "docs/decisions/metric-comparison-contract.md (new decision artifact)"
+      ],
+      "depends_on": [],
+      "related_issues": [
+        {
+          "number": 92,
+          "url": "https://github.com/Collaboration95/talktoit/issues/92",
+          "relationship": "related_only",
+          "note": "Weekly/monthly workout comparison bug already repaired; this spike covers new metric comparisons, not that ticket."
+        }
+      ],
+      "kind": "Spike",
+      "estimate": "2\u20134 engineer-hours",
+      "stop_conditions": [
+        "Cap at four hours; unresolved choices gate only TTI-A-004. Reject unrequested normalization or derived medical claims.",
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "parent": "TTI-A-ANSWERS",
+      "sequence": 340,
+      "children": [],
+      "status": "Ready",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZENfFg",
+        "number": 194,
+        "url": "https://github.com/Collaboration95/talktoit/issues/194"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/191",
+      "dependency_urls": [],
+      "child_urls": []
+    },
+    {
+      "area": "Analytics",
+      "milestone": "Expanded measured analytics",
+      "priority": "P2",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Later",
+      "conflict_group": "analytics-queries",
+      "size": "M",
+      "key": "TTI-A-004",
+      "title": "Compare steps, resting HR and HRV over explicit periods",
+      "objective": "Deliver validated numeric metric comparisons with honest units and coverage.",
+      "scope": [
+        "Add query functions in queries.py, registry/tool validation and deterministic explicit-period planning for exactly steps/resting HR/HRV.",
+        "Extend comparison model/type/decoder/renderer compatibly with coverage and measured delta facts; preserve existing workout comparisons."
+      ],
+      "out_of_scope": [
+        "Pace rankings, sleep comparisons, new metrics, medical or causal narrative, unrestricted date grammar."
+      ],
+      "acceptance": [
+        "Documented explicit-period questions reach the metric comparison locally; ambiguity asks for clarification instead of selecting workout or arbitrary periods.",
+        "Steps sums and resting HR/HRV aggregates match TTI-A-003 and same-scope underlying trend measurements with correct units.",
+        "Requested periods and observed coverage appear together; unequal coverage and missing values are visible; no invented zero or percentage when denominator is missing/zero.",
+        "Existing workout comparison examples render unchanged; HTTP/CLI match and unknown templates retain fallback.",
+        "Synthetic success/loading/empty/error/fallback cases pass; projections remain compact/rounded and exclude rows, routes and sensitive metadata."
+      ],
+      "verification": [
+        "uv run --directory backend pytest -o addopts='' -q tests/integration/test_queries.py tests/unit/test_local_planner.py tests/unit/test_cli_chat.py tests/integration/test_chat.py tests/unit/test_provider_redaction.py",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend",
+        "uv run --directory backend coverage report --include='app/llm/*' --fail-under=70",
+        "npm --prefix frontend run test -- --run tests/templates/comparison.test.tsx tests/api/decode-chat-envelope.test.ts tests/components/template-dispatch.test.tsx",
+        "make test-frontend",
+        "make lint-frontend",
+        "make typecheck-frontend"
+      ],
+      "paths": [
+        "backend/app/db/queries.py",
+        "backend/app/analytics/registry.py",
+        "backend/app/llm/tools.py",
+        "backend/app/llm/local_planner.py",
+        "backend/app/models/templates.py",
+        "backend/app/llm/provider_projection.py",
+        "frontend/src/types/templates.ts",
+        "frontend/src/api/decode-chat-envelope.ts",
+        "frontend/src/templates/comparison.tsx",
+        "backend/tests/integration/test_queries.py"
+      ],
+      "depends_on": [
+        "TTI-A-003",
+        "TTI-U-005",
+        "TTI-S-007"
+      ],
+      "related_issues": [],
+      "kind": "Task",
+      "estimate": "1\u20132 engineer-days",
+      "stop_conditions": [
+        "Do not broaden registered metric IDs or egress categories implicitly. Serialize query/planner/template edits with TTI-A-002 and TTI-U-005.",
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "parent": "TTI-A-ANSWERS",
+      "sequence": 360,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZENkow",
+        "number": 195,
+        "url": "https://github.com/Collaboration95/talktoit/issues/195"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/191",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/194",
+        "https://github.com/Collaboration95/talktoit/issues/173",
+        "https://github.com/Collaboration95/talktoit/issues/161"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Analytics",
+      "milestone": "Expanded measured analytics",
+      "priority": "P2",
+      "risk": "Medium",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "aggregate",
+      "size": "L",
+      "key": "TTI-A-ROUTES",
+      "title": "Route absence and later companion feasibility",
+      "objective": "Disclose current XML/GPX limits now; investigate future archive support only after stabilization.",
+      "kind": "Package",
+      "sequence": 1411,
+      "children": [
+        "TTI-A-005",
+        "TTI-A-006",
+        "TTI-A-GATE"
+      ],
+      "parent": "TTI-A-EPIC",
+      "status": "Backlog",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZENp4Q",
+        "number": 196,
+        "url": "https://github.com/Collaboration95/talktoit/issues/196"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/190",
+      "dependency_urls": [],
+      "child_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/197",
+        "https://github.com/Collaboration95/talktoit/issues/198",
+        "https://github.com/Collaboration95/talktoit/issues/199"
+      ]
+    },
+    {
+      "area": "Analytics",
+      "milestone": "Expanded measured analytics",
+      "priority": "P1",
+      "risk": "Low",
+      "commitment": "Required",
+      "batch": "Today candidates",
+      "conflict_group": "settings-view",
+      "size": "S",
+      "key": "TTI-A-005",
+      "title": "Explain missing workout routes and XML-only upload limits",
+      "objective": "Show existing route availability evidence instead of silently omitting the route section.",
+      "scope": [
+        "Render existing missing/invalid route state messages in workout detail; label no route, unreadable route and available geometry distinctly.",
+        "Add brief importer disclosure that XML uploads do not include companion GPX files; offer only existing supported local import instructions."
+      ],
+      "out_of_scope": [
+        "ZIP/GPX uploader, inferring missing GPS geometry, exposing stored filesystem paths."
+      ],
+      "acceptance": [
+        "Available route retains chart/facts/GeoJSON download; missing and invalid states show useful explanations without a broken download action.",
+        "Missing route never implies that a model can recover GPS data or that companion uploads are currently supported.",
+        "XML upload screen explains companion-file limitation before selection/upload; existing XML upload behavior is unchanged.",
+        "Synthetic route state tests pass and UI displays no GPS coordinates or local paths in disclosure text."
+      ],
+      "verification": [
+        "npm --prefix frontend run test -- --run tests/components/workout-detail.test.tsx tests/components/settings-view.test.tsx",
+        "make test-frontend",
+        "make lint-frontend",
+        "make typecheck-frontend",
+        "uv run --directory backend pytest -o addopts='' -q tests/integration/test_dashboard_route_root.py",
+        "make test-backend",
+        "make lint-backend",
+        "make typecheck-backend",
+        "uv run --directory backend coverage report --include='app/llm/*' --fail-under=70"
+      ],
+      "paths": [
+        "frontend/src/components/workout-detail.tsx",
+        "frontend/src/components/settings-view.tsx",
+        "frontend/tests/components/workout-detail.test.tsx",
+        "frontend/tests/components/settings-view.test.tsx",
+        "backend/app/models/dashboard.py",
+        "backend/tests/integration/test_dashboard_route_root.py"
+      ],
+      "depends_on": [],
+      "related_issues": [],
+      "kind": "Task",
+      "estimate": "2\u20134 engineer-hours",
+      "stop_conditions": [
+        "Existing API already exposes route state; extend backend only if a demonstrated fixture gap requires it. Coordinate workout-detail with TTI-P-005 and Settings with TTI-U-004/006.",
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "parent": "TTI-A-ROUTES",
+      "sequence": 250,
+      "children": [],
+      "status": "Ready",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZENv8g",
+        "number": 197,
+        "url": "https://github.com/Collaboration95/talktoit/issues/197"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/196",
+      "dependency_urls": [],
+      "child_urls": []
+    },
+    {
+      "area": "Analytics",
+      "milestone": "Expanded measured analytics",
+      "priority": "P3",
+      "risk": "High",
+      "commitment": "Optional",
+      "batch": "Later",
+      "conflict_group": "import-lifecycle-design",
+      "size": "M",
+      "key": "TTI-A-006",
+      "title": "Assess companion-file or ZIP import after regular-use stabilization",
+      "objective": "Produce a bounded feasibility decision for later companion imports without shipping a new importer.",
+      "scope": [
+        "Inspect existing local export-root/GPX resolution and upload staging ownership against a disposable synthetic companion archive.",
+        "Document XML/root mapping, archive traversal/symlink protections, uncompressed-size/file-count limits, owned extraction cleanup and dataset-generation lifetime implications.",
+        "Propose reuse vs a minimal later implementation sequence with security/correctness acceptance gates."
+      ],
+      "out_of_scope": [
+        "Implementing ZIP import, uploading real exports, promising same-day support, richer workout analysis or packaging."
+      ],
+      "acceptance": [
+        "ADR identifies exact current supported CLI/XML paths and why upload loses companion availability.",
+        "Synthetic feasibility evidence accounts for missing/malformed GPX, traversal/absolute paths/symlinks, expansion limits and cancellation/restart cleanup without executing untrusted contents.",
+        "Choose go/no-go and concrete follow-on leaves with unresolved decisions; no feature is advertised as available.",
+        "Explicitly remain Backlog/not Ready until parent confirms dependable regular use and Round 1 artifact/generation lifecycle."
+      ],
+      "verification": [
+        "uv run --directory backend pytest -o addopts='' -q tests/integration/test_dashboard_route_root.py tests/integration/test_imports_api.py",
+        "git diff --check",
+        "Review proposed archive ownership and route-root lifecycle against the completed Round 1 design using synthetic examples only."
+      ],
+      "paths": [
+        "backend/app/api/imports.py",
+        "backend/app/api/dashboard.py",
+        "backend/app/ingest/gpx.py",
+        "backend/app/ingest/run.py",
+        "docs/decisions/companion-import-feasibility.md (new decision artifact)"
+      ],
+      "depends_on": [
+        "TTI-S-009",
+        "TTI-S-007",
+        "TTI-U-GATE"
+      ],
+      "related_issues": [],
+      "kind": "Spike",
+      "estimate": "4\u20136 engineer-hours",
+      "stop_conditions": [
+        "Do not run this spike until parent resolves later-readiness dependencies. Limit eventual investigation to one session and no production importer edits.",
+        "Stop if this focused PR requires an unrelated schema, importer activation, provider-runtime or UI rewrite; document the boundary for the parent.",
+        "Use synthetic fixtures only; no personal data, secrets, live model calls or health interpretation. Report exact unavailable tooling or failed checks; never waive parity/coverage gates."
+      ],
+      "parent": "TTI-A-ROUTES",
+      "sequence": 370,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEN09Q",
+        "number": 198,
+        "url": "https://github.com/Collaboration95/talktoit/issues/198"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/196",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/163",
+        "https://github.com/Collaboration95/talktoit/issues/161",
+        "https://github.com/Collaboration95/talktoit/issues/176"
+      ],
+      "child_urls": []
+    },
+    {
+      "area": "Analytics",
+      "milestone": "Expanded measured analytics",
+      "priority": "P2",
+      "risk": "High",
+      "commitment": "Required",
+      "batch": "Next",
+      "conflict_group": "integrated-acceptance",
+      "size": "M",
+      "key": "TTI-A-GATE",
+      "title": "Verify sleep and comparison facts end to end",
+      "objective": "Independently verify the integrated epic outcome, not only individual local test results.",
+      "scope": [
+        "Run the complete epic acceptance against merged main using isolated synthetic data.",
+        "Publish a criterion-to-evidence matrix, actual head/merged SHAs, CI links and remaining limitations."
+      ],
+      "out_of_scope": [
+        "New application features, waived gates, personal datasets, hosted-model calls or rubber-stamp closure."
+      ],
+      "acceptance": [
+        "Synthetic sleep answers match dashboard union/stage semantics for the same scopes; unsupported or missing cases are truthful.",
+        "Steps/resting-HR/HRV comparisons agree with query oracles, disclose unequal coverage and retain backwards-compatible workout comparisons.",
+        "CLI/API/template/browser flows preserve measured-only language and never send raw records or GPS to providers.",
+        "Any failure produces a concrete blocker or follow-up leaf; the gate stays open until required acceptance passes."
+      ],
+      "verification": [
+        "make check-full",
+        "Execute the epic-specific synthetic integration/browser/fault checks above and post the charter completion receipt."
+      ],
+      "paths": [
+        "backend/tests/",
+        "frontend/tests/",
+        "docs/decisions/acceptance-evidence.md (new or linked evidence index)"
+      ],
+      "depends_on": [
+        "TTI-A-002",
+        "TTI-A-004",
+        "TTI-A-005",
+        "TTI-U-GATE"
+      ],
+      "related_issues": [],
+      "kind": "Gate",
+      "estimate": "One focused independent verification session; fix work returns to leaf issues",
+      "stop_conditions": [
+        "Do not substitute local green tests for missing required CI/browser/interrupt evidence.",
+        "Return exact failing acceptance and reproducer; do not broaden product scope or close unfinished issues."
+      ],
+      "parent": "TTI-A-ROUTES",
+      "sequence": 430,
+      "children": [],
+      "status": "Blocked",
+      "issue": {
+        "id": "I_kwDOTHXDvc8AAAABZEN55g",
+        "number": 199,
+        "url": "https://github.com/Collaboration95/talktoit/issues/199"
+      },
+      "parent_url": "https://github.com/Collaboration95/talktoit/issues/196",
+      "dependency_urls": [
+        "https://github.com/Collaboration95/talktoit/issues/193",
+        "https://github.com/Collaboration95/talktoit/issues/195",
+        "https://github.com/Collaboration95/talktoit/issues/197",
+        "https://github.com/Collaboration95/talktoit/issues/176"
+      ],
+      "child_urls": []
+    }
+  ]
+}

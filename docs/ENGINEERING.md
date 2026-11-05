@@ -324,9 +324,9 @@ health data.
   `ds_*` id in `dataset_versions`; chat cache entries are scoped by `(cache_key,
   dataset_version_id)` so a re-ingested export (changed file, changed coverage dates)
   automatically misses and refetches fresh answers. `cache_mode="fresh"` forces the same
-  refetch on demand. Cache-v8 retains snapshot invalidation and rejects earlier incorrect
-  sleep-intent answers; semantic reuse and selected
-  follow-ups require a persisted `leased-generation-v1` intent marker. History remains
+  refetch on demand. Cache-v9 invalidates older exact/canonical answers after date-scope
+  and semantic-identity corrections. Semantic reuse and selected follow-ups require both
+  persisted `leased-generation-v1` and `typed-plan-v4` intent markers. History remains
   readable independently. Synthetic dependency overrides must bind their tuple explicitly
   with `bind_dataset_snapshot`; unbound connections never borrow a dataset identity.
 - **Diagnostics store** — privacy-safe performance/event telemetry in the same SQLite file:
@@ -576,7 +576,7 @@ install:
 dev:            # FastAPI :8000 + Vite :5173 concurrently
 ingest:         # make ingest EXPORT_PATH=… [WORKERS=N] [LEGACY=1]
 run:            # build FE then serve all from FastAPI :8000
-run-cli:        # make run-cli QUESTION="…" [JSON=1] [DB_PATH=…]
+run-cli:        # make run-cli [QUESTION="…"] [INTERACTIVE=1] [LOCAL=1] [LOCAL_MODEL=…] [JSON=1] [DB_PATH=…]
 status:         # make status — prints the current dataset / scanning state (JSON)
 diagnostics:    # app.cli.diagnostics summary (privacy-safe event inspection)
 groq-smoke:     # end-to-end LLM smoke via scripts/groq_smoke.sh
@@ -597,6 +597,11 @@ clean:       rm -rf frontend/dist frontend/coverage backend/.venv backend/htmlco
 ```
 
 **Matches:**
+- `run-cli` supports one-shot or interactive chat. `LOCAL_MODEL=…` implies `LOCAL=1`;
+  both override saved provider settings for this process. `DB_PATH` is relative to the
+  repository root. Direct `python -m app.cli.chat` also accepts `--cache-mode default|fresh`,
+  `--conversation-id`, `--parent-turn-id`, and `--verbose`. See
+  [Local chat from the terminal](LOCAL_CHAT_LOOP.md) for setup, flags and output contracts.
 - `make test` is an alias for `make test-all` (`test-backend` + `test-frontend`).
 - Benchmarks never run in the default `test-backend` (see §2.4 — the `-m "not benchmark"`
   exclude in `pyproject.toml` addopts); `make test-bench` / `make bench` run them.
@@ -899,8 +904,8 @@ incomplete or unsupported metric comparisons ask for clarification.
 
 `app.presentation` supplies shared readable backend date labels. Frontend
 `lib/format` supplies coverage/date labels and converts hour-valued tooltip
-measurements to whole minutes. Chat cache v8 includes formatter v3, typed planner
-v2 and narration facts v3. Semantic intent includes sleep dates/granularity and
+measurements to whole minutes. Chat cache v9 includes formatter v3, typed planner
+v4 and narration facts v3. Semantic intent includes sleep dates/granularity and
 comparison metric selection; leased generation identity and route boundaries remain
 unchanged. Synthetic acceptance lives in `tests/integration/test_sleep_metric_chat.py`;
 it exercises published generation HTTP/CLI parity with provider calls denied.
