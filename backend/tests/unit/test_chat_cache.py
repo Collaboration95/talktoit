@@ -39,8 +39,52 @@ def test_canonical_cache_key_can_share_equivalent_local_intent(tmp_path) -> None
     )
 
 
+def test_old_summary_wording_cannot_be_reused_by_keys_or_semantic_history(tmp_path, monkeypatch):
+    import app.llm.cache_keys as cache_keys
+
+    plan = {"tool_name": "get_period_summary", "arguments": {"activity_type": "Running"}}
+    question = "Show running volume"
+    with monkeypatch.context() as old:
+        old.setattr(cache_keys, "PLANNER_CONTRACT", "typed-plan-v3")
+        old_keys = [build_cache_key("exact", question), build_cache_key("canonical", plan)]
+        old_plan = snapshot_plan(plan)
+    assert old_keys != [build_cache_key("exact", question), build_cache_key("canonical", plan)]
+    assert all(
+        old_key != new_key
+        for old_key, new_key in zip(
+            old_keys,
+            [build_cache_key("exact", question), build_cache_key("canonical", plan)],
+            strict=True,
+        )
+    )
+    repo = AppStateRepository(tmp_path / "state.sqlite")
+    dataset_id = _activate_dataset(repo, coverage_end="2026-08-31", content_prefix="wording")
+    conversation_id = repo.create_conversation("Synthetic summary", dataset_id)
+    response = ChatResponse(
+        template_id="period_summary",
+        data={
+            "title": "June 2026",
+            "period_start": "2026-06-08",
+            "period_end": "2026-06-10",
+            "metrics": [{"label": "Workouts", "value": 0, "unit": "sessions"}],
+        },
+        narrative="Total Distance: None km, Total Duration: None min.",
+        metadata=ResponseMetadata(provenance="deterministic_local"),
+    )
+    repo.add_completed_turn(
+        conversation_id,
+        question,
+        response.model_dump_json(),
+        "default",
+        "deterministic_local",
+        canonical_plan=old_plan,
+    )
+    assert _semantic_cached_answer(repo, repo.get_active(), question, plan) is None
+    assert len(repo.get_turns(conversation_id)) == 1
+
+
 def test_versioned_cache_keys_normalize_equivalent_intent_without_sharing_different_facts() -> None:
-    assert CACHE_KEY_VERSION == "chat-cache-v8"
+    assert CACHE_KEY_VERSION == "chat-cache-v9"
     assert build_cache_key("exact", "  Last RUN  ") == build_cache_key("exact", "last run")
     plan = {
         "tool_name": "get_trend",

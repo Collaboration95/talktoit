@@ -259,3 +259,140 @@ def test_sleep_coverage_wording_keeps_its_measurement(granularity, expected):
             "granularity": expected,
         },
     }
+
+
+@pytest.mark.parametrize(
+    "prompt,tool_name,extra",
+    [
+        ("Show daily steps", "get_trend", {"metric_id": "steps", "granularity": "day"}),
+        ("Show running volume", "get_period_summary", {"activity_type": "Running"}),
+        (
+            "Top 3 longest runs",
+            "get_top_workouts",
+            {"activity_type": "Running", "metric": "duration", "n": 3},
+        ),
+        ("Show my last run", "get_last_workout", {"activity_type": "Running"}),
+    ],
+)
+@pytest.mark.parametrize(
+    "clause,start,end",
+    [
+        ("from 2026-06-01 to 2026-06-07", "2026-06-01", "2026-06-07"),
+        ("from 2026-06-01 through 2026-06-07", "2026-06-01", "2026-06-07"),
+        ("between 2026-06-01 and 2026-06-07", "2026-06-01", "2026-06-07"),
+        ("from 2024-02-29 to 2024-02-29", "2024-02-29", "2024-02-29"),
+        ("from 1\u20137 June 2026", "2026-06-01", "2026-06-07"),
+        ("from June 1\u20137, 2026", "2026-06-01", "2026-06-07"),
+    ],
+)
+def test_general_plans_preserve_complete_explicit_ranges(
+    prompt, tool_name, extra, clause, start, end
+):
+    plan = plan_local_question(f"{prompt} {clause}.", _profile())
+    assert plan == {
+        "tool_name": tool_name,
+        "arguments": {**extra, "start_date": start, "end_date": end},
+    }
+
+
+@pytest.mark.parametrize(
+    "prompt", ["Show daily steps", "Show running volume", "Top 3 runs", "Show my last run"]
+)
+@pytest.mark.parametrize(
+    "clause",
+    [
+        "from 2026-06-07 to 2026-06-01",
+        "from 2026-02-29 to 2026-03-07",
+        "from 2026-00-01 to 2026-06-07",
+        "from 0000-06-01 to 2026-06-07",
+        "from 2026-6-1 to 2026-6-7",
+        "from 2026-06-01",
+        "since 2026-06-01",
+        "before 2026-06-07",
+        "on 2026-06-01",
+        "2026-06-01 to 2026-06-07",
+        "from June 2026 to July 2026",
+        "between June 2026 and July 2026",
+        "in June 2026 and July 2026",
+        "in June 2026 or July 2026",
+        "in June 2026 and last week",
+        "last week and this week",
+        "this month except last week",
+        "last week from 2026-06-01 to 2026-06-07",
+        "from 2026-06-01 to 2026-06-07 and last week",
+        "from 2026-06-01 to 2026-06-07 and 2026-06-09",
+        "from 2026-06-01 to 2026-06-07 except weekends",
+        "in June 0000",
+        "in December 9999",
+        "last 7 days",
+        "last ten days",
+        "last weekend",
+        "on Monday",
+        "06/01 to 06/07",
+        "yesterday",
+    ],
+)
+def test_general_plans_reject_invalid_incomplete_or_unsupported_date_scopes(prompt, clause):
+    plan = plan_local_question(f"{prompt} {clause}", _profile())
+    assert plan is not None
+    assert plan["tool_name"] == "get_fallback_answer"
+    assert plan["arguments"]["reason"] == "clarification_needed"
+    assert "date range" in plan["arguments"]["text"]
+
+
+@pytest.mark.parametrize(
+    "metrics", ["steps and HRV", "resting heart rate and steps", "HRV and active energy"]
+)
+def test_single_metric_trends_do_not_silently_drop_other_metrics(metrics):
+    plan = plan_local_question(f"Show daily {metrics} last week", _profile())
+    assert plan is not None
+    assert plan["tool_name"] == "get_fallback_answer"
+    assert plan["arguments"]["reason"] == "clarification_needed"
+    assert "one metric" in plan["arguments"]["text"]
+
+
+@pytest.mark.parametrize(
+    "latest,start,end",
+    [
+        (date(2020, 2, 12), "2020-02-03", "2020-02-09"),
+        (date(2026, 6, 17), "2026-06-08", "2026-06-14"),
+    ],
+)
+def test_general_relative_dates_remain_anchored_to_the_dataset(latest, start, end):
+    plan = plan_local_question("Show daily steps last week", _profile(latest))
+    assert plan is not None
+    assert plan["arguments"]["start_date"] == start
+    assert plan["arguments"]["end_date"] == end
+
+
+def test_polite_may_is_not_a_month_constraint():
+    assert plan_local_question("May I see my last run?", _profile()) == {
+        "tool_name": "get_last_workout",
+        "arguments": {"activity_type": "Running"},
+    }
+
+
+@pytest.mark.parametrize(
+    "clause",
+    [
+        "this week and last month",
+        "this week and this week",
+        "this month vs last month except weekends",
+        "this week and last week from 2026-06-01 to 2026-06-07",
+        "from 2026-06-01 to 2026-06-07 and last week",
+    ],
+)
+def test_workout_comparisons_do_not_discard_unsupported_date_constraints(clause):
+    plan = plan_local_question(f"Compare my running {clause}", _profile())
+    assert plan is not None
+    assert plan["tool_name"] == "get_fallback_answer"
+    assert plan["arguments"]["reason"] == "clarification_needed"
+
+
+@pytest.mark.parametrize("clause", ["this week to last week", "last week and this week"])
+def test_equivalent_relative_workout_comparisons_remain_supported(clause):
+    plan = plan_local_question(f"Compare my running {clause}", _profile())
+    assert plan is not None
+    assert plan["tool_name"] == "get_comparison"
+    assert plan["arguments"]["this_start"] == "2026-06-15"
+    assert plan["arguments"]["last_start"] == "2026-06-08"

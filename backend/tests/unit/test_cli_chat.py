@@ -30,7 +30,12 @@ def test_cli_prints_json_output(monkeypatch, capsys) -> None:
     """The CLI should emit a machine-readable envelope when requested."""
 
     async def _fake_ask_question(
-        question: str, db_path=None, conversation_id=None, parent_turn_id=None, cache_mode="default"
+        question: str,
+        db_path=None,
+        conversation_id=None,
+        parent_turn_id=None,
+        cache_mode="default",
+        **_options,
     ) -> ChatResponse:
         assert question == "Show my last run"
         assert db_path is None
@@ -62,7 +67,12 @@ def test_cli_prints_human_readable_output(monkeypatch, capsys) -> None:
     """The default CLI output should stay readable for interactive use."""
 
     async def _fake_ask_question(
-        question: str, db_path=None, conversation_id=None, parent_turn_id=None, cache_mode="default"
+        question: str,
+        db_path=None,
+        conversation_id=None,
+        parent_turn_id=None,
+        cache_mode="default",
+        **_options,
     ) -> ChatResponse:
         assert question == "Show my last run"
         assert db_path is None
@@ -91,7 +101,9 @@ def test_cli_prints_human_readable_output(monkeypatch, capsys) -> None:
 
     assert exit_code == 0
     output = capsys.readouterr().out
-    assert "Template: workout_card" in output
+    assert "You: Show my last run" in output
+    assert "Data:" not in output
+    assert "duration_minutes" not in output
     assert "You ran 45.5 minutes on June 5." in output
 
 
@@ -99,7 +111,12 @@ def test_cli_passes_local_conversation_id_to_headless_lifecycle(monkeypatch, cap
     """The headless path can append a durable local conversation turn."""
 
     async def _fake_ask_question(
-        question: str, db_path=None, conversation_id=None, parent_turn_id=None, cache_mode="default"
+        question: str,
+        db_path=None,
+        conversation_id=None,
+        parent_turn_id=None,
+        cache_mode="default",
+        **_options,
     ) -> ChatResponse:
         assert question == "Show my last run"
         assert db_path is None
@@ -114,14 +131,19 @@ def test_cli_passes_local_conversation_id_to_headless_lifecycle(monkeypatch, cap
 
     monkeypatch.setattr(chat_cli, "_ask_question", _fake_ask_question)
     assert chat_cli.main(["--question", "Show my last run", "--conversation-id", "cv_local"]) == 0
-    assert "Narrative: Try another question." in capsys.readouterr().out
+    assert "Try another question." in capsys.readouterr().out
 
 
 def test_cli_passes_fresh_cache_mode(monkeypatch) -> None:
     """The CLI exposes the same cache refresh contract as HTTP chat."""
 
     async def _fake_ask_question(
-        question: str, db_path=None, conversation_id=None, parent_turn_id=None, cache_mode="default"
+        question: str,
+        db_path=None,
+        conversation_id=None,
+        parent_turn_id=None,
+        cache_mode="default",
+        **_options,
     ) -> ChatResponse:
         assert question == "Show my last run"
         assert db_path is None
@@ -142,7 +164,12 @@ def test_cli_passes_scoped_parent_turn_id(monkeypatch) -> None:
     """The headless client can request deterministic follow-up resolution."""
 
     async def _fake_ask_question(
-        question: str, db_path=None, conversation_id=None, parent_turn_id=None, cache_mode="default"
+        question: str,
+        db_path=None,
+        conversation_id=None,
+        parent_turn_id=None,
+        cache_mode="default",
+        **_options,
     ) -> ChatResponse:
         assert question == "Compare that to prior period"
         assert db_path is None
@@ -180,6 +207,7 @@ def test_cli_migrates_database_before_read_only_open(monkeypatch, tmp_path) -> N
     events: list[str] = []
     database = tmp_path / "health.duckdb"
     monkeypatch.setenv("TTI_DB_PATH", str(database))
+    monkeypatch.setenv("TTI_APP_STATE_PATH", str(tmp_path / "state.sqlite"))
 
     def _fake_migrate(db_path=None) -> bool:
         assert db_path == database.resolve()
